@@ -1,6 +1,9 @@
 node_modules
-config.js
-@session
+.env
+src/config.js          # secrets live here
+src/@session/          # WA auth state
+src/store/runtime/     # SQLite DBs (regenerable)
 logs
-store
 temp
+*.log
+.DS_Store

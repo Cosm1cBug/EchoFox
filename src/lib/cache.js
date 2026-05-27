@@ -1,14 +1,12 @@
-const NodeCache = require('node-cache');
+'use strict';
+/**
+ * Backwards-compat shim.
+ * Older commands `require('../lib/cache.js')` and expect
+ * { metadataCache, retryCache } – we now route them to the central caches.
+ */
+const c = require('../core/caches');
 
-const retryCache = new NodeCache({
-    stdTTL: 20,
-    checkperiod: 20
-}) 
-
-const metadataCache =new NodeCache({
-    stdTTL: 3600,
-    checkperiod: 30,
-    deleteOnExpire: true
-})
-
-module.exports = { metadataCache, retryCache }
+module.exports = {
+  metadataCache:   c.groupMetadataCache,
+  retryCache:      c.msgRetryCounterCache,
+};

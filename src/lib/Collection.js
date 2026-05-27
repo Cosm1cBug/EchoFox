@@ -1,44 +1,29 @@
-class Collections extends Map {
-	constructor(...args) {
-		super(...args);
-		this.methods = Object.getOwnPropertyNames(Collections.prototype);
-	}
-	setOptions(name, options = {}) {
-		if (!name) return name;
-		if (!Object.keys(options).length) return options;
-		if (!this.has(name)) return `'${name}' is not matched any commands`;
-		let command = this.get(name);
-		this.set(name, {
-			...command,
-			options: {
-				...command.options,
-				...options,
-			},
-		});
-		return this.get(name);
-	}
-	rename(name, setName) {
-		if (!name || !setName) return setName || name;
-		if (!this.has(name)) return `'${name}' is not matched any commands`;
-		if (this.has(setName)) return `'${setName}' is existed`;
-		let command = this.get(name);
-		command.name = setName;
-		command.alias = [];
-		this.set(setName, command);
-		this.delete(name);
-		return this.get(setName);
-	}
-	modified(name, options = {}) {
-		if (!name) return name;
-		if (!Object.keys(options).length) return options;
-		if (!this.has(name)) return `'${name}' is not matched any commands`;
-		let command = this.get(name);
-		this.set(name, {
-			...command,
-			...options,
-		});
-		return this.get(name);
-	}
+'use strict';
+/**
+ * Backwards-compat shim. The old code passed a `Collection` (extends Map) to
+ * commands so they could do `commands.get(name)` / iterate. The new
+ * CommandRegistry exposes `commands.resolve(name)` and `commands.all()`.
+ * For old commands that still pass `commands` straight from the handler,
+ * we still expose a `.get(name)` and `.values()` so they don't break.
+ *
+ * If you want to construct one manually:
+ *
+ *     const c = new Collection();
+ *     c.set('ping', { name: 'ping', start: …});
+ */
+class Collection extends Map {
+  setOptions(name, options = {}) {
+    const cmd = this.get(name);
+    if (!cmd) return null;
+    this.set(name, { ...cmd, options: { ...cmd.options, ...options } });
+    return this.get(name);
+  }
+  rename(oldName, newName) {
+    const cmd = this.get(oldName);
+    if (!cmd || this.has(newName)) return null;
+    this.set(newName, { ...cmd, name: newName, alias: [] });
+    this.delete(oldName);
+    return this.get(newName);
+  }
 }
-
-module.exports = Collections
+module.exports = Collection;

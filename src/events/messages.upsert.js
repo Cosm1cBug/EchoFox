@@ -19,7 +19,7 @@ const {
 } = require('@whiskeysockets/baileys');
 
 const { config } = require('../config');
-const { correct } = require('../utils/stringMatch');
+const { correct } = require('../lib/stringMatch');
 const { trackCommandUsage, recordMessage } = require('../services/analytics');
 const { rememberUser } = require('../services/userDirectory');
 

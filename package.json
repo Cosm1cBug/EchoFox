@@ -91,7 +91,7 @@
     "link-preview-js": "^3.0.5",
     "lru-cache": "^11.0.1",
     "mime-types": "^2.1.35",
-    "moment-timezone": "^0.5.45",
+    "moment-timezone": "^0.6.2",
     "mongoose": "^8.7.0",
     "music-metadata": ">=11.7.0 <11.12.2",
     "node-cache": "^5.1.2",

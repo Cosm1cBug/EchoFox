@@ -1,7 +1,7 @@
 const axios = require("axios");  // Importing axios for HTTP requests
 const fs = require("fs");  // Importing fs for file system operations
 const path = require("path");  // Importing path for file path manipulation
-const { config }  = require('../config');  // Importing the config for API keys
+const { config }  = require('../lib/configLoader');  // Importing the config for API keys
 const cron = require("node-cron");  // Importing cron for scheduling tasks
 
 const API_KEY = config.alienvault.key;  // Accessing the API key from the config

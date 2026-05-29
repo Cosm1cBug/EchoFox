@@ -1,6 +1,6 @@
 'use strict';
 const logger = require('../core/logger').child({ mod: 'gp.update' });
-const { config } = require('../config');
+const { config } = require('../lib/configLoader');
 
 module.exports = async function onGroupParticipants({ sock, u }) {
   const { id, participants, action, author } = u || {};

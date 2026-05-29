@@ -1,5 +1,5 @@
 'use strict';
-const { config } = require('../config');
+const { config } = require('../lib/configLoader');
 const logger = require('../core/logger').child({ mod: 'call' });
 
 module.exports = async function onCall({ sock, u }) {

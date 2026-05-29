@@ -1,0 +1,65 @@
+EchoFox
+Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+
+This program is licensed under the GNU Affero General Public License v3.0
+or later. See the LICENSE file for the full text.
+
+================================================================================
+THIRD-PARTY SOFTWARE NOTICES
+================================================================================
+
+This product includes software developed by third parties. The following is a
+non-exhaustive list of the major dependencies and their licenses. The full
+text of each license is available either in the corresponding package's
+LICENSE file under node_modules/ at install time, or upstream.
+
+Runtime dependencies
+--------------------
+  @whiskeysockets/baileys   MIT       — WhatsApp Web client library
+                                       (the foundation EchoFox is built on)
+  @hapi/boom                BSD-3     — HTTP error helpers
+  better-sqlite3            MIT       — synchronous SQLite bindings
+  ioredis                   MIT       — Redis client (auth/store backend)
+  pg                        MIT       — PostgreSQL client (store backend)
+  mongoose                  MIT       — MongoDB ODM (store backend)
+  pino, pino-pretty         MIT       — structured logging
+  lru-cache                 ISC       — LRU cache
+  node-cache                MIT       — TTL cache
+  p-queue                   MIT       — promise queue / concurrency limiter
+  prom-client               Apache-2  — Prometheus metrics
+  express                   MIT       — HTTP server for /healthz, /metrics, dashboard
+  axios                     MIT       — HTTP client
+  jimp                      MIT       — pure-JS image processing
+  fluent-ffmpeg             MIT       — ffmpeg wrapper
+  wa-sticker-formatter      MIT       — sticker conversion
+  node-webpmux              MIT       — WebP container manipulation
+  qrcode-terminal           Apache-2  — QR rendering for pairing
+  moment-timezone           MIT       — TZ handling
+  libphonenumber-js         MIT       — phone number parsing
+  iso-3166-1-alpha-2,
+  iso-639-1                 MIT       — country / language ISO codes
+  cfonts                    MIT       — terminal banner
+  zod                       MIT       — runtime schema validation
+  node-cron                 ISC       — scheduled jobs
+  yargs                     MIT       — argument parsing
+  mime-types                MIT       — MIME lookup
+  google-translate-api-x,
+  @vitalets/google-translate-api  MIT — translation
+  link-preview-js           MIT       — URL preview extraction
+  music-metadata            MIT       — audio metadata
+  spinnies                  MIT       — terminal spinners
+  country-data              MIT       — country dataset
+  node-gtts                 MIT       — Google TTS
+  @distube/ytdl-core        MIT       — YouTube download (optional)
+
+Dev dependencies
+----------------
+  eslint, prettier          MIT
+  husky                     MIT
+  lint-staged               MIT
+
+================================================================================
+
+WhatsApp, the WhatsApp logo, and related marks are trademarks of WhatsApp LLC
+and Meta Platforms, Inc. EchoFox is not affiliated with, endorsed by, or in
+any way connected to WhatsApp or Meta. See DISCLAIMER.md.

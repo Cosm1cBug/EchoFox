@@ -1,4 +1,4 @@
-const { initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
+const { initAuthCreds, BufferJSON, proto } = require('@whiskeysockets/baileys');
 const Database = require('better-sqlite3');
 const Redis = require('ioredis');
 const fs = require('fs');

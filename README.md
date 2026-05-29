@@ -16,11 +16,15 @@
 
 - 🔌 **Baileys 7.x** with the recommended retry, group-metadata, and signal-key caches wired in
 - 🧩 **Folder-based command registry** with hot-reload, alias resolution, and auto-skip of commands missing API keys
-- 📦 **SQLite-backed message store** (better-sqlite3, WAL, 256 MiB mmap) — fixes the dreaded *"Waiting for this message"* loop
+- 📦 **Pluggable store backend** — SQLite (default), Postgres, MongoDB, or Redis
+- 🔑 **Pluggable auth backend** — multi-file (default), Redis, or SQLite
+- 🆔 **Login via QR or pairing code**
+- 📊 **Built-in web dashboard** at `:3001` (optional)
 - 🚦 **Per-chat queue** for back-pressure — one slow command no longer stalls the whole bot
 - ❤️ **Health & metrics** at `GET /healthz` and `GET /metrics` (Prometheus)
 - 📝 **Structured logging** via [pino](https://github.com/pinojs/pino) (pretty in dev, JSON in prod)
-- 🛡️ **Built-in middleware** for rate-limiting and outbound concurrency capping
+- 🛡️ **Built-in middleware** for inbound rate-limiting and outbound concurrency capping
+- 🛟 **Centralised command runner** with per-command timeouts, cooldowns, and crash → ❌ react + ops-channel report
 - 🔄 **Supervisor + worker** model with exponential-backoff restart and graceful shutdown
 - 🌐 **Dual prefix** — `.` for users, `$` for admins
 - 🧪 **Zod-validated config** with auto-translation of legacy v5/v6 `config.js` files
@@ -51,8 +55,9 @@ npm install
 ```bash
 cp src/config.example.js src/config.js
 # Open src/config.js and set at least:
-#   admins[]          — your own WhatsApp JID (so $ commands work)
-#   apis.*.apiKey     — any optional API keys you have
+#   admins[]              — your own WhatsApp JID (so $ commands work)
+#   apis.*.apiKey         — any optional API keys you have
+#   dashboard.password    — change from default if you enable the dashboard
 ```
 
 You can also override any config field with environment variables (handy for Docker):
@@ -89,19 +94,19 @@ Type `.menu` in any chat with the bot to see the live list. By category:
 | Category | Commands |
 |---|---|
 | **main**           | `menu` |
-| **misc**           | `ping`, `quote`, `test`, `eval` *(admin)*, `anti-viewOnce` |
-| **general**        | `wiki`, `translate`, `ctx`, `virustotal` *, `alienvault` * |
-| **download**       | `apkdl`, `mediaGrabber`, `mediafire`, `pinterest`, `spotify` |
-| **convert**        | `sticker`, `stk`, `toimg` |
+| **misc**           | `ping`, `quote`, `test`, `eval` *(admin)*, `anti-viewOnce`, `sendstory` |
+| **general**        | `wiki`, `translate`, `ctx`, `virustotal` *, `alienvault` *, `thehackernews` |
+| **download**       | `apkdl`, `mediaGrabber`, `mediafire`, `pinterest`, `spotify`, `song` |
+| **convert**        | `sticker`, `stk`, `toimg`, `tts` |
 | **entertainment**  | `omdb` * |
-| **group**          | `link` |
+| **group**          | `link`, `approve` |
 | **tools**          | `ssweb` |
 | **user**           | `profile` |
 | **admin**          | `serverinfo` |
 
 `*` = requires an API key in `src/config.js`; auto-disabled if missing.
 
-5 commands (`tts`, `song`, `thehackersnews`, `approve`, `sendStory`) are in `src/commands/_disabled/` pending fixes in Milestone M3.
+Run `npm run docs:commands` to regenerate the full catalog at `docs/commands.md`.
 
 ---
 
@@ -121,18 +126,19 @@ Type `.menu` in any chat with the bot to see the live list. By category:
 │   ┌────────────────────┐    ┌──────────────────────────────────────┐ │
 │   │ configLoader (zod) │    │   makeWASocket  (Baileys 7.x)        │ │
 │   │ commandRegistry    │◄──►│  • cachedGroupMetadata via store     │ │
-│   │ caches (× 7)       │    │  • getMessage → proto.IMessage       │ │
-│   └────────────────────┘    │  • 5 named retry/device/call caches  │ │
-│                             └────────────────┬─────────────────────┘ │
+│   │ commandRunner      │    │  • getMessage → proto.IMessage       │ │
+│   │ caches (× 7)       │    │  • 5 named retry/device/call caches  │ │
+│   └────────────────────┘    └────────────────┬─────────────────────┘ │
 │                                              │                       │
 │         ┌────────────────────────────────────▼─────────────┐        │
 │         │  per-chat p-queue (concurrency=1, parallel chats)│        │
 │         │  ──► events/messages.upsert.js                   │        │
-│         │      ──► commands/<category>/<name>.js           │        │
+│         │      ──► commandRunner.run(cmd) ──► cmd.start()  │        │
 │         └──────────────────────────────────────────────────┘        │
 │                                                                       │
-│   sqliteStore (WAL, mmap)  ·  services/{analytics,userDirectory}     │
-│   middleware/{rateLimit, sendQueue}                                   │
+│   store: sqlite | postgres | mongo | redis (pluggable via storeDB)   │
+│   auth:  multi-file | sqlite | redis (pluggable via auth.method)     │
+│   middleware/{rateLimit, sendQueue}  ·  optional dashboard :3001     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -155,6 +161,25 @@ Edit `src/config.js`. Every field has a sensible default; you can leave most emp
 | `features.readMessages` | boolean | `true`          | Mark incoming msgs as read |
 | `features.readStatus`   | boolean | `true`          | Mark statuses as read |
 | `features.antiCall`     | boolean | `false`         | Auto-reject incoming calls |
+| `features.syncHistory`  | boolean | `true`          | Pull full history on first login |
+| `login.type`            | enum    | `"QR"`          | `"QR"` or `"PAIRING"` |
+| `login.phoneNumber`     | string  | `""`            | Required if `type="PAIRING"` (digits only) |
+| `auth.method`           | enum    | `"MULTIFILE"`   | `"MULTIFILE"` / `"REDIS"` / `"SQLITE"` |
+| `auth.redisUrl`         | string  | `redis://...`   | Used when `method="REDIS"` |
+| `auth.sqlitePath`       | string  | `./src/store/auth.db` | Used when `method="SQLITE"` |
+| `storeDB.type`          | enum    | `"SQLITE"`      | `"SQLITE"` / `"POSTGRES"` / `"MONGODB"` / `"REDIS"` |
+| `storeDB.sqlitePath`    | string  | `./src/store/runtime/wa.db` | |
+| `storeDB.postgresUrl`   | string  | `postgresql://...` | |
+| `storeDB.mongoUri`      | string  | `mongodb://...` | |
+| `storeDB.redisUrl`      | string  | `redis://...`   | |
+| `dashboard.enabled`     | boolean | `false`         | Built-in web UI |
+| `dashboard.port`        | number  | `3001`          | |
+| `dashboard.username`    | string  | `"admin"`       | |
+| `dashboard.password`    | string  | `"change-me-please"` | ⚠️ change this |
+| `processing.concurrencyPerChat` | number | `1`     | FIFO per chat, parallel across chats |
+| `processing.globalRateLimit`    | number | `20`    | Commands per second across whole bot |
+| `processing.userRateLimit`      | number | `10`    | Commands per minute per sender |
+| `processing.sendConcurrency`    | number | `4`     | Outbound `sendMessage` in-flight cap |
 | `admins[]`              | string[]| `[]`            | Admin JIDs (`1234567890@s.whatsapp.net`) |
 | `channels.{syslogs,botLogs,userLogs,…}` | string | `""` | Group JIDs for log streams (empty = disabled) |
 | `apis.omdb.apiKey`      | string  | `""`            | OMDb API key (for `.omdb`) |
@@ -164,7 +189,7 @@ Edit `src/config.js`. Every field has a sensible default; you can leave most emp
 | `runtime.port`          | number  | `3000`          | `/healthz` + `/metrics` port |
 
 Every field can also be set via an environment variable:
-`ECHOFOX_<SECTION>_<CAMELCASEKEY>` — e.g. `ECHOFOX_APIS_OMDB_APIKEY=xyz`.
+`ECHOFOX_<SECTION>_<CAMELCASEKEY>` — e.g. `ECHOFOX_APIS_OMDB_APIKEY=xyz`, `ECHOFOX_STOREDB_TYPE=POSTGRES`.
 
 ---
 
@@ -182,6 +207,8 @@ module.exports = {
   group: false,                      // (optional — group-only)
   needsMetadata: false,              // (optional — pre-fetch group metadata)
   requires: ['apis.omdb.apiKey'],    // (optional — auto-skip if config path is empty)
+  cooldown: 0,                       // (optional — seconds between uses per user)
+  timeout: 60,                       // (optional — per-invocation timeout, seconds)
 
   async start(sock, m, { ctx, args, prefix, config, logger }) {
     // m   = raw Baileys message + legacy m.sender, m.from, m.isGroup, m.reply, …
@@ -211,23 +238,48 @@ Prometheus metrics exposed (besides the defaults):
 | `echofox_worker_up`               | gauge   | 1 if the worker is alive |
 | `echofox_worker_restarts_total`   | counter | Cumulative supervisor restarts |
 
-Grafana dashboard JSON: *coming in M5*.
+Grafana dashboard JSON: `docker/grafana/dashboards/echofox-overview.json` (auto-provisioned by the Compose `observability` profile).
 
 ---
 
-## 🐳 Docker (Milestone M2, in progress)
+## 🐳 Docker
+
+The fastest, most portable way to run EchoFox. Multi-arch images
+(`linux/amd64`, `linux/arm64`) published to **GHCR** and **Docker Hub** on
+every tagged release.
+
+### One-liner
 
 ```bash
 docker run -d \
   --name echofox \
-  -p 3000:3000 \
-  -v $(pwd)/session:/app/src/@session \
-  -v $(pwd)/store:/app/src/store/runtime \
-  -e ECHOFOX_BOT_PREFIX='.' \
+  --restart unless-stopped \
+  -p 127.0.0.1:3000:3000 \
+  -v echofox-session:/app/src/@session \
+  -v echofox-store:/app/src/store/runtime \
+  -e TZ=Asia/Kolkata \
   ghcr.io/cosm1cbug/echofox:latest
+
+docker logs -f echofox    # scan the QR
 ```
 
-Compose, secrets, and image variants ship in v0.3.0.
+### Docker Compose
+
+```bash
+cp .env.example .env
+docker compose up -d
+
+# With Prometheus + Grafana:
+docker compose --profile observability up -d
+# → Grafana at http://localhost:3001 (admin / changeme)
+```
+
+### Full guides
+- [docs/deploy/docker.md](./docs/deploy/docker.md) — single container, env vars, volumes, updates
+- [docs/deploy/docker-compose.md](./docs/deploy/docker-compose.md) — Compose + observability profile
+- [docs/deploy/podman.md](./docs/deploy/podman.md) — rootless alternative
+- [docs/deploy/multi-arch.md](./docs/deploy/multi-arch.md) — building your own multi-arch images
+- [docs/deploy/troubleshooting.md](./docs/deploy/troubleshooting.md) — when things go wrong
 
 ---
 
@@ -236,9 +288,9 @@ Compose, secrets, and image variants ship in v0.3.0.
 | Milestone | Status | Tag |
 |---|---|---|
 | **M0** — New core boots, pairs, replies     | ✅ | `v0.1.0-alpha` |
-| **M1** — OSS readiness (licensing, config, docs) | 🚧 in progress | `v0.2.0-alpha` |
-| **M2** — Docker + multi-platform images     | 🔜 | `v0.3.0-alpha` |
-| **M3** — Commands triage & rewrite          | 🔜 | `v0.4.0-beta` |
+| **M1** — OSS readiness (licensing, config, docs) | ✅ | `v0.2.0-alpha` |
+| **M2** — Docker + multi-platform images     | ✅ | `v0.3.0-alpha` |
+| **M3** — Commands triage & rewrite          | ✅ | `v0.4.0-beta` (reconciled in `v0.4.1-beta`) |
 | **M4** — CI/CD + automated releases         | 🔜 | `v0.5.0-rc1` |
 | **M5** — Docs site (vitepress)              | 🔜 | `v1.0.0-rc1` |
 | **M6** — 2-week soak test → public release  | 🔜 | `v1.0.0` |
@@ -249,7 +301,7 @@ Compose, secrets, and image variants ship in v0.3.0.
 
 Pull requests welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-By participating, you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md).
+By participating, you agree to behave kindly and constructively.
 
 ---
 
@@ -261,7 +313,7 @@ Found a vulnerability? Please report it privately — see [SECURITY.md](./SECURI
 
 ## 📜 License
 
-Licensed under the [GNU Affero General Public License v3.0](./LICENSE).
+Licensed under the [GNU Affero General Public License v3.0 or later](./LICENSE).
 
 In short: if you run a modified version of EchoFox as a service, you must offer the source of your modifications to the users who interact with it over the network. Third-party attributions in [NOTICE](./NOTICE).
 

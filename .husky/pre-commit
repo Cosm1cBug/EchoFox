@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run lint-staged on staged files (prettier + eslint --fix)
+npx --no-install lint-staged
+
+# Sanity: ensure every .js file we own has an AGPL header
+node scripts/add-license-headers.js --check

@@ -43,7 +43,7 @@ function makeRedisStore(url, logger, groupCache) {
                     if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
                     const msgBuf = Buffer.from(proto.Message.encode(m.message).finish());
                     // Keep recent messages to limit redis memory usage
-                    pipeline.setex(`msg:${m.key.remoteJid}:${m.key.id}`, 604800, msgBuf); 
+                    pipeline.set(`msg:${m.key.remoteJid}:${m.key.id}`, msgBuf, 'EX', 604800); 
                 }
                 pipeline.exec().catch(() => {});
             });

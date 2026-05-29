@@ -67,6 +67,11 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       creation  INTEGER,
       meta      BLOB             -- JSON-encoded full GroupMetadata
     );
+
+    CREATE TABLE IF NOT EXISTS stats (
+  key   TEXT PRIMARY KEY,
+  value INTEGER NOT NULL DEFAULT 0
+);
   `);
 
   // ─── Prepared statements ────────────────────────────────────────────────
@@ -91,6 +96,10 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     groupUpsert: db.prepare(`
       INSERT OR REPLACE INTO groups (jid,subject,creation,meta) VALUES (?,?,?,?)`),
     groupGet:   db.prepare(`SELECT meta FROM groups WHERE jid = ?`),
+    statUpsert: db.prepare(`
+      INSERT INTO stats (key,value) VALUES (?,?)
+      ON CONFLICT(key) DO UPDATE SET value = value + excluded.value`),
+    statsAll:   db.prepare(`SELECT key, value FROM stats`),
   };
 
   // Hot in-process LRU for getMessage – avoids SQLite hit for recent chats.
@@ -212,7 +221,17 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         for (const g of groups) this.saveGroupMetadata(g.id, g);
       });
     },
+    recordStat(key, inc = 1) {
+      try { stmts.statUpsert.run(key, inc); } catch {}
+    },
 
+    getStats() {
+      try {
+        return stmts.statsAll.all().reduce(
+          (acc, row) => (acc[row.key] = Number(row.value), acc), {});
+      } catch { return {}; }
+    },
+    
     close() { db.close(); },
   };
 }

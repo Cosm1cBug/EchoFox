@@ -28,7 +28,7 @@ const { makeSQLiteStore } = require('../store/sqliteStore');
 const CommandRegistry = require('./commandRegistry');
 const eventRouter = require('../events/router');
 const { startDashboard } = require('../dashboard/server');
-const { startGC } = require('../utils/tempManager');
+const { startGC } = require('../lib/tempManager');
 
 const log = logger.child({ mod: 'worker' });
 

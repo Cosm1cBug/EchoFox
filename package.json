@@ -1,24 +1,81 @@
 {
   "name": "echofox",
-  "version": "1.0.0",
-  "description": "EchoFox – Production-grade WhatsApp bot built on Baileys 7.x",
+  "version": "0.4.1-beta",
+  "description": "A production-grade WhatsApp bot built on Baileys 7.x — typed, observable, scalable.",
   "main": "src/core/bootstrap.js",
   "scripts": {
     "start": "node --enable-source-maps src/core/bootstrap.js",
     "dev": "node --enable-source-maps --trace-warnings src/core/bootstrap.js",
     "pm2": "pm2 start ecosystem.config.js",
-    "test": "node --test src/**/*.test.js || true"
+    "lint": "eslint src scripts --max-warnings 0",
+    "lint:fix": "eslint src scripts --fix",
+    "format": "prettier --write \"**/*.{js,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{js,json,md,yml,yaml}\"",
+    "headers": "node scripts/add-license-headers.js",
+    "headers:check": "node scripts/add-license-headers.js --check",
+    "docs:commands": "node scripts/generate-command-docs.js",
+    "test": "node --test src/**/*.test.js src/commands/__tests__/*.test.js",
+    "test:contract": "node --test src/commands/__tests__/contract.test.js",
+    "prepare": "husky || true"
   },
   "engines": {
     "node": ">=20.0.0"
   },
-  "keywords": ["whatsapp", "baileys", "bot", "echofox"],
-  "author": "COSM1CBUG",
-  "license": "AGPL-3.0",
+  "keywords": [
+    "whatsapp",
+    "baileys",
+    "bot",
+    "echofox",
+    "whatsapp-bot",
+    "agpl",
+    "whiskeysockets"
+  ],
+  "author": {
+    "name": "COSM1CBUG",
+    "url": "https://github.com/Cosm1cBug"
+  },
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cosm1cBug/EchoFox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Cosm1cBug/EchoFox/issues",
+    "email": "cosmicbug.me@pm.me"
+  },
+  "homepage": "https://cosm1cbug.github.io/echofox",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "files": [
+    "src/",
+    "scripts/",
+    "ecosystem.config.js",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "CHANGELOG.md",
+    "DISCLAIMER.md",
+    "SECURITY.md",
+    "!src/config.js",
+    "!src/@session/",
+    "!src/store/runtime/"
+  ],
+  "lint-staged": {
+    "*.js": [
+      "prettier --write",
+      "eslint --fix --max-warnings 0"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
   "dependencies": {
     "@whiskeysockets/baileys": "7.0.0-rc13",
     "@hapi/boom": "^10.0.1",
     "@vitalets/google-translate-api": "^9.2.1",
+    "@distube/ytdl-core": "^4.16.5",
     "axios": "^1.7.7",
     "better-sqlite3": "^11.8.1",
     "cfonts": "^3.3.0",
@@ -26,6 +83,7 @@
     "express": "^4.21.2",
     "fluent-ffmpeg": "^2.1.3",
     "google-translate-api-x": "^10.7.2",
+    "ioredis": "^5.4.1",
     "iso-3166-1-alpha-2": "^1.0.2",
     "iso-639-1": "^3.1.5",
     "jimp": "^1.6.1",
@@ -34,18 +92,27 @@
     "lru-cache": "^11.0.1",
     "mime-types": "^2.1.35",
     "moment-timezone": "^0.5.45",
+    "mongoose": "^8.7.0",
     "music-metadata": ">=11.7.0 <11.12.2",
     "node-cache": "^5.1.2",
     "node-cron": "^3.0.3",
     "node-gtts": "^2.0.2",
     "node-webpmux": "^3.2.0",
     "p-queue": "^8.0.1",
-    "pino": "^9.6.0",
+    "pg": "^8.13.0",
+    "pino": "^9.5.0",
     "pino-pretty": "^11.2.2",
     "prom-client": "^15.1.3",
     "qrcode-terminal": "^0.12.0",
     "spinnies": "^0.5.1",
     "wa-sticker-formatter": "^4.4.4",
-    "yargs": "^17.7.2"
+    "yargs": "^17.7.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10"
   }
 }

@@ -1,17 +1,98 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details. @license AGPL-3.0
+ *
+ * You should have received a copy of the GNU AGPL along with this program.
+ * If not, see <https://www.gnu.org/licenses/>.
+ */
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
 'use strict';
-const logger = require('../core/logger').child({ mod: 'gp.update' });
-const { config } = require('../lib/configLoader');
 
-module.exports = async function onGroupParticipants({ sock, u }) {
-  const { id, participants, action, author } = u || {};
-  if (!id || !participants?.length) return;
-  logger.info({ id, action, author, participants }, 'group participants changed');
+/**
+ * group-participants.update handler.
+ *
+ *   Baileys emits a single event when any subset of participants in a
+ *   group changes role. We:
+ *     1. Record EACH (participant, action) pair as an append-only event
+ *        in the store. Never deletes prior records.
+ *     2. Classify raw `remove` into LEFT vs KICKED based on actor.
+ *     3. Refresh the group metadata cache from authoritative source.
+ *     4. Optionally post a one-liner to the configured groupUpdates channel.
+ *
+ *   The store interface (`recordParticipantEvent`) is implemented by all
+ *   four backends (sqlite/postgres/mongo/redis) — see src/store/db.js.
+ */
 
-  if (config.WApp?.GrpUpdates) {
+const { classifyAction } = require('../store/schema/participants');
+const { config }         = require('../lib/configLoader');
+const logger             = require('../core/logger').child({ mod: 'gp.update' });
+
+module.exports = async function onGroupParticipants({ sock, store, u }) {
+  if (!u || !u.id || !Array.isArray(u.participants) || !u.participants.length) return;
+
+  const { id: groupJid, participants, action: rawAction, author } = u;
+  const ts = Math.floor(Date.now() / 1000);
+
+  // ─── 1. Record each (participant, classified action) into event log
+  for (const p of participants) {
+    const action = classifyAction(rawAction, author, p);
     try {
-      await sock.sendMessage(config.WApp.GrpUpdates, {
-        text: `[${action}] ${participants.join(', ')} in ${id} (by ${author || 'unknown'})`,
-      });
-    } catch {}
+      await store.recordParticipantEvent(groupJid, p, action, author || null, ts);
+    } catch (e) {
+      logger.warn({ err: e, groupJid, participant: p, action },
+        'failed to record participant event');
+    }
+  }
+
+  // ─── 2. Refresh group metadata cache from server (best-effort)
+  try {
+    const fresh = await sock.groupMetadata(groupJid);
+    await store.saveGroupMetadata(groupJid, fresh);
+  } catch (e) {
+    logger.debug({ err: e, groupJid }, 'group metadata refresh failed after participants update');
+  }
+
+  // ─── 3. Structured log + optional channel notification
+  const classified = participants.map((p) => ({
+    participant: p,
+    action:      classifyAction(rawAction, author, p),
+  }));
+  logger.info({ groupJid, rawAction, author, classified, count: participants.length },
+    'participants changed');
+
+  if (config.channels.groupUpdates) {
+    const lines = classified.map(({ participant, action }) => {
+      const verb = {
+        add:     '➕ added',
+        join:    '🚪 joined',
+        leave:   '👋 left',
+        kick:    '🚫 kicked',
+        promote: '⭐ promoted',
+        demote:  '⬇️ demoted',
+        approve: '✅ approved',
+        reject:  '❌ rejected',
+        request: '📥 requested',
+      }[action] || `(${action})`;
+      const who = participant.split('@')[0];
+      return `• ${verb} *${who}*${author && action === 'kick' ? ` (by ${author.split('@')[0]})` : ''}`;
+    }).join('\n');
+
+    sock.sendMessage(config.channels.groupUpdates, {
+      text: `*${groupJid.split('@')[0]}* — participants updated\n${lines}`,
+    }).catch((e) => logger.debug({ err: e }, 'failed to post groupUpdates notification'));
   }
 };

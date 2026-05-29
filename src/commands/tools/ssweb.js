@@ -1,54 +1,50 @@
-const fs = require('fs');
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
+'use strict';
+
+/**
+ * .ssweb <url>
+ *
+ * Captures a screenshot of the given URL via a public screenshot service
+ * (api.vreden.my.id, no key required). Falls back gracefully on errors.
+ */
+
 const axios = require('axios');
-const path = require('path');
+
+const URL_RE = /^https?:\/\/[^\s]+$/i;
 
 module.exports = {
-    name: "ssweb",
-    alias: ['ssw','webshot'],
-    usage: '<URL>',
-    type: 'tools',
-    desc: 'Takes a screenshot of the provided link.',
-    start: async (sock, m, { text }) => {
-        if (!text) {
-            await sock.sendMessage(m.from, { text: 'Please provide a URL.' }, { quoted: m });
-            return;
-        }
+  name: 'ssweb',
+  alias: ['ssw', 'webshot', 'screenshot'],
+  desc: 'Capture a screenshot of a webpage',
+  category: 'tools',
+  cooldown: 8,
+  timeout: 45,
 
-        const tempDir = path.resolve(__dirname, '../../temp');
-        const filePath = path.join(tempDir, `${m.from}.png`);
+  async start(sock, m, { ctx, text }) {
+    const url = (text || '').trim();
+    if (!url) return ctx.reply('Usage: `.ssweb <url>`');
+    if (!URL_RE.test(url)) return ctx.reply('That doesn\'t look like a valid URL (must start with http:// or https://).');
 
-        try {
-            // Ensure the temp directory exists
-            if (!fs.existsSync(tempDir)) {
-                fs.mkdirSync(tempDir, { recursive: true });
-            }
+    await ctx.react('📸');
 
-            // Fetch the screenshot
-            const apiUrl = `https://api.vreden.my.id/api/ssweb?url=${encodeURIComponent(text)}&type=desktop`;
-            const res = await axios.get(apiUrl, { responseType: 'arraybuffer' });
-
-            // Save the image file
-            fs.writeFileSync(filePath, res.data);
-
-            // Send the image and wait for completion
-            await sock.sendMessage(m.from, { 
-                image: { url: filePath },
-                mimetype: "image/png", 
-                caption: 'Here is your screenshot.' 
-            }, { quoted: m });
-
-            // Delete the file after sending
-            fs.unlink(filePath, (err) => {
-                if (err) {
-                    console.error('Error deleting file:', err);
-                } else {
-                    // File deleted successfully
-                }
-            });
-
-        } catch (error) {
-            console.error('Error capturing screenshot:', error);
-            await sock.sendMessage(m.from, { text: 'Failed to capture the screenshot. Please try again later.' }, { quoted: m });
-        }
+    let buf;
+    try {
+      const api = `https://api.vreden.my.id/api/ssweb?url=${encodeURIComponent(url)}&type=desktop`;
+      const res = await axios.get(api, { responseType: 'arraybuffer', timeout: 40_000 });
+      buf = Buffer.from(res.data);
+      if (!buf.length) throw new Error('empty response');
+    } catch (err) {
+      throw new Error(`Screenshot service failed: ${err.message}`);
     }
+
+    await sock.sendMessage(ctx.from, {
+      image: buf,
+      mimetype: 'image/png',
+      caption: `📸 ${url}`,
+    }, { quoted: m });
+  },
 };

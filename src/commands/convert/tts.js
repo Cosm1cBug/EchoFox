@@ -8,30 +8,23 @@
 /**
  * .tts <lang>?
  *
- * Reply to a text message with `.tts` to get an audio voice reply.
- * Optionally pass a 2-letter ISO 639-1 language code (e.g. `.tts fr`) and
- * the bot will translate the text first, then synthesise.
+ * Reply to a text message with `.tts` to get a voice audio reply.
+ * Optional ISO 639-1 code (`.tts fr`) translates the text first.
  *
- * Previous version depended on the abandoned `node-tts-ml` package. We now
- * rely exclusively on `node-gtts` (Google Text-to-Speech, MIT-licensed,
- * still maintained) for all languages — it covers 30+ including ML.
+ * Re-audited from M3 against the new ctx-only contract.
  */
 
-const fs        = require('node:fs');
-const path      = require('node:path');
-const os        = require('node:os');
-const gtts      = require('node-gtts');
+const fs   = require('node:fs');
+const path = require('node:path');
+const os   = require('node:os');
+const gtts = require('node-gtts');
 const translate = require('google-translate-api-x');
-const ffmpeg    = require('fluent-ffmpeg');
-const { promisify } = require('node:util');
-const { pipeline } = require('node:stream/promises');
+const ffmpeg = require('fluent-ffmpeg');
 
 const DEFAULT_LANG = 'en';
-const TEMP_TTL_MS  = 24 * 60 * 60 * 1000;        // delete temp files after 24h
-const MAX_CHARS    = 4000;                        // Google TTS hard cap
+const TEMP_TTL_MS  = 24 * 60 * 60 * 1000;
+const MAX_CHARS    = 4000;
 
-// Languages node-gtts supports — used to validate user input.
-// (List taken from node-gtts source; trim aggressively if you only target a subset.)
 const SUPPORTED_LANGS = new Set([
   'af','ar','bn','bs','ca','cs','cy','da','de','el','en','eo','es','et','fi','fr',
   'gu','hi','hr','hu','hy','id','is','it','ja','jw','km','kn','ko','la','lv','mk',
@@ -40,17 +33,14 @@ const SUPPORTED_LANGS = new Set([
 ]);
 
 function chunkText(text) {
-  // Split on sentence boundaries; coalesce so each chunk ≤ MAX_CHARS.
   const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
-  const chunks    = [];
+  const chunks = [];
   let buf = '';
   for (const s of sentences) {
     if ((buf + s).length > MAX_CHARS) {
       if (buf) chunks.push(buf.trim());
       buf = s;
-    } else {
-      buf += s;
-    }
+    } else { buf += s; }
   }
   if (buf.trim()) chunks.push(buf.trim());
   return chunks;
@@ -60,10 +50,10 @@ function synthesizeChunk(text, lang, outPath) {
   return new Promise((resolve, reject) => {
     try {
       const stream = gtts(lang).stream(text);
-      const file   = fs.createWriteStream(outPath);
+      const file = fs.createWriteStream(outPath);
       stream.pipe(file);
       file.on('finish', () => resolve(outPath));
-      file.on('error', reject);
+      file.on('error',  reject);
       stream.on('error', reject);
     } catch (e) { reject(e); }
   });
@@ -83,36 +73,29 @@ function mergeMp3s(inputs, output) {
 module.exports = {
   name: 'tts',
   alias: ['text2speech', 'speak'],
-  desc: 'Convert quoted text to speech. Optional: 2-letter language code translates first.',
+  desc: 'Convert quoted text to speech. Optional 2-letter language code translates first.',
   category: 'convert',
   cooldown: 5,
   timeout: 90,
 
   async start(sock, m, { ctx, args }) {
-    const text = (ctx.quoted?.message?.conversation
-               || ctx.quoted?.message?.extendedTextMessage?.text
-               || '').trim();
-
+    const text = (ctx.quoted?.text || '').trim();
     if (!text) {
       return ctx.reply('↩️ Reply to a *text* message with `.tts` to get an audio reply.');
     }
 
     let lang = (args[0] || DEFAULT_LANG).toLowerCase();
     if (!SUPPORTED_LANGS.has(lang)) {
-      const sample = ['en', 'hi', 'es', 'fr', 'de', 'ja', 'ko', 'ml', 'ta'].join(', ');
-      return ctx.reply(`Unsupported language *${lang}*. Try one of: ${sample}…`);
+      return ctx.reply(`Unsupported language *${lang}*. Try: en, hi, es, fr, de, ja, ko, ml, ta…`);
     }
 
     let speakText = text;
-
-    // Optional translation step
     if (args[0] && lang !== DEFAULT_LANG) {
       await ctx.react('🌐');
       try {
         const result = await translate(text, { to: lang });
         if (result?.text) speakText = result.text;
       } catch (err) {
-        // soft-fail: synthesize original text in target voice
         ctx.logger?.warn?.({ err }, 'tts: translation failed; speaking original text');
       }
     }
@@ -122,9 +105,9 @@ module.exports = {
     const tmpDir = path.join(os.tmpdir(), 'echofox-tts');
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
-    const ts      = Date.now();
-    const chunks  = chunkText(speakText);
-    const parts   = [];
+    const ts = Date.now();
+    const chunks = chunkText(speakText);
+    const parts  = [];
 
     try {
       for (let i = 0; i < chunks.length; i++) {
@@ -147,13 +130,10 @@ module.exports = {
       }, { quoted: m });
 
       await ctx.react('✅');
-
-      // Schedule cleanup
       setTimeout(() => fs.promises.unlink(final).catch(() => {}), TEMP_TTL_MS);
     } catch (err) {
-      // Clean up any partial chunks
       parts.forEach((p) => fs.promises.unlink(p).catch(() => {}));
-      throw err;       // let commandRunner do the user-facing error reply
+      throw err;
     }
   },
 };

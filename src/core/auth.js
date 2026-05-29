@@ -1,145 +1,199 @@
-const { initAuthCreds, BufferJSON, proto } = require('@whiskeysockets/baileys');
-const Database = require('better-sqlite3');
-const Redis = require('ioredis');
-const fs = require('fs');
-const path = require('path');
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE. @license AGPL-3.0
+ */
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
+'use strict';
 
-const writeData = (data, file) => fs.writeFileSync(file, JSON.stringify(data, BufferJSON.replacer));
-const readData = (file) => {
-    try {
-        return JSON.parse(fs.readFileSync(file, { encoding: 'utf-8' }), BufferJSON.reviver);
-    } catch {
-        return null;
-    }
-};
+/**
+ * Pluggable auth-state backends for Baileys.
+ *
+ *   useRedisAuth(redisUrl, sessionName)
+ *   useSqliteAuth(sqlitePath, sessionName)
+ *   usePostgresAuth(pgUrl, sessionName)
+ *
+ *   Each returns { state, saveCreds, clear } matching the contract that
+ *   Baileys' makeWASocket({ auth: { creds, keys } }) expects, plus a
+ *   `clear()` we call when the session is invalidated (logged-out, 401).
+ *
+ *   All three implementations share the same on-the-wire serialisation
+ *   (`BufferJSON.replacer/reviver`) and the same key-naming convention
+ *   (`<sessionName>:<type>-<id>` or table column equivalents) so a
+ *   session can be migrated between backends with a simple data-copy.
+ */
 
-// ----------------------------------------------------
-// Redis Auth State
-// ----------------------------------------------------
-async function useRedisAuth(redisUrl, sessionName) {
-    const client = new Redis(redisUrl);
-    
-    const read = async (key) => {
-        const val = await client.get(`${sessionName}:${key}`);
-        return val ? JSON.parse(val, BufferJSON.reviver) : null;
-    };
-    const write = async (data, key) => {
-        await client.set(`${sessionName}:${key}`, JSON.stringify(data, BufferJSON.replacer));
-    };
-    const remove = async (key) => {
-        await client.del(`${sessionName}:${key}`);
-    };
+const {
+  initAuthCreds,
+  BufferJSON,
+  proto,
+} = require('@whiskeysockets/baileys');
+const fs   = require('node:fs');
+const path = require('node:path');
 
-    let creds = await read('creds');
-    if (!creds) {
-        creds = initAuthCreds();
-        await write(creds, 'creds');
-    }
+// ─── helpers ─────────────────────────────────────────────────────────────
+function serialise(value)   { return JSON.stringify(value, BufferJSON.replacer); }
+function deserialise(value) { return value == null ? null : JSON.parse(value, BufferJSON.reviver); }
 
-    return {
-        state: {
-            creds,
-            keys: {
-                get: async (type, ids) => {
-                    const data = {};
-                    await Promise.all(ids.map(async id => {
-                        let value = await read(`${type}-${id}`);
-                        if (type === 'app-state-sync-key' && value) {
-                            value = proto.Message.AppStateSyncKeyData.fromObject(value);
-                        }
-                        data[id] = value;
-                    }));
-                    return data;
-                },
-                set: async (data) => {
-                    const tasks = [];
-                    for (const category of Object.keys(data)) {
-                        for (const id of Object.keys(data[category])) {
-                            const value = data[category][id];
-                            const key = `${category}-${id}`;
-                            tasks.push(value ? write(value, key) : remove(key));
-                        }
-                    }
-                    await Promise.all(tasks);
-                }
-            }
-        },
-        saveCreds: () => write(creds, 'creds'),
-        clear: async () => {
-            const keys = await client.keys(`${sessionName}:*`);
-            if (keys.length) await client.del(keys);
+/**
+ * Standard `keys` wrapper used by all three backends.
+ * Given `read(key) → any`, `write(value, key) → void`, `remove(key) → void`
+ * we build the get/set object Baileys expects.
+ */
+function makeKeysWrapper({ read, write, remove }) {
+  return {
+    get: async (type, ids) => {
+      const data = {};
+      await Promise.all(ids.map(async (id) => {
+        let value = await read(`${type}-${id}`);
+        if (type === 'app-state-sync-key' && value) {
+          value = proto.Message.AppStateSyncKeyData.fromObject(value);
         }
-    };
+        data[id] = value;
+      }));
+      return data;
+    },
+    set: async (data) => {
+      const ops = [];
+      for (const category of Object.keys(data)) {
+        for (const id of Object.keys(data[category])) {
+          const value = data[category][id];
+          const key   = `${category}-${id}`;
+          ops.push(value ? write(value, key) : remove(key));
+        }
+      }
+      await Promise.all(ops);
+    },
+  };
 }
 
-// ----------------------------------------------------
-// SQLite Auth State
-// ----------------------------------------------------
+// ════════════════════════════════════════════════════════════════════════
+// Redis
+// ════════════════════════════════════════════════════════════════════════
+async function useRedisAuth(redisUrl, sessionName) {
+  const Redis  = require('ioredis');
+  const client = new Redis(redisUrl);
+  const prefix = `${sessionName}:`;
+
+  const read   = async (key) => deserialise(await client.get(prefix + key));
+  const write  = async (value, key) => client.set(prefix + key, serialise(value));
+  const remove = async (key) => client.del(prefix + key);
+
+  let creds = await read('creds');
+  if (!creds) {
+    creds = initAuthCreds();
+    await write(creds, 'creds');
+  }
+
+  return {
+    state: { creds, keys: makeKeysWrapper({ read, write, remove }) },
+    saveCreds: () => write(creds, 'creds'),
+    clear: async () => {
+      const keys = await client.keys(prefix + '*');
+      if (keys.length) await client.del(keys);
+    },
+    close: () => client.quit(),
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// SQLite
+// ════════════════════════════════════════════════════════════════════════
 async function useSqliteAuth(sqlitePath, sessionName) {
-    const dir = path.dirname(sqlitePath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const Database = require('better-sqlite3');
+  const dir = path.dirname(sqlitePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    const db = new Database(sqlitePath);
-    db.exec(`CREATE TABLE IF NOT EXISTS auth (
-        session TEXT,
-        key TEXT,
-        value TEXT,
-        PRIMARY KEY (session, key)
-    )`);
+  const db = new Database(sqlitePath);
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS auth (
+      session TEXT NOT NULL,
+      key     TEXT NOT NULL,
+      value   TEXT,
+      PRIMARY KEY (session, key)
+    );
+  `);
 
-    const readStmt = db.prepare(`SELECT value FROM auth WHERE session = ? AND key = ?`);
-    const writeStmt = db.prepare(`INSERT OR REPLACE INTO auth (session, key, value) VALUES (?, ?, ?)`);
-    const delStmt = db.prepare(`DELETE FROM auth WHERE session = ? AND key = ?`);
+  const stmts = {
+    get:    db.prepare('SELECT value FROM auth WHERE session = ? AND key = ?'),
+    set:    db.prepare('INSERT OR REPLACE INTO auth (session, key, value) VALUES (?, ?, ?)'),
+    del:    db.prepare('DELETE FROM auth WHERE session = ? AND key = ?'),
+    delAll: db.prepare('DELETE FROM auth WHERE session = ?'),
+  };
 
-    const read = (key) => {
-        const row = readStmt.get(sessionName, key);
-        return row ? JSON.parse(row.value, BufferJSON.reviver) : null;
-    };
-    const write = (data, key) => {
-        writeStmt.run(sessionName, key, JSON.stringify(data, BufferJSON.replacer));
-    };
-    const remove = (key) => {
-        delStmt.run(sessionName, key);
-    };
+  const read   = async (key) => {
+    const row = stmts.get.get(sessionName, key);
+    return row?.value ? deserialise(row.value) : null;
+  };
+  const write  = async (value, key) => { stmts.set.run(sessionName, key, serialise(value)); };
+  const remove = async (key) => { stmts.del.run(sessionName, key); };
 
-    let creds = read('creds');
-    if (!creds) {
-        creds = initAuthCreds();
-        write(creds, 'creds');
-    }
+  let creds = await read('creds');
+  if (!creds) {
+    creds = initAuthCreds();
+    await write(creds, 'creds');
+  }
 
-    return {
-        state: {
-            creds,
-            keys: {
-                get: (type, ids) => {
-                    const data = {};
-                    for (const id of ids) {
-                        let value = read(`${type}-${id}`);
-                        if (type === 'app-state-sync-key' && value) {
-                            value = proto.Message.AppStateSyncKeyData.fromObject(value);
-                        }
-                        data[id] = value;
-                    }
-                    return data;
-                },
-                set: (data) => {
-                    db.transaction(() => {
-                        for (const category of Object.keys(data)) {
-                            for (const id of Object.keys(data[category])) {
-                                const value = data[category][id];
-                                const key = `${category}-${id}`;
-                                if (value) write(value, key);
-                                else remove(key);
-                            }
-                        }
-                    })();
-                }
-            }
-        },
-        saveCreds: () => write(creds, 'creds'),
-        clear: () => db.prepare(`DELETE FROM auth WHERE session = ?`).run(sessionName)
-    };
+  return {
+    state: { creds, keys: makeKeysWrapper({ read, write, remove }) },
+    saveCreds: () => write(creds, 'creds'),
+    clear: async () => { stmts.delAll.run(sessionName); },
+    close: () => db.close(),
+  };
 }
 
-module.exports = { useRedisAuth, useSqliteAuth };
+// ════════════════════════════════════════════════════════════════════════
+// Postgres
+// ════════════════════════════════════════════════════════════════════════
+async function usePostgresAuth(pgUrl, sessionName) {
+  const { Pool } = require('pg');
+  const pool = new Pool({ connectionString: pgUrl });
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auth (
+      session TEXT NOT NULL,
+      key     TEXT NOT NULL,
+      value   TEXT,
+      PRIMARY KEY (session, key)
+    );
+  `);
+
+  const read = async (key) => {
+    const r = await pool.query(
+      'SELECT value FROM auth WHERE session = $1 AND key = $2',
+      [sessionName, key],
+    );
+    return r.rows[0]?.value ? deserialise(r.rows[0].value) : null;
+  };
+  const write = async (value, key) => {
+    await pool.query(
+      `INSERT INTO auth (session, key, value) VALUES ($1, $2, $3)
+       ON CONFLICT (session, key) DO UPDATE SET value = EXCLUDED.value`,
+      [sessionName, key, serialise(value)],
+    );
+  };
+  const remove = async (key) => {
+    await pool.query('DELETE FROM auth WHERE session = $1 AND key = $2', [sessionName, key]);
+  };
+
+  let creds = await read('creds');
+  if (!creds) {
+    creds = initAuthCreds();
+    await write(creds, 'creds');
+  }
+
+  return {
+    state: { creds, keys: makeKeysWrapper({ read, write, remove }) },
+    saveCreds: () => write(creds, 'creds'),
+    clear: async () => { await pool.query('DELETE FROM auth WHERE session = $1', [sessionName]); },
+    close: () => pool.end(),
+  };
+}
+
+module.exports = { useRedisAuth, useSqliteAuth, usePostgresAuth };

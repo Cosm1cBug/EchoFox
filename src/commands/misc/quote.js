@@ -1,23 +1,37 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
+'use strict';
 
-const fs = require('fs');
-const { config }  = require('../../config.js');
+/**
+ * .quote
+ *
+ * Fetches a random inspirational quote from the public ZenQuotes API
+ * (no key required, free for personal use, single-bot-friendly).
+ *
+ *   Replaces the original `quote.js` which was actually a half-finished
+ *   language detector with a hardcoded API key — leak risk + wrong name.
+ */
+
+const axios = require('axios');
 
 module.exports = {
-    name: 'dlang',
-    alias: ['mov'],
-    //type: "entertainment",
-    start: async(sock, m, { command, prefix, text }) => {
-        const DetectLanguage = require('detectlanguage');
-        var detectLang = new DetectLanguage('fd575662941c54af6f308031f3ff395f');
-        var cntxt = text;
-        console.log(text)
-        detectLang.detect(text).then(function(result) {
-            console.log(result)
-            console.log(JSON.stringify(result));
+  name: 'quote',
+  alias: ['q', 'inspire'],
+  desc: 'Fetch a random inspirational quote',
+  category: 'misc',
+  cooldown: 5,
 
-        });
+  async start(sock, m, { ctx }) {
+    try {
+      const { data } = await axios.get('https://zenquotes.io/api/random', { timeout: 8000 });
+      const q = Array.isArray(data) ? data[0] : data;
+      if (!q?.q || !q?.a) throw new Error('upstream returned no quote');
+      await ctx.reply(`💬 _"${q.q}"_\n\n— *${q.a}*`);
+    } catch (err) {
+      throw new Error(`Could not fetch quote: ${err.message}`);
     }
-}
-
-
-
+  },
+};

@@ -8,39 +8,36 @@
 /**
  * .sendstory
  *
- * Reply to a WhatsApp Status (story) image/video with `.sendstory` (or
- * just `send` while quoting it in any private chat) to receive the
- * original media in DM. Useful for archiving stories without screenshots.
- *
- * Originally this was a passive listener inside messages.upsert; the new
- * router makes it a proper command for clarity.
+ * Reply to a quoted *Status* (story) image/video to receive the original
+ * media in DM. Uses ctx.downloadMsg() which already handles the quoted-
+ * media case.
  */
-const { downloadMediaMessage, generateWAMessage, getContentType } =
-  require('@whiskeysockets/baileys');
-const pino = require('pino');
 
-const quietLogger = pino({ level: 'silent' });
+const { getContentType } = require('@whiskeysockets/baileys');
 
 module.exports = {
   name: 'sendstory',
-  alias: ['send', 'savestory'],
-  desc: 'Reply to a quoted status (story) to get the media in DM',
+  alias: ['savestory', 'sst'],
+  desc: 'Save a quoted Status (story) image/video',
   category: 'misc',
+  cooldown: 5,
+  timeout: 60,
 
   async start(sock, m, { ctx }) {
     if (!ctx.quoted) {
-      return ctx.reply(
-        '↩️ Reply to a *Status* (story) image/video with this command to receive it.',
-      );
+      return ctx.reply('↩️ Reply to a *Status* image/video with this command.');
     }
 
-    // Must originate from status@broadcast (or have status participant)
+    // A status quote usually has contextInfo.remoteJid === 'status@broadcast'
+    // OR contextInfo.participant pointing to the story author.
+    const innerCtx = ctx.raw?.message?.extendedTextMessage?.contextInfo
+                  || ctx.raw?.message?.[ctx.mtype]?.contextInfo;
     const fromStatus =
-      ctx.raw?.message?.extendedTextMessage?.contextInfo?.remoteJid === 'status@broadcast' ||
-      ctx.raw?.message?.extendedTextMessage?.contextInfo?.participant;
+      innerCtx?.remoteJid === 'status@broadcast' ||
+      !!innerCtx?.participant;
 
     if (!fromStatus) {
-      return ctx.reply('🚫 The quoted message does not look like a Status.');
+      return ctx.reply('🚫 The quoted message does not look like a Status update.');
     }
 
     const quotedType = ctx.quoted.type;
@@ -50,38 +47,19 @@ module.exports = {
 
     await ctx.react('⏳');
 
+    let buf;
     try {
-      const ctxInfo = ctx.raw.message.extendedTextMessage.contextInfo;
-      const fakeMsg = await generateWAMessage(
-        ctxInfo.participant,
-        {
-          forward: {
-            key: { id: ctxInfo.stanzaId, remoteJid: ctxInfo.participant },
-            message: ctx.quoted.message,
-          },
-        },
-        { logger: quietLogger },
-      );
-
-      const buffer = await downloadMediaMessage(
-        fakeMsg,
-        'buffer',
-        {},
-        {
-          reuploadRequest: sock.updateMediaMessage,
-          logger: quietLogger,
-        },
-      );
-
-      const payload = quotedType === 'imageMessage'
-        ? { image: buffer, caption: '📸 Saved from status' }
-        : { video: buffer, caption: '🎞️ Saved from status' };
-
-      await sock.sendMessage(ctx.from, payload, { quoted: m });
-      await ctx.react('✅');
+      buf = await ctx.downloadMsg();
     } catch (err) {
-      await ctx.react('❌');
-      return ctx.reply(`Failed to fetch status media: ${err.message}`);
+      throw new Error(`Could not download status media: ${err.message}`);
     }
+
+    const caption = quotedType === 'imageMessage' ? '📸 Saved from status' : '🎞️ Saved from status';
+    const payload = quotedType === 'imageMessage'
+      ? { image: buf, caption }
+      : { video: buf, caption };
+
+    await sock.sendMessage(ctx.from, payload, { quoted: m });
+    await ctx.react('✅');
   },
 };

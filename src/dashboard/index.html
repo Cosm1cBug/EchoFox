@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>__BOT_NAME__ Dashboard</title>
+<style>
+  :root {
+    --bg:        #0f1115;
+    --panel:     #161b22;
+    --panel2:    #1f2530;
+    --text:      #e6edf3;
+    --muted:     #8b949e;
+    --accent:    #12c2e9;
+    --accent2:   #c471ed;
+    --good:      #3fb950;
+    --warn:      #d29922;
+    --bad:       #f85149;
+    --border:    #30363d;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6;
+      --text:#1f2328; --muted:#57606a; --border:#d0d7de;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:14px;line-height:1.45}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  header{display:flex;align-items:baseline;justify-content:space-between;
+    padding:20px 24px;border-bottom:1px solid var(--border);background:var(--panel)}
+  header h1{margin:0;font-size:18px;font-weight:600;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    letter-spacing:.5px}
+  header .meta{color:var(--muted);font-size:12px}
+  nav{display:flex;gap:4px;padding:8px 24px;border-bottom:1px solid var(--border);
+    background:var(--panel2);overflow-x:auto;white-space:nowrap}
+  nav button{background:transparent;border:1px solid transparent;color:var(--muted);
+    padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+  nav button:hover{color:var(--text);background:var(--panel)}
+  nav button.active{color:var(--text);background:var(--panel);border-color:var(--border)}
+  main{padding:24px;max-width:1400px;margin:0 auto}
+  .tile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}
+  .tile{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px}
+  .tile .label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+  .tile .value{font-size:24px;font-weight:600;margin-top:6px;color:var(--text);
+    font-variant-numeric:tabular-nums}
+  .tile .sub{color:var(--muted);font-size:11px;margin-top:4px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;
+    padding:18px;margin-bottom:18px}
+  .panel h2{margin:0 0 14px 0;font-size:14px;color:var(--text);font-weight:600;
+    text-transform:uppercase;letter-spacing:.6px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);
+    vertical-align:top}
+  th{color:var(--muted);font-weight:500;font-size:11px;
+    text-transform:uppercase;letter-spacing:.5px}
+  tr:last-child td{border-bottom:none}
+  tbody tr{cursor:default}
+  tbody tr.clickable{cursor:pointer}
+  tbody tr.clickable:hover{background:var(--panel2)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;
+    font-size:11px;font-weight:500;background:var(--panel2);color:var(--muted)}
+  .badge.add,.badge.join,.badge.approve,.badge.promote{background:rgba(63,185,80,.15);color:var(--good)}
+  .badge.leave,.badge.demote{background:rgba(210,153,34,.15);color:var(--warn)}
+  .badge.kick,.badge.reject{background:rgba(248,81,73,.15);color:var(--bad)}
+  .empty{color:var(--muted);font-style:italic;padding:14px;text-align:center}
+  .row-flex{display:flex;gap:14px;flex-wrap:wrap}
+  .row-flex>*{flex:1;min-width:300px}
+  .pill{font-size:11px;color:var(--muted);background:var(--panel2);
+    padding:2px 8px;border-radius:10px;margin-left:8px}
+  footer{padding:14px 24px;color:var(--muted);font-size:11px;text-align:center;
+    border-top:1px solid var(--border);margin-top:24px}
+  .err{color:var(--bad);font-size:12px;margin-top:8px}
+  button.back{background:var(--panel2);border:1px solid var(--border);color:var(--text);
+    padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:12px}
+  .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🦊 __BOT_NAME__ Dashboard</h1>
+  <div class="meta">v__VERSION__ · <code>__BACKEND__</code> · <span id="health-dot">●</span> <span id="health-text">…</span></div>
+</header>
+
+<nav>
+  <button data-view="overview" class="active">Overview</button>
+  <button data-view="groups">Groups</button>
+  <button data-view="metrics">Metrics</button>
+</nav>
+
+<main>
+  <div id="view-overview"></div>
+  <div id="view-groups" hidden></div>
+  <div id="view-metrics" hidden></div>
+</main>
+
+<footer>
+  Auto-refreshing every 5 s · <a href="https://github.com/Cosm1cBug/EchoFox">Cosm1cBug/EchoFox</a>
+</footer>
+
+<script>
+'use strict';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────
+const $ = (s, root=document) => root.querySelector(s);
+const fmt = (n) => typeof n === 'number' ? n.toLocaleString() : (n ?? '—');
+const fmtDur = (s) => {
+  if (!s || s < 0) return '—';
+  const d = Math.floor(s/86400), h = Math.floor((s%86400)/3600);
+  const m = Math.floor((s%3600)/60), sec = Math.floor(s%60);
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m ${sec}s`;
+  return `${sec}s`;
+};
+const fmtTs = (ts) => ts ? new Date(ts*1000).toLocaleString() : '—';
+const fmtJid = (jid) => (jid||'').split('@')[0];
+const esc = (s) => String(s ?? '')
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+async function getJson(path) {
+  const r = await fetch(path, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
+  return r.json();
+}
+
+// ─── Nav ────────────────────────────────────────────────────────────────
+const views = ['overview','groups','metrics'];
+document.querySelectorAll('nav button').forEach((b) => {
+  b.addEventListener('click', () => {
+    const v = b.dataset.view;
+    document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x===b));
+    views.forEach(name => $(`#view-${name}`).hidden = (name !== v));
+    refresh();
+  });
+});
+
+// ─── Header health pulse ────────────────────────────────────────────────
+async function pingHealth() {
+  try {
+    const h = await getJson('/api/health');
+    $('#health-dot').style.color = 'var(--good)';
+    $('#health-text').textContent = `up · ${fmtDur(h.uptime)}`;
+  } catch (_) {
+    $('#health-dot').style.color = 'var(--bad)';
+    $('#health-text').textContent = 'down';
+  }
+}
+
+// ─── Overview view ──────────────────────────────────────────────────────
+async function renderOverview() {
+  const root = $('#view-overview');
+  let snap;
+  try { snap = await getJson('/api/stats'); }
+  catch (e) { root.innerHTML = `<div class="empty">Failed to load stats: ${esc(e.message)}</div>`; return; }
+
+  const c = snap.counters || {};
+  const g = snap.gauges   || {};
+  const tile = (label, value, sub) => `
+    <div class="tile">
+      <div class="label">${esc(label)}</div>
+      <div class="value">${esc(fmt(value))}</div>
+      ${sub ? `<div class="sub">${esc(sub)}</div>` : ''}
+    </div>`;
+
+  root.innerHTML = `
+    <div class="tile-grid">
+      ${tile('Uptime',          fmtDur(g.bot_uptime_seconds))}
+      ${tile('Groups',          g.groups_count)}
+      ${tile('Unique users',    g.unique_users_seen)}
+      ${tile('Messages in',     c.messages_received_total)}
+      ${tile('Messages out',    c.messages_sent_total)}
+      ${tile('Commands run',    c.commands_total)}
+      ${tile('Cmd success',     c.commands_success_total, c.commands_failed_total ? `${c.commands_failed_total} failed` : null)}
+      ${tile('Cmd timeouts',    c.commands_timeout_total || 0)}
+      ${tile('Media down',      c.media_downloaded_total)}
+      ${tile('Media up',        c.media_uploaded_total)}
+      ${tile('Rate-limit hits', c.rate_limit_hits_total || 0)}
+      ${tile('Cooldown hits',   c.cooldown_hits_total   || 0)}
+    </div>
+    <div class="panel">
+      <h2>Top commands</h2>
+      ${renderTopCommands(c)}
+    </div>`;
+}
+
+function renderTopCommands(counters) {
+  const rows = Object.entries(counters)
+    .filter(([k]) => k.startsWith('commands_per_name__'))
+    .map(([k, v]) => ({ name: k.replace('commands_per_name__',''), count: Number(v) }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+  if (!rows.length) return '<div class="empty">No commands have been executed yet.</div>';
+  return `<table>
+    <thead><tr><th>Command</th><th style="text-align:right">Invocations</th></tr></thead>
+    <tbody>${rows.map(r => `<tr><td><code>.${esc(r.name)}</code></td><td style="text-align:right">${fmt(r.count)}</td></tr>`).join('')}</tbody>
+  </table>`;
+}
+
+// ─── Groups view ────────────────────────────────────────────────────────
+let currentGroupJid = null;
+
+async function renderGroups() {
+  const root = $('#view-groups');
+  if (currentGroupJid) return renderGroupDetail(currentGroupJid);
+
+  let list;
+  try { list = await getJson('/api/groups'); }
+  catch (e) { root.innerHTML = `<div class="empty">Failed: ${esc(e.message)}</div>`; return; }
+
+  if (!list.length) {
+    root.innerHTML = '<div class="panel empty">No groups synced yet. Add the bot to a group, then wait a few seconds.</div>';
+    return;
+  }
+
+  root.innerHTML = `
+    <div class="panel">
+      <h2>Groups <span class="pill">${list.length}</span></h2>
+      <table>
+        <thead><tr><th>Subject</th><th>JID</th><th style="text-align:right">Participants</th></tr></thead>
+        <tbody>${list.map(g => `
+          <tr class="clickable" data-jid="${esc(g.jid)}">
+            <td>${esc(g.subject)}</td>
+            <td class="truncate"><code>${esc(g.jid)}</code></td>
+            <td style="text-align:right">${fmt(g.participantCount)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  root.querySelectorAll('tr.clickable').forEach((tr) => {
+    tr.addEventListener('click', () => {
+      currentGroupJid = tr.dataset.jid;
+      renderGroupDetail(currentGroupJid);
+    });
+  });
+}
+
+async function renderGroupDetail(jid) {
+  const root = $('#view-groups');
+  root.innerHTML = `<button class="back">← Back to groups</button>
+    <div class="panel"><h2>Loading…</h2></div>`;
+  root.querySelector('.back').addEventListener('click', () => {
+    currentGroupJid = null;
+    renderGroups();
+  });
+
+  let meta, current, history;
+  try {
+    [meta, current, history] = await Promise.all([
+      getJson('/api/groups/' + encodeURIComponent(jid)),
+      getJson('/api/groups/' + encodeURIComponent(jid) + '/participants'),
+      getJson('/api/groups/' + encodeURIComponent(jid) + '/participants/history?limit=500'),
+    ]);
+  } catch (e) {
+    root.innerHTML = `<button class="back">← Back</button>
+      <div class="empty err">Failed: ${esc(e.message)}</div>`;
+    root.querySelector('.back').addEventListener('click', () => {
+      currentGroupJid = null;
+      renderGroups();
+    });
+    return;
+  }
+
+  const adminMap = new Map((meta.participants || []).map(p => [p.id, p.admin]));
+
+  root.innerHTML = `
+    <button class="back">← Back to groups</button>
+    <div class="panel">
+      <h2>${esc(meta.subject || '(unnamed)')} <span class="pill">${esc(jid)}</span></h2>
+      <div style="color:var(--muted);font-size:12px">
+        Created ${meta.creation ? new Date(meta.creation*1000).toLocaleDateString() : '?'}
+        · Owner ${esc(fmtJid(meta.owner))}
+        · ${(meta.participants||[]).length} participants now
+      </div>
+      ${meta.desc ? `<div style="margin-top:10px;color:var(--muted)"><em>${esc(meta.desc).slice(0,300)}</em></div>` : ''}
+    </div>
+
+    <div class="row-flex">
+      <div class="panel">
+        <h2>Current participants <span class="pill">${current.length}</span></h2>
+        ${current.length ? `<table>
+          <thead><tr><th>JID</th><th>Role</th><th>Status</th><th>Last event</th></tr></thead>
+          <tbody>${current.map(p => `
+            <tr>
+              <td><code>${esc(fmtJid(p.participant))}</code></td>
+              <td>${adminMap.get(p.participant) ? `<span class="badge promote">${esc(adminMap.get(p.participant))}</span>` : '—'}</td>
+              <td><span class="badge ${esc(p.last_action)}">${esc(p.last_action)}</span></td>
+              <td>${esc(fmtTs(p.last_ts))}</td>
+            </tr>`).join('')}</tbody>
+        </table>` : '<div class="empty">No participants in store yet — wait for the next change event.</div>'}
+      </div>
+
+      <div class="panel">
+        <h2>Event history <span class="pill">${history.length}</span></h2>
+        ${history.length ? `<table>
+          <thead><tr><th>When</th><th>Who</th><th>Action</th><th>By</th></tr></thead>
+          <tbody>${history.map(ev => `
+            <tr>
+              <td>${esc(fmtTs(ev.ts))}</td>
+              <td><code>${esc(fmtJid(ev.participant))}</code></td>
+              <td><span class="badge ${esc(ev.action)}">${esc(ev.action)}</span></td>
+              <td>${ev.actor ? `<code>${esc(fmtJid(ev.actor))}</code>` : '—'}</td>
+            </tr>`).join('')}</tbody>
+        </table>` : '<div class="empty">No participant events recorded yet.</div>'}
+      </div>
+    </div>`;
+
+  root.querySelector('.back').addEventListener('click', () => {
+    currentGroupJid = null;
+    renderGroups();
+  });
+}
+
+// ─── Metrics view (raw dump) ───────────────────────────────────────────
+async function renderMetrics() {
+  const root = $('#view-metrics');
+  let snap;
+  try { snap = await getJson('/api/stats'); }
+  catch (e) { root.innerHTML = `<div class="empty err">Failed: ${esc(e.message)}</div>`; return; }
+
+  const cRows = Object.entries(snap.counters || {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `<tr><td><code>${esc(k)}</code></td><td style="text-align:right">${fmt(Number(v))}</td></tr>`)
+    .join('') || '<tr><td colspan="2" class="empty">No counters yet.</td></tr>';
+
+  const gRows = Object.entries(snap.gauges || {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `<tr><td><code>${esc(k)}</code></td><td style="text-align:right">${fmt(Number(v))}</td></tr>`)
+    .join('') || '<tr><td colspan="2" class="empty">No gauges yet.</td></tr>';
+
+  root.innerHTML = `
+    <div class="row-flex">
+      <div class="panel">
+        <h2>Counters</h2>
+        <table><thead><tr><th>Key</th><th style="text-align:right">Value</th></tr></thead>
+          <tbody>${cRows}</tbody></table>
+      </div>
+      <div class="panel">
+        <h2>Gauges</h2>
+        <table><thead><tr><th>Key</th><th style="text-align:right">Value</th></tr></thead>
+          <tbody>${gRows}</tbody></table>
+      </div>
+    </div>`;
+}
+
+// ─── Refresh loop ──────────────────────────────────────────────────────
+function refresh() {
+  pingHealth();
+  const active = document.querySelector('nav button.active').dataset.view;
+  if (active === 'overview') renderOverview();
+  else if (active === 'groups')  renderGroups();
+  else if (active === 'metrics') renderMetrics();
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

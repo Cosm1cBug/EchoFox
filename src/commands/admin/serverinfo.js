@@ -1,52 +1,76 @@
-const { runtime } = require('../../lib/Func');
-const { performance } = require('perf_hooks');
-const os = require('os');
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
+'use strict';
+
+/**
+ * .serverinfo (admin)
+ *
+ * Reports host + process vitals. Useful for verifying which machine the
+ * bot is running on when you have multiple deployments.
+ */
+
+const os = require('node:os');
+const { runtime: humanDuration } = require('../../lib/Func');
+
+function formatBytes(bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (Math.abs(bytes) >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+  return `${bytes.toFixed(2)} ${units[i]}`;
+}
 
 module.exports = {
-    name: 'serverinfo',
-    alias: ['sinfo'], 
-    type: 'admin',
-    desc: 'Check server status.',
-    start: async (sock, m) => {
-        const startTime = performance.now();   
-        const endTime = performance.now();
-        const pingTime = endTime - startTime; 
+  name: 'serverinfo',
+  alias: ['sinfo', 'host'],
+  desc: '(admin) Show host + process vitals',
+  category: 'admin',
+  admin: true,
+  noLimit: true,
 
-        let txt = '`</> Server Details </>`\n\n'
-            txt += '`Host Info`\n\n'
-            txt += `*- Hostname :* ${os.hostname()}\n`
-            txt += `*- Platform :* ${os.platform()}\n`
-            txt += `*- OS :* ${os.version()}\n`
-            txt += `*- Arch :* ${os.arch()}\n\n`
-            txt += '`Memory Info`\n\n'
-            txt += `*- Total :* ${formatSize(os.totalmem())}\n`
-            txt += `*- Used :* ${formatSize(os.totalmem() - os.freemem())}\n`
-            txt += `*- Free :* ${formatSize(os.freemem())}\n\n`
-            txt += '`Runtime`\n\n'
-            txt += `*- OS :*\n${runtime(os.uptime())}\n`
-            txt += `*- Bot:*\n${runtime(process.uptime())}\n\n`
-            txt += '`Ping`\n\n'
-            txt += `*- Response time:* ${pingTime.toFixed(2)}Ms\n\n> © 2025 Team EchoFox`
+  async start(sock, m, { ctx, config }) {
+    const t0 = Date.now();
+    const mem = process.memoryUsage();
+    const load = os.loadavg();
 
-        await sock.sendMessage(m.key.remoteJid, { text: txt }, { quoted: m });
-    } 
-}
+    const lines = [
+      '`</> Server Details </>`',
+      '',
+      '`Host`',
+      `*Hostname:* ${os.hostname()}`,
+      `*Platform:* ${os.platform()} ${os.release()}`,
+      `*Arch:*     ${os.arch()}`,
+      `*CPUs:*     ${os.cpus().length}× ${os.cpus()[0]?.model || 'unknown'}`,
+      `*Load:*     ${load.map((n) => n.toFixed(2)).join(' / ')} (1/5/15 m)`,
+      '',
+      '`Memory (Host)`',
+      `*Total:* ${formatBytes(os.totalmem())}`,
+      `*Used:*  ${formatBytes(os.totalmem() - os.freemem())}`,
+      `*Free:*  ${formatBytes(os.freemem())}`,
+      '',
+      '`Memory (Bot Process)`',
+      `*RSS:*       ${formatBytes(mem.rss)}`,
+      `*Heap used:* ${formatBytes(mem.heapUsed)} / ${formatBytes(mem.heapTotal)}`,
+      `*External:*  ${formatBytes(mem.external)}`,
+      '',
+      '`Runtime`',
+      `*Node:*  ${process.version}`,
+      `*Host:*  ${humanDuration(os.uptime())}`,
+      `*Bot:*   ${humanDuration(process.uptime())}`,
+      `*PID:*   ${process.pid}`,
+      '',
+      '`Backends`',
+      `*Store:* ${config.storeDB.type}`,
+      `*Auth:*  ${config.auth.method}`,
+      `*Login:* ${config.login.type}`,
+      '',
+      `*Round-trip:* ${Date.now() - t0} ms`,
+      '',
+      '> EchoFox',
+    ];
 
-function formatSize(bytes, si = true, dp = 2) {
-	const thresh = si ? 1000 : 1024;
-
-	if (Math.abs(bytes) < thresh) {
-		return `${bytes} B`;
-	}
-
-	const units = si ? ['KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'] : ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
-	let u = -1;
-	const r = 10 ** dp;
-
-	do {
-		bytes /= thresh;
-		u++;
-	} while (Math.round(Math.abs(bytes) * r) / r >= thresh && u < units.length - 1);
-
-	return `${bytes.toFixed(dp)} ${units[u]}`;
-}
+    await ctx.reply(lines.join('\n'));
+  },
+};

@@ -1,82 +1,170 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE. @license AGPL-3.0
+ */
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
+'use strict';
+
+/**
+ * EchoFox web dashboard.
+ *
+ *   Enable with config.dashboard.enabled = true. Listens on
+ *   config.dashboard.port (default 3001). Protected with HTTP Basic Auth
+ *   using config.dashboard.username / config.dashboard.password.
+ *
+ *   Routes:
+ *     GET  /                                         HTML dashboard (single page)
+ *     GET  /api/health                               { ok, uptime, version }
+ *     GET  /api/stats                                { counters, gauges, startedAt }
+ *     GET  /api/groups                               [{ jid, subject, participantCount }]
+ *     GET  /api/groups/:jid                          full group metadata
+ *     GET  /api/groups/:jid/participants             current participants
+ *     GET  /api/groups/:jid/participants/history     full event log (paginated)
+ *
+ *   The HTML page calls the JSON endpoints every 5 s and renders tiles +
+ *   tables with vanilla JS — no external CDN, no build step.
+ */
+
 const express = require('express');
+const path    = require('node:path');
+const fs      = require('node:fs');
+
+const metrics = require('../services/metrics');
+const logger  = require('../core/logger').child({ mod: 'dashboard' });
+
+const PKG = (() => {
+  try { return require(path.join(__dirname, '..', '..', 'package.json')); }
+  catch { return { version: 'unknown' }; }
+})();
+
+// ─── HTML page (single-file SPA, no external deps) ──────────────────────
+const HTML = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+
+// ─── Basic Auth middleware ──────────────────────────────────────────────
+function basicAuth(username, password) {
+  const expected = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+  return (req, res, next) => {
+    const got = req.headers.authorization;
+    if (got && got === expected) return next();
+    res.set('WWW-Authenticate', 'Basic realm="EchoFox Dashboard", charset="UTF-8"');
+    res.status(401).type('text/plain').send('Authentication required');
+  };
+}
 
 function startDashboard(port, store, config) {
-    const app = express();
+  const app = express();
 
-    app.use(express.static('public'));
+  // Trust X-Forwarded-* headers when behind a reverse proxy (Caddy, nginx, etc.)
+  app.set('trust proxy', true);
 
-    app.get('/api/stats', async (req, res) => {
-        let stats = {};
-        if (store.getStats) {
-            stats = await store.getStats();
-        }
-        res.json({
-            status: 'online',
-            db_type: config.storeDB.type,
-            auth_type: config.auth.method,
-            login_type: config.login.type,
-            stats: stats
+  // Auth (unless explicitly disabled with empty username)
+  if (config.dashboard.username) {
+    app.use(basicAuth(config.dashboard.username, config.dashboard.password));
+  } else {
+    logger.warn('dashboard auth DISABLED (empty username) — DO NOT EXPOSE PUBLICLY');
+  }
+
+  app.use(express.json({ limit: '64kb' }));
+
+  // ── HTML root ─────────────────────────────────────────────────────────
+  app.get('/', (_req, res) => {
+    res.type('html').send(
+      HTML
+        .replace('__BOT_NAME__',  String(config.bot.name).replace(/</g, '&lt;'))
+        .replace('__VERSION__',   PKG.version)
+        .replace('__BACKEND__',   `${config.storeDB.type}/${config.auth.method}`),
+    );
+  });
+
+  // ── Health (also safe to call without auth via /api/health-public; we keep it gated) ─
+  app.get('/api/health', (_req, res) => {
+    res.json({
+      ok:      true,
+      uptime:  process.uptime(),
+      version: PKG.version,
+      backends: {
+        store: config.storeDB.type,
+        auth:  config.auth.method,
+        login: config.login.type,
+      },
+    });
+  });
+
+  // ── Stats: counters + gauges (typed) ──────────────────────────────────
+  app.get('/api/stats', async (_req, res, next) => {
+    try {
+      const snap = await metrics.snapshot();
+      res.json(snap);
+    } catch (e) { next(e); }
+  });
+
+  // ── Groups: list ──────────────────────────────────────────────────────
+  app.get('/api/groups', async (_req, res, next) => {
+    try {
+      // We don't have a single "list all groups" call on every backend.
+      // For SQLite we go straight to the table; for others we use the
+      // in-memory groupCache via getGroupMetadata is too slow N-way.
+      // Use what each backend exposes — fall back to empty array.
+      let rows = [];
+
+      if (typeof store.db?.prepare === 'function') {
+        // SQLite path
+        rows = store.db.prepare(`SELECT jid, subject, meta FROM groups`).all().map((r) => {
+          let meta = null;
+          try { meta = JSON.parse(r.meta.toString('utf8')); } catch {}
+          return {
+            jid:     r.jid,
+            subject: r.subject || meta?.subject || '(unnamed)',
+            participantCount: meta?.participants?.length || 0,
+          };
         });
-    });
+      } else {
+        rows = [];
+      }
+      res.json(rows);
+    } catch (e) { next(e); }
+  });
 
-    app.get('/', (req, res) => {
-        res.send(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>EchoFox Dashboard</title>
-            <style>
-                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: #fff; margin: 0; padding: 20px; }
-                h1 { text-align: center; color: #12c2e9; }
-                .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; max-width: 1000px; margin: 0 auto; }
-                .card { background: #1e1e1e; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center; }
-                .card h3 { margin: 0 0 10px 0; color: #c471ed; font-size: 1.2rem; }
-                .card .value { font-size: 2rem; font-weight: bold; }
-                .footer { text-align: center; margin-top: 40px; color: #888; }
-            </style>
-        </head>
-        <body>
-            <h1>EchoFox Dashboard</h1>
-            <div class="grid" id="stats-grid">
-                Loading...
-            </div>
-            <div class="footer">Auto-updating every 5 seconds</div>
+  // ── Group detail (full metadata) ──────────────────────────────────────
+  app.get('/api/groups/:jid', async (req, res, next) => {
+    try {
+      const meta = await store.getGroupMetadata(req.params.jid);
+      if (!meta) return res.status(404).json({ error: 'not_found' });
+      res.json(meta);
+    } catch (e) { next(e); }
+  });
 
-            <script>
-                async function fetchStats() {
-                    try {
-                        const res = await fetch('/api/stats');
-                        const data = await res.json();
-                        const stats = data.stats || {};
-                        
-                        document.getElementById('stats-grid').innerHTML = \`
-                            <div class="card"><h3>Status</h3><div class="value" style="color: #45B649">Online</div></div>
-                            <div class="card"><h3>DB Type</h3><div class="value" style="font-size: 1.5rem;">\${data.db_type}</div></div>
-                            <div class="card"><h3>Auth Type</h3><div class="value" style="font-size: 1.5rem;">\${data.auth_type}</div></div>
-                            <div class="card"><h3>Bot Restarts</h3><div class="value">\${stats.bot_restarts || 0}</div></div>
-                            <div class="card"><h3>Incoming Messages</h3><div class="value">\${stats.incoming_messages || 0}</div></div>
-                            <div class="card"><h3>Messages Processed</h3><div class="value">\${stats.messages_processed || 0}</div></div>
-                            <div class="card"><h3>Database Writes</h3><div class="value">\${stats.db_writes || 0}</div></div>
-                        \`;
-                    } catch (e) {
-                        console.error(e);
-                    }
-                }
-                fetchStats();
-                setInterval(fetchStats, 5000);
-            </script>
-        </body>
-        </html>
-        `);
-    });
+  // ── Current participants (derived from latest event per participant) ──
+  app.get('/api/groups/:jid/participants', async (req, res, next) => {
+    try {
+      const list = await store.getCurrentParticipants(req.params.jid);
+      res.json(list);
+    } catch (e) { next(e); }
+  });
 
-    app.listen(port, () => {
-        console.log(`[dashboard] running on http://localhost:${port}`);
-    }).on('error', (e) => {
-        console.error(`[dashboard] port ${port} is busy or failed to start:`, e.message);
-    });
+  // ── Participant event history (paginated) ─────────────────────────────
+  app.get('/api/groups/:jid/participants/history', async (req, res, next) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 200, 2000);
+      const events = await store.getParticipantHistory(req.params.jid, limit);
+      res.json(events);
+    } catch (e) { next(e); }
+  });
+
+  // ── Error handler ─────────────────────────────────────────────────────
+  app.use((err, _req, res, _next) => {
+    logger.error({ err }, 'dashboard route error');
+    res.status(500).json({ error: 'internal', message: err.message });
+  });
+
+  app.listen(port, () => {
+    logger.info({ port, auth: !!config.dashboard.username }, 'dashboard listening');
+  });
 }
 
 module.exports = { startDashboard };

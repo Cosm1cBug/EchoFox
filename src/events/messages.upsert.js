@@ -1,20 +1,10 @@
 'use strict';
-/**
- * messages.upsert handler – Baileys 7.x compatible.
- *
- * Goals:
- *  • Parse-once: enrich the message into a flat `ctx` object so commands
- *    don't have to walk the `m.message[mtype]` tree themselves.
- *  • Skip non-actionable messages early (status, fromMe, empty).
- *  • Track stats / user joins ASYNC – never block the command path.
- *
- * The shape of `ctx` is intentionally a superset of what the original
- * code exposed so most existing command files keep working.
- */
+
 const {
   getContentType,
   jidNormalizedUser,
   extractMessageContent,
+  downloadMediaMessage,
   proto,
 } = require('@whiskeysockets/baileys');
 
@@ -22,6 +12,7 @@ const { config } = require('../config');
 const { correct } = require('../lib/stringMatch');
 const { trackCommandUsage, recordMessage } = require('../services/analytics');
 const { rememberUser } = require('../services/userDirectory');
+const { getTempFile } = require('../lib/tempManager');
 
 function pickText(m) {
   const msg = m.message;
@@ -39,16 +30,13 @@ function pickText(m) {
   );
 }
 
-function enrich(m, sock) {
+async function serializeMessage(m, sock) {
   const remoteJid = m.key.remoteJid;
   const isGroup   = remoteJid?.endsWith('@g.us');
   const isPrivate = remoteJid?.endsWith('@s.whatsapp.net');
   const isStatus  = remoteJid === 'status@broadcast';
 
-  const sender = jidNormalizedUser(
-    m.key.fromMe ? sock.user?.id :
-    (m.key.participant || remoteJid || ''),
-  );
+  const sender = jidNormalizedUser( m.key.fromMe ? sock.user?.id : (m.key.participant || remoteJid || ''));
 
   const innerContent = extractMessageContent(m.message) || {};
   const mtype = getContentType(innerContent);
@@ -78,9 +66,18 @@ function enrich(m, sock) {
         }
       : null,
 
-    // Convenience reply
     reply: (text, opts = {}) => sock.sendMessage(remoteJid, { text }, { quoted: m, ...opts }),
     react: (emoji)    => sock.sendMessage(remoteJid, { react: { text: emoji, key: m.key } }),
+
+    downloadMsg: async () => {
+      let msgToDownload = m;
+      // Check if quoted message exists and we want to download that instead
+      const ctxInfo = innerContent[type]?.contextInfo;
+      if (ctxInfo?.quotedMessage) {
+        msgToDownload = { key: { remoteJid: m.from, id: ctxInfo.stanzaId }, message: ctxInfo.quotedMessage };
+      }
+      return await downloadMediaMessage(msgToDownload, 'buffer', {}, { logger: sock.logger, reuploadRequest: sock.updateMediaMessage });
+    }
   };
 }
 
@@ -90,7 +87,7 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
   if (m.message.protocolMessage) return;                    // ignore protocol
   if (m.key.remoteJid === 'status@broadcast' && !config.options.ReadStatus) return;
 
-  const ctx = enrich(m, sock);
+  const ctx = serializeMessage(m, sock);
 
   // ─── Fire-and-forget analytics (never await – not on hot path) ──────
   recordMessage(ctx).catch(() => {});
@@ -120,8 +117,8 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
   if (!cmdName) return;
 
   const cmd = commands.resolve(cmdName);
+
   if (!cmd) {
-    // Fuzzy-suggest closest match
     const pool = commands.all().flatMap((c) => [c.name, ...(c.alias || [])]);
     const guess = correct(cmdName.toLowerCase(), pool);
     if (guess.rating > 0.5) {
@@ -130,21 +127,20 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
     return;
   }
 
-  // ─── Permission / mode gating ──────────────────────────────────────
   if (cmd.admin && !(config.options.BAdmin || []).includes(ctx.sender)) {
     return ctx.reply('🔒 Admin-only command.');
   }
   if (cmd.group && !ctx.isGroup) return ctx.reply('👥 Group-only command.');
 
-  // ─── Lazy fetch group metadata only when needed ────────────────────
   let metadata = null;
   if (ctx.isGroup && cmd.needsMetadata) {
-    metadata = await store.getGroupMetadata(ctx.chat).catch(() => null)
-            || await sock.groupMetadata(ctx.chat).catch(() => null);
+    metadata = await store.getGroupMetadata(ctx.chat).catch(() => null) || await sock.groupMetadata(ctx.chat).catch(() => null);
   }
 
   try {
     trackCommandUsage(ctx.sender, cmd.name).catch(() => {});
+    store.recordStat?.(`cmd_usage_${cmd.name}`, 1);
+
     await cmd.start(sock, ctx.raw, {
       name: 'EchoFox',
       ctx,                    // ← new, preferred interface
@@ -161,6 +157,7 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
       commands,
       logger,
     });
+    
   } catch (err) {
     logger.error({ err, cmd: cmd.name, sender: ctx.sender }, 'command threw');
     await ctx.reply(`💥 Command \`${cmd.name}\` crashed: ${err.message || err}`);

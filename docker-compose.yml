@@ -1,0 +1,128 @@
+# EchoFox — Production docker-compose
+# ────────────────────────────────────────────────────────────────────────
+#
+# Default usage (just the bot):
+#     docker compose up -d
+#
+# With observability stack (Prometheus + Grafana):
+#     docker compose --profile observability up -d
+#
+# Volumes you MUST keep across container rebuilds:
+#     echofox-session   → WhatsApp pairing files (losing this = re-scan QR)
+#     echofox-store     → SQLite DBs (losing this = lose stats/users history)
+#
+# Configuration: either mount your own src/config.js OR set ECHOFOX_* env vars.
+# ────────────────────────────────────────────────────────────────────────
+
+services:
+  echofox:
+    image: ghcr.io/cosm1cbug/echofox:latest
+    # Or build locally:  build: { context: ., dockerfile: Dockerfile }
+    container_name: echofox
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 12s
+    user: "1001:1001"
+
+    ports:
+      - "127.0.0.1:3000:3000"   # bind to localhost; expose via reverse proxy
+
+    volumes:
+      - echofox-session:/app/src/@session
+      - echofox-store:/app/src/store/runtime
+      # OPTIONAL: mount your own config.js read-only.
+      # Leave commented to rely purely on ECHOFOX_* env vars.
+      # - ./src/config.js:/app/src/config.js:ro
+
+    environment:
+      NODE_ENV:  production
+      LOG_LEVEL: info
+      PORT:      3000
+      TZ:        ${TZ:-Asia/Kolkata}
+      # Examples — uncomment and set what you need:
+      # ECHOFOX_BOT_PREFIX:        "."
+      # ECHOFOX_BOT_ADMINPREFIX:   "$"
+      # ECHOFOX_APIS_OMDB_APIKEY:  "${OMDB_KEY}"
+      # ECHOFOX_APIS_VIRUSTOTAL_APIKEY: "${VT_KEY}"
+      # ECHOFOX_APIS_ALIENVAULT_APIKEY: "${OTX_KEY}"
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/healthz"]
+      interval: 30s
+      timeout:  5s
+      start_period: 45s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    # Resource ceilings (uncomment for hostile environments)
+    # deploy:
+    #   resources:
+    #     limits:    { cpus: "1.0", memory: 768M }
+    #     reservations: { cpus: "0.25", memory: 256M }
+
+    networks:
+      - echofox
+
+  # ── Optional observability stack ─────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: echofox-prometheus
+    restart: unless-stopped
+    profiles: ["observability"]
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=512MB
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - echofox
+    networks:
+      - echofox
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: echofox-grafana
+    restart: unless-stopped
+    profiles: ["observability"]
+    user: "472:472"
+    environment:
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-changeme}
+      GF_USERS_ALLOW_SIGN_UP:     "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_AUTH_ANONYMOUS_ENABLED:  "false"
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - echofox
+
+volumes:
+  echofox-session:
+    driver: local
+  echofox-store:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  echofox:
+    driver: bridge

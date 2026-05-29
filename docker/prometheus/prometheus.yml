@@ -1,0 +1,19 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: echofox-local
+
+scrape_configs:
+  - job_name: echofox
+    scheme: http
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['echofox:3000']
+        labels:
+          service: echofox
+          env:     production
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & Discussions
+    url: https://github.com/Cosm1cBug/EchoFox/discussions
+    about: For general questions, ideas, and show-and-tell.
+  - name: 🔐 Report a Security Vulnerability
+    url: https://github.com/Cosm1cBug/EchoFox/blob/main/SECURITY.md
+    about: Please do NOT open a public issue for security bugs.
+  - name: 📚 Baileys Documentation
+    url: https://baileys.wiki/
+    about: For issues with the underlying Baileys library, please report upstream.

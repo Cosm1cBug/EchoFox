@@ -16,6 +16,14 @@ const config = {
         ininstanceID: 'EchoFox',
         storePath: "./src/store/",
     },
+    login: {
+        // Type: 'QR' or 'PAIRING'
+        type: 'QR',
+        // If type === 'PAIRING', specify the phone number without '+' (e.g. '1234567890')
+        phoneNumber: '',
+    },
+    // Sync full history upon login
+    syncHistory: true,
     options: {
         antiCall: false, //If true, rejects calls. If false do nothing.
         aboutUpdate: "", //leave empty to do nothing.
@@ -27,6 +35,36 @@ const config = {
         sessionName: "@session", //Give session name (folderName)
         language: "en",
         timezone: "Asia/Kolkata",
+    },
+    auth: {
+        // Method: 'MULTIFILE', 'REDIS', 'SQLITE'
+        method: 'MULTIFILE', 
+        redisUrl: 'redis://localhost:6379',
+        sqlitePath: './src/store/auth.db',
+    },
+    storeDB: {
+        // Type: 'SQLITE', 'POSTGRES', 'MONGODB', 'REDIS'
+        type: 'SQLITE', 
+        sqlitePath: './src/store/runtime/wa.db',
+        postgresUrl: 'postgresql://postgres:postgres@localhost:5432/echofox',
+        mongoUri: 'mongodb://localhost:27017/echofox',
+        redisUrl: 'redis://localhost:6379'
+    },
+    // ----------------------------------------------------
+    // Web Dashboard Options
+    // ----------------------------------------------------
+    dashboard: {
+        enabled: true,
+        port: 3001,
+        username: 'admin',
+        password: 'password'
+    },
+    processing: {
+        concurrencyPerChat: 1,
+        // Global rate limit: messages per second
+        globalRateLimit: 5,
+        // User rate limit: messages per user per minute
+        userRateLimit: 10
     },
     Exif: {
         packName: "🗦BUGGY🗧",

@@ -1,0 +1,32 @@
+# EchoFox — Development override.
+#
+# Usage:
+#     docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# What this changes vs production:
+#   • Builds image locally instead of pulling from GHCR.
+#   • Mounts src/ as a bind-mount so changes hot-reload (with nodemon).
+#   • Exposes :3000 on all interfaces (handy for LAN testing).
+#   • Verbose logs (debug level, pretty format).
+#   • Health check disabled (so a crashing dev build doesn't restart loop).
+
+services:
+  echofox:
+    image: echofox:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "0.0.0.0:3000:3000"
+    volumes:
+      - ./src:/app/src                 # bind-mount source for hot-reload
+      - ./scripts:/app/scripts
+      - echofox-session:/app/src/@session
+      - echofox-store:/app/src/store/runtime
+    environment:
+      NODE_ENV:  development
+      LOG_LEVEL: debug
+    healthcheck:
+      disable: true
+    # Optional: install nodemon globally inside the container and run via it.
+    # command: ["sh", "-c", "npm i -g nodemon && nodemon src/core/bootstrap.js"]

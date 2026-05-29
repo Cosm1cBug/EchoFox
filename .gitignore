@@ -1,9 +1,55 @@
-node_modules
+# ─── Dependencies ─────────────────────────────────────────────────────────
+node_modules/
+.npm/
+.yarn/
+.pnpm-store/
+
+# ─── Secrets & user data (NEVER commit) ───────────────────────────────────
+src/config.js
 .env
-src/config.js          # secrets live here
-src/@session/          # WA auth state
-src/store/runtime/     # SQLite DBs (regenerable)
-logs
-temp
+.env.*
+!.env.example
+
+# ─── Runtime data (regenerable, but local) ────────────────────────────────
+src/@session/
+src/store/runtime/
+src/store/*.db
+src/store/*.db-journal
+src/store/*.db-wal
+src/store/*.db-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ─── Build / coverage / logs ──────────────────────────────────────────────
+dist/
+build/
+coverage/
+.nyc_output/
+logs/
 *.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ─── Husky internals (auto-generated) ─────────────────────────────────────
+.husky/_/
+
+# ─── Editor / OS ──────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Temp ─────────────────────────────────────────────────────────────────
+temp/
+tmp/
+*.tmp
+*.bak
+*.backup

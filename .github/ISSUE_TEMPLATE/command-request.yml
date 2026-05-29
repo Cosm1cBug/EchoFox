@@ -1,0 +1,85 @@
+name: 🤖 New Command Request
+description: Suggest a new command to add to EchoFox.
+title: "[cmd] "
+labels: ["new-command", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! New-command PRs are very welcome — see [CONTRIBUTING.md](https://github.com/Cosm1cBug/EchoFox/blob/main/CONTRIBUTING.md#writing-a-command).
+
+  - type: input
+    id: name
+    attributes:
+      label: Command name
+      placeholder: e.g. weather
+    validations:
+      required: true
+
+  - type: input
+    id: aliases
+    attributes:
+      label: Aliases (comma-separated, optional)
+      placeholder: e.g. forecast, wx
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Suggested category
+      options:
+        - main
+        - misc
+        - general
+        - download
+        - convert
+        - entertainment
+        - group
+        - tools
+        - user
+        - admin
+        - new category (specify in description)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What should it do?
+      placeholder: "Reply with the current weather for the city given as argument."
+    validations:
+      required: true
+
+  - type: textarea
+    id: usage
+    attributes:
+      label: Example usage
+      render: text
+      placeholder: |
+        User: .weather Bengaluru
+        Bot:  🌤️ Bengaluru — 24°C, partly cloudy
+    validations:
+      required: true
+
+  - type: textarea
+    id: api
+    attributes:
+      label: External API needed?
+      placeholder: "e.g. OpenWeatherMap — free tier 60 req/min. Docs: https://openweathermap.org/api"
+
+  - type: dropdown
+    id: gating
+    attributes:
+      label: Gating
+      multiple: true
+      options:
+        - Group-only
+        - Admin-only
+        - Requires API key (auto-skip if missing)
+        - None (anyone, anywhere)
+
+  - type: checkboxes
+    id: pr
+    attributes:
+      label: PR offer
+      options:
+        - label: I'd be willing to open the PR for this command myself.

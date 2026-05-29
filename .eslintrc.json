@@ -1,0 +1,50 @@
+{
+  "root": true,
+  "env": {
+    "node": true,
+    "es2022": true
+  },
+  "extends": ["eslint:recommended"],
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "script"
+  },
+  "rules": {
+    "no-console": "off",
+    "no-empty": ["error", { "allowEmptyCatch": true }],
+    "no-unused-vars": ["warn", {
+      "argsIgnorePattern": "^_",
+      "varsIgnorePattern": "^_",
+      "caughtErrorsIgnorePattern": "^_"
+    }],
+    "no-prototype-builtins": "off",
+    "no-async-promise-executor": "warn",
+    "no-undef": "error",
+    "prefer-const": "warn",
+    "eqeqeq": ["warn", "smart"],
+    "no-var": "warn",
+    "no-useless-escape": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["scripts/**/*.js"],
+      "rules": { "no-process-exit": "off" }
+    },
+    {
+      "files": ["src/commands/**/*.js"],
+      "rules": {
+        "no-unused-vars": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "node_modules/",
+    "src/@session/",
+    "src/store/runtime/",
+    "src/store/AlienVault/",
+    "src/Utils/",
+    "src/commands/_disabled/",
+    "coverage/",
+    "dist/"
+  ]
+}

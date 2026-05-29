@@ -1,0 +1,59 @@
+name: ✨ Feature Request
+description: Suggest a new feature or improvement.
+title: "[feat] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion!
+
+        - For **new commands** specifically, please use the [Command Request template](https://github.com/Cosm1cBug/EchoFox/issues/new?template=command-request.yml) instead.
+        - For general questions, use [Discussions](https://github.com/Cosm1cBug/EchoFox/discussions).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the pain point or limitation in EchoFox today.
+      placeholder: "Currently I have no way to…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you tried any workarounds? Why aren't they enough?
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Which area does this affect?
+      multiple: true
+      options:
+        - Core (worker / supervisor)
+        - Commands
+        - Store / database
+        - Configuration
+        - Logging / observability
+        - Anti-ban / safety
+        - Docs
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Would you like to contribute?
+      options:
+        - label: I'd be willing to open a PR for this myself (with guidance if needed).

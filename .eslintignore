@@ -1,0 +1,9 @@
+node_modules
+src/@session
+src/store/runtime
+src/store/AlienVault
+src/Utils
+src/commands/_disabled
+coverage
+dist
+build

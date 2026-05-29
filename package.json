@@ -1,7 +1,7 @@
 {
   "name": "echofox",
-  "version": "6.0.0",
-  "description": "EchoFox – A WhatsApp bot built on Baileys 7.x",
+  "version": "1.0.0",
+  "description": "EchoFox – Production-grade WhatsApp bot built on Baileys 7.x",
   "main": "src/core/bootstrap.js",
   "scripts": {
     "start": "node --enable-source-maps src/core/bootstrap.js",
@@ -14,7 +14,7 @@
   },
   "keywords": ["whatsapp", "baileys", "bot", "echofox"],
   "author": "COSM1CBUG",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "dependencies": {
     "@whiskeysockets/baileys": "7.0.0-rc13",
     "@hapi/boom": "^10.0.1",
@@ -28,7 +28,7 @@
     "google-translate-api-x": "^10.7.2",
     "iso-3166-1-alpha-2": "^1.0.2",
     "iso-639-1": "^3.1.5",
-    "jimp": "^0.22.12",
+    "jimp": "^1.6.1",
     "libphonenumber-js": "^1.11.0",
     "link-preview-js": "^3.0.5",
     "lru-cache": "^11.0.1",
@@ -40,25 +40,12 @@
     "node-gtts": "^2.0.2",
     "node-webpmux": "^3.2.0",
     "p-queue": "^8.0.1",
-    "pino": "^9.5.0",
+    "pino": "^9.6.0",
     "pino-pretty": "^11.2.2",
     "prom-client": "^15.1.3",
     "qrcode-terminal": "^0.12.0",
     "spinnies": "^0.5.1",
     "wa-sticker-formatter": "^4.4.4",
     "yargs": "^17.7.2"
-  },
-  "//-removed-from-original": [
-    "cluster (built-in, not needed)",
-    "crypto (built-in)",
-    "filereader (unused)",
-    "nodecache (typo of node-cache)",
-    "readline (built-in)",
-    "stream (built-in)",
-    "util (built-in)",
-    "promise-timeout (replace with AbortController)",
-    "sqlite3 (replaced by better-sqlite3)",
-    "node-tts-ml (broken / unused)",
-    "youtubedl-core (use yt-dlp-exec if needed)"
-  ]
+  }
 }

@@ -1,15 +1,5 @@
 'use strict';
 
-/**
- * EchoFox worker
- * ──────────────
- * Owns ONE Baileys socket. The parent (bootstrap.js) restarts us on
- * crashes; *inside* this process we never call process.exit() except on
- * fatal auth errors (loggedOut / forbidden). All other disconnects are
- * recovered by reconnecting the socket without tearing the process down,
- * which preserves caches and avoids cold-start overhead.
- */
-
 require('events').EventEmitter.defaultMaxListeners = 100;
 
 const path  = require('node:path');
@@ -29,24 +19,34 @@ const {
   jidNormalizedUser,
 } = require('@whiskeysockets/baileys');
 
-const logger        = require('./logger');
-const caches        = require('./caches');
-const { config }    = require('../config');
+const logger = require('./logger');
+const caches = require('./caches');
+const { config } = require('../config');
+const { createStore } = require('../store/db');
+const { useRedisAuth, useSqliteAuth } = require('./auth');
 const { makeSQLiteStore } = require('../store/sqliteStore');
 const CommandRegistry = require('./commandRegistry');
-const eventRouter   = require('../events/router');
+const eventRouter = require('../events/router');
+const { startDashboard } = require('../dashboard/server');
+const { startGC } = require('../utils/tempManager');
 
 const log = logger.child({ mod: 'worker' });
 
-// ─── Per-chat queues = back-pressure & FIFO ordering ──────────────────────
-// One queue per chat so heavy media commands in chat A don't block chat B.
+// Queues & Rate Limiting
 const chatQueues = new Map();
+const userMsgCounts = new Map();
+let globalMsgCount = 0;
+
+setInterval(() => {
+    userMsgCounts.clear();
+    globalMsgCount = 0;
+}, 60000); // Clear rate limits every minute
+
 function queueFor(jid) {
   let q = chatQueues.get(jid);
   if (!q) {
-    q = new PQueue({ concurrency: 1, autoStart: true });
+    q = new PQueue({ concurrency: config.processing.concurrencyPerChat || 1, autoStart: true });
     q.on('idle', () => {
-      // GC empty queues to bound memory in million-chat scenarios
       if (q.size === 0 && q.pending === 0) chatQueues.delete(jid);
     });
     chatQueues.set(jid, q);
@@ -54,12 +54,11 @@ function queueFor(jid) {
   return q;
 }
 
-let sock;          // current socket
-let store;         // sqlite store handle
-let commands;      // CommandRegistry
+let sock;        
+let store;        
+let commands;      
 let shuttingDown = false;
 
-// ─── IPC from supervisor ──────────────────────────────────────────────────
 process.on('message', async (msg) => {
   if (msg === 'shutdown') {
     shuttingDown = true;
@@ -71,32 +70,38 @@ process.on('message', async (msg) => {
   }
 });
 
-// ─── Boot ─────────────────────────────────────────────────────────────────
+async function getAuthState() {
+    const sessionName = config.options.sessionName;
+    if (config.auth.method === 'REDIS') {
+        return await useRedisAuth(config.auth.redisUrl, sessionName);
+    } else if (config.auth.method === 'SQLITE') {
+        return await useSqliteAuth(config.auth.sqlitePath, sessionName);
+    } else {
+        const sessionDir = path.join(__dirname, '..', '..', sessionName);
+        if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
+        const multiAuth = await useMultiFileAuthState(sessionDir);
+        multiAuth.clear = async () => fs.rmSync(sessionDir, { recursive: true, force: true });
+        return multiAuth;
+    }
+}
+
 async function start(retry = 0) {
   if (shuttingDown) return;
 
-  // 1. Auth state (multi-file).
-  const sessionDir = path.join(__dirname, '..', config.options.sessionName);
-  if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
-  const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+  const authData = await getAuthState();
+  const { state, saveCreds, clear } = authData;
 
-  // 2. WA version (cached negotiate).
   let version;
   try {
     const r = await fetchLatestBaileysVersion();
     version = r.version;
-    log.info({ version: version.join('.'), isLatest: r.isLatest }, 'WA version');
   } catch (e) {
-    log.warn({ err: e }, 'fetchLatestBaileysVersion failed – using bundled');
+    log.warn('fetchLatestBaileysVersion failed – using bundled');
+    version = [2, 3000, 1015901307];
   }
 
-  // 3. Store + command registry (only once).
   if (!store) {
-    store = makeSQLiteStore({
-      dbPath: path.join(__dirname, '..', 'store', 'runtime', 'wa.db'),
-      logger: log.child({ mod: 'store' }),
-      groupCache: caches.groupMetadataCache,
-    });
+    store = createStore(config, log.child({ mod: 'store' }), caches.groupMetadataCache);
   }
   if (!commands) {
     commands = new CommandRegistry({
@@ -105,63 +110,55 @@ async function start(retry = 0) {
       logger: log.child({ mod: 'commands' }),
     });
     await commands.load();
+    startGC(log);
   }
 
-  // 4. The socket. NOTE: printQRInTerminal is deprecated in 7.x – we
-  //    render the QR ourselves below.
   sock = makeWASocket({
     version,
     logger: logger.child({ mod: 'baileys' }),
     browser: Browsers.macOS('EchoFox'),
     auth: {
       creds: state.creds,
-      // The cacheable key store is the single biggest send/receive perf win.
       keys: makeCacheableSignalKeyStore(state.keys, logger.child({ mod: 'signal' })),
     },
-
-    // ─── Performance / scalability knobs ────────────────────────────────
-    markOnlineOnConnect: false,            // don't trigger push notifs to phone
-    syncFullHistory: false,                // huge memory saver; flip to true if you need history
+    markOnlineOnConnect: false,            
+    syncFullHistory: config.syncHistory,                
     generateHighQualityLinkPreview: true,
     fireInitQueries: true,
-    enableAutoSessionRecreation: true,     // 7.x: auto-heal broken signal sessions
-    enableRecentMessageCache: true,        // 7.x: faster retry handling
-
+    enableAutoSessionRecreation: true,
+    enableRecentMessageCache: true,
     connectTimeoutMs: 30_000,
     defaultQueryTimeoutMs: 60_000,
     keepAliveIntervalMs: 25_000,
     retryRequestDelayMs: 350,
     maxMsgRetryCount: 5,
     qrTimeout: 45_000,
-
-    // ─── Caches (see core/caches.js) ────────────────────────────────────
-    msgRetryCounterCache:   caches.msgRetryCounterCache,
-    userDevicesCache:       caches.userDevicesCache,
-    callOfferCache:         caches.callOfferCache,
+    msgRetryCounterCache: caches.msgRetryCounterCache,
+    userDevicesCache: caches.userDevicesCache,
+    callOfferCache: caches.callOfferCache,
     placeholderResendCache: caches.placeholderResendCache,
-    mediaCache:             caches.mediaCache,
-
-    // Critical contract methods
+    mediaCache: caches.mediaCache,
     getMessage: (key) => store.getMessage(key),
     cachedGroupMetadata: (jid) => store.getGroupMetadata(jid),
-
-    // Don't decrypt/emit for newsletter / status if you don't use them
-    shouldIgnoreJid: (jid) =>
-      jid?.endsWith('@newsletter') ||
-      (jid === 'status@broadcast' && !config.options.ReadStatus),
+    shouldIgnoreJid: (jid) => jid?.endsWith('@newsletter') ||  (jid === 'status@broadcast' && !config.options.ReadStatus),
   });
 
-  // Persist creds
   sock.ev.on('creds.update', saveCreds);
-
-  // Persistent store binding
   store.bind(sock.ev);
 
-  // ─── Connection lifecycle ───────────────────────────────────────────
+  if (config.login.type === 'PAIRING' && !sock.authState.creds.registered) {
+    setTimeout(async () => {
+      let code = await sock.requestPairingCode(config.login.phoneNumber);
+      console.log(`\n\n-----------------------------------------`);
+      console.log(`PAIRING CODE: ${code}`);
+      console.log(`-----------------------------------------\n\n`);
+    }, 3000);
+  }
+
   sock.ev.on('connection.update', async (u) => {
     const { connection, lastDisconnect, qr } = u;
 
-    if (qr) {
+    if (qr && config.login.type === 'QR') {
       log.info('scan QR to log in:');
       qrcode.generate(qr, { small: true });
     }
@@ -169,8 +166,12 @@ async function start(retry = 0) {
     if (connection === 'open') {
       log.info({ user: sock.user?.id }, '✅ connected');
       process.send?.('ready');
+      store.recordStat?.('bot_restarts', 1);
 
-      // Warm the group metadata cache once.
+      if (config.dashboard.enabled) {
+          startDashboard(config.dashboard.port, store, config);
+      }
+
       try {
         const groups = await sock.groupFetchAllParticipating();
         for (const [jid, meta] of Object.entries(groups)) {
@@ -189,15 +190,12 @@ async function start(retry = 0) {
       const reason = Object.entries(DisconnectReason).find(([, v]) => v === code)?.[0] || 'unknown';
       log.warn({ code, reason }, 'connection closed');
 
-      // Fatal? Don't reconnect – let supervisor restart fresh OR exit.
       if (code === DisconnectReason.loggedOut || code === 401 || code === 403) {
         log.error('logged out / forbidden – exiting for re-pair');
+        if (clear) await clear();
         process.exit(2);
       }
-
-      // Otherwise reconnect in-process (no cold start).
       const wait = Math.min(2_000 * 2 ** retry, 30_000);
-      log.info({ wait }, 'reconnecting…');
       setTimeout(() => start(retry + 1), wait);
     }
   });
@@ -218,33 +216,49 @@ async function start(retry = 0) {
     } catch {}
   });
 
-  // ─── Message routing (the hot path) ─────────────────────────────────
-  // Baileys is fast at *receiving*; the bottleneck is your handlers.
-  // We push each msg onto its chat-queue (FIFO per chat, parallel across
-  // chats) so a slow handler never starves the socket.
   sock.ev.on('messages.upsert', (payload) => {
     if (!payload?.messages?.length) return;
     for (const m of payload.messages) {
       const jid = m?.key?.remoteJid;
       if (!jid) continue;
-      queueFor(jid).add(() =>
-        eventRouter.handleMessage({ sock, m, commands, store, logger: log })
-          .catch((e) => log.error({ err: e, jid }, 'message handler crashed')),
-      ).catch(() => {});
+
+      const user = m?.key?.participant || jid;
+
+      // Rate Limiting Logic
+      let rateLimitPerMinute = config.processing.userRateLimit || 10;
+      let globalLimit = config.processing.globalRateLimit || 5;
+
+      let userCount = userMsgCounts.get(user) || 0;
+      if (userCount >= rateLimitPerMinute) {
+          log.warn({ user }, 'Rate limit hit for user');
+          continue; // Drop message
+      }
+      userMsgCounts.set(user, userCount + 1);
+
+      globalMsgCount++;
+      if ((globalMsgCount / 60) > globalLimit) {
+          log.warn('Global rate limit hit');
+      }
+
+      store.recordStat?.('incoming_messages', 1);
+
+      queueFor(jid).add(() => {
+        store.recordStat?.('messages_processed', 1);
+        return eventRouter.handleMessage({ sock, m, commands, store, logger: log })
+          .catch((e) => log.error({ err: e, jid }, 'message handler crashed'));
+      }).catch(() => {});
     }
   });
 
-  // Other events go through the router too (no queueing needed).
+  sock.ev.on('messages.upsert',           () => store.recordStat?.('db_writes', 1));
   sock.ev.on('groups.update',             (u) => eventRouter.emit('groups.update', { sock, u }));
   sock.ev.on('group-participants.update', (u) => eventRouter.emit('group-participants.update', { sock, u }));
   sock.ev.on('contacts.upsert',           (u) => eventRouter.emit('contacts.upsert', { sock, u }));
   sock.ev.on('call',                      (u) => eventRouter.emit('call', { sock, u }));
 
-  // Convenience method used by handlers.
   sock.decodeJid = (jid) => (jid ? jidNormalizedUser(jid) : jid);
 }
 
-// ─── Fatal handlers (don't crash silently) ────────────────────────────────
 process.on('uncaughtException',  (e) => log.fatal({ err: e }, 'uncaughtException'));
 process.on('unhandledRejection', (e) => log.fatal({ err: e }, 'unhandledRejection'));
 

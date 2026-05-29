@@ -1,0 +1,51 @@
+# ─── Never ship to the image ──────────────────────────────────────────────
+node_modules
+npm-debug.log*
+
+# ─── Secrets / user data ──────────────────────────────────────────────────
+src/config.js
+src/@session
+src/store/runtime
+src/store/*.db
+src/store/*.db-*
+.env
+.env.*
+!.env.example
+
+# ─── VCS & CI noise ───────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+.github
+.husky
+.editorconfig
+.prettier*
+.eslint*
+
+# ─── Local-only development files ─────────────────────────────────────────
+coverage
+.nyc_output
+logs
+*.log
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# ─── Build artefacts ──────────────────────────────────────────────────────
+dist
+build
+
+# ─── Docs (kept out of runtime image to slim it; mounted on docs site) ────
+docs
+UPGRADE.md
+CHANGELOG.md
+CONTRIBUTING.md
+
+# ─── Disabled / broken commands shouldn't ship ────────────────────────────
+src/commands/_disabled
+
+# ─── Docker self-reference (would be wasteful) ────────────────────────────
+Dockerfile
+docker-compose*.yml
+docker

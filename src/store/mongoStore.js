@@ -3,20 +3,21 @@
  * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
  * Licensed under the GNU AGPL-3.0-or-later. See LICENSE. @license AGPL-3.0
  */
-/*
- * EchoFox - WhatsApp bot built on Baileys
- * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
- */
 'use strict';
 
+const { config } = require('../lib/configLoader');
 const mongoose  = require('mongoose');
 const { proto } = require('@whiskeysockets/baileys');
 
 function makeMongoStore(uri, logger, groupCache) {
-  const conn = mongoose.createConnection(uri);
+  const conn = mongoose.createConnection(uri, {
+    maxPoolSize:               20,
+    serverSelectionTimeoutMS:  5_000,
+    socketTimeoutMS:           45_000,
+    heartbeatFrequencyMS:      10_000,
+  });
+  conn.on('error', (e) => logger.error({ err: e }, 'mongo connection error'));
 
-  // ── Models ─────────────────────────────────────────────────────────────
   const Message = conn.model('Message', new mongoose.Schema({
     jid: String, id: String, from_me: Boolean, participant: String,
     msg: Buffer, ts: Number,
@@ -53,14 +54,41 @@ function makeMongoStore(uri, logger, groupCache) {
     ts:          { type: Number, index: true },
   }));
 
+  const MessageEdit = conn.model('MessageEdit', new mongoose.Schema({
+    jid:        { type: String, index: true },
+    message_id: { type: String, index: true },
+    editor:     String,
+    old_body:   String,
+    new_body:   String,
+    ts:         { type: Number, index: true },
+  }));
+
+  const MessageReaction = conn.model('MessageReaction', new mongoose.Schema({
+    jid:        { type: String, index: true },
+    message_id: { type: String, index: true },
+    reactor:    String,
+    emoji:      String,
+    ts:         { type: Number, index: true },
+  }));
+
+  const MessageReceipt = conn.model('MessageReceipt', new mongoose.Schema({
+    jid:        String,
+    message_id: String,
+    recipient:  String,
+    status:     Number,
+    ts:         Number,
+  }).index({ jid: 1, message_id: 1, recipient: 1 }, { unique: true }));
+
+  // Augment Message model with deleted_at + status (mongoose ignores
+  // fields not in the schema, so we explicitly support them via $set
+  // updates). Existing documents simply have no value — handled by client.
+
   return {
-    // ── Retry-decryption hook ──────────────────────────────────────────
     async getMessage(key) {
       const doc = await Message.findOne({ jid: key.remoteJid, id: key.id });
       return doc ? proto.Message.decode(doc.msg) : undefined;
     },
 
-    // ── Groups ─────────────────────────────────────────────────────────
     async getGroupMetadata(jid) {
       const mem = groupCache.get(jid);
       if (mem) return mem;
@@ -77,7 +105,6 @@ function makeMongoStore(uri, logger, groupCache) {
         { upsert: true });
     },
 
-    // ── Participants event-log ─────────────────────────────────────────
     async recordParticipantEvent(groupJid, participant, action, actor, ts) {
       try {
         await ParticipantEvent.create({
@@ -116,7 +143,17 @@ function makeMongoStore(uri, logger, groupCache) {
       } catch (e) { logger.warn({ err: e }, 'current participants query failed'); return []; }
     },
 
-    // ── Stats: counters ────────────────────────────────────────────────
+    async listGroups() {
+      try {
+        const docs = await Group.find({}).sort({ subject: 1 }).lean();
+        return docs.map((g) => ({
+          jid:              g.jid,
+          subject:          g.subject || g.meta?.subject || '(unnamed)',
+          participantCount: g.meta?.participants?.length || 0,
+        }));
+      } catch { return []; }
+    },
+
     recordStat(key, inc = 1) {
       Stat.updateOne({ key }, { $inc: { value: inc } }, { upsert: true })
         .catch((e) => logger.warn({ err: e, key }, 'recordStat failed'));
@@ -129,7 +166,6 @@ function makeMongoStore(uri, logger, groupCache) {
       } catch { return {}; }
     },
 
-    // ── Stats: gauges ──────────────────────────────────────────────────
     setGauge(key, value) {
       Gauge.updateOne(
         { key },
@@ -145,7 +181,6 @@ function makeMongoStore(uri, logger, groupCache) {
       } catch { return {}; }
     },
 
-    // ── Derived counts ─────────────────────────────────────────────────
     async countGroups() { try { return await Group.countDocuments(); } catch { return 0; } },
     async countUniqueUsers() {
       try {
@@ -154,13 +189,15 @@ function makeMongoStore(uri, logger, groupCache) {
       } catch { return 0; }
     },
 
-    // ── Bind to Baileys events ─────────────────────────────────────────
     bind(ev) {
       ev.on('messages.upsert', async ({ messages }) => {
+        const storeBodies = config.privacy?.storeMessageBodies !== false;
+        const excluded    = new Set(config.privacy?.excludeFromStore || []);
         const ops = [];
         for (const m of messages) {
           if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
-          const msgBuf = Buffer.from(proto.Message.encode(m.message).finish());
+          if (excluded.has(m.key.remoteJid)) continue;
+          const msgBuf = storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null;
           ops.push({
             updateOne: {
               filter: { jid: m.key.remoteJid, id: m.key.id },
@@ -205,6 +242,102 @@ function makeMongoStore(uri, logger, groupCache) {
       ev.on('groups.upsert', (groups) => {
         for (const g of groups) this.saveGroupMetadata(g.id, g);
       });
+    },
+
+    // ── Edits ──────────────────────────────────────────────────────────
+    async recordMessageEdit(jid, messageId, editor, oldBody, newBody, ts) {
+      try {
+        await MessageEdit.create({
+          jid, message_id: messageId,
+          editor: editor || null,
+          old_body: oldBody || '',
+          new_body: newBody || '',
+          ts: ts ?? Math.floor(Date.now()/1000),
+        });
+      } catch (e) { logger.warn({err:e}, 'edit insert failed'); }
+    },
+    async getMessageEdits(jid, messageId) {
+      try {
+        const docs = await MessageEdit.find({ jid, message_id: messageId }).sort({ ts: 1 }).lean();
+        return docs.map((d) => ({
+          editor: d.editor, old_body: d.old_body, new_body: d.new_body, ts: d.ts,
+        }));
+      } catch (e) { logger.warn({err:e}, 'edits query failed'); return []; }
+    },
+    async updateMessageBody(jid, messageId, message, ts) {
+      try {
+        const buf = Buffer.from(proto.Message.encode(message).finish());
+        await Message.updateOne(
+          { jid, id: messageId },
+          { $set: { msg: buf, ts: ts ?? Math.floor(Date.now()/1000) } });
+      } catch (e) { logger.warn({err:e}, 'updateMessageBody failed'); }
+    },
+
+    // ── Reactions ──────────────────────────────────────────────────────
+    async recordMessageReaction(jid, messageId, reactor, emoji, ts) {
+      try {
+        await MessageReaction.create({
+          jid, message_id: messageId,
+          reactor: reactor || '',
+          emoji:   emoji   || null,
+          ts: ts ?? Math.floor(Date.now()/1000),
+        });
+      } catch (e) { logger.warn({err:e}, 'reaction insert failed'); }
+    },
+    async getMessageReactions(jid, messageId) {
+      try {
+        const docs = await MessageReaction.find({ jid, message_id: messageId }).sort({ ts: 1 }).lean();
+        return docs.map((d) => ({ reactor: d.reactor, emoji: d.emoji, ts: d.ts }));
+      } catch (e) { logger.warn({err:e}, 'reactions query failed'); return []; }
+    },
+
+    // ── Receipts ───────────────────────────────────────────────────────
+    async recordReceipt(jid, messageId, recipient, status, ts) {
+      try {
+        // Use upsert + $max so we never downgrade (e.g. read → delivered)
+        await MessageReceipt.updateOne(
+          { jid, message_id: messageId, recipient },
+          { $max: { status }, $set: { ts: ts ?? Math.floor(Date.now()/1000) } },
+          { upsert: true });
+      } catch (e) { logger.warn({err:e}, 'receipt upsert failed'); }
+    },
+    async getMessageReceipts(jid, messageId) {
+      try {
+        const docs = await MessageReceipt.find({ jid, message_id: messageId }).sort({ ts: 1 }).lean();
+        return docs.map((d) => ({ recipient: d.recipient, status: d.status, ts: d.ts }));
+      } catch (e) { logger.warn({err:e}, 'receipts query failed'); return []; }
+    },
+
+    // ── Deletions ──────────────────────────────────────────────────────
+    async markMessageDeleted(jid, messageId, _by, ts) {
+      try {
+        await Message.updateOne(
+          { jid, id: messageId, $or: [{ deleted_at: { $exists: false } }, { deleted_at: null }] },
+          { $set: { deleted_at: ts ?? Math.floor(Date.now()/1000) } });
+      } catch (e) { logger.warn({err:e}, 'markMessageDeleted failed'); }
+    },
+    async markChatMessagesDeleted(jid, ts) {
+      try {
+        await Message.updateMany(
+          { jid, $or: [{ deleted_at: { $exists: false } }, { deleted_at: null }] },
+          { $set: { deleted_at: ts ?? Math.floor(Date.now()/1000) } });
+      } catch (e) { logger.warn({err:e}, 'markChatMessagesDeleted failed'); }
+    },
+    async getDeletedInGroup(jid, limit = 100) {
+      try {
+        const docs = await Message.find({ jid, deleted_at: { $ne: null } })
+          .sort({ deleted_at: -1 }).limit(limit).lean();
+        return docs.map((d) => ({ id: d.id, participant: d.participant, deleted_at: d.deleted_at }));
+      } catch (e) { logger.warn({err:e}, 'deletedInGroup failed'); return []; }
+    },
+
+    // ── Aggregate status ───────────────────────────────────────────────
+    async updateMessageStatus(jid, messageId, status, _ts) {
+      try {
+        await Message.updateOne(
+          { jid, id: messageId },
+          { $max: { status: Number(status) } });
+      } catch (e) { logger.warn({err:e}, 'updateMessageStatus failed'); }
     },
 
     close() { conn.close(); },

@@ -56,6 +56,12 @@ module.exports = {
       throw new Error(`Could not download sticker: ${err.message}`);
     }
 
+    // v0.4.5: cap source size — ffmpeg conversion is memory-intensive
+    const MAX_BYTES = 4 * 1024 * 1024;
+    if (webpBuf.length > MAX_BYTES) {
+      return ctx.reply(`🚫 Sticker too large (${(webpBuf.length/1e6).toFixed(1)}MB). Max is 4MB.`);
+    }
+
     let pngBuf;
     try {
       pngBuf = await webpBufferToPng(webpBuf);

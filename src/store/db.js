@@ -1,24 +1,7 @@
 /*
  * EchoFox - WhatsApp bot built on Baileys
  * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details. @license AGPL-3.0
- *
- * You should have received a copy of the GNU AGPL along with this program.
- * If not, see <https://www.gnu.org/licenses/>.
- */
-/*
- * EchoFox - WhatsApp bot built on Baileys
- * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE. @license AGPL-3.0
  */
 'use strict';
 
@@ -33,6 +16,22 @@
  *   async getParticipantHistory(group, limit=500) → [{participant, action, actor, ts}]
  *   async getCurrentParticipants(group)    → [{participant, last_action, last_ts}]
  *
+ *   async recordMessageEdit(jid, msgId, editor, oldBody, newBody, ts)
+ *   async getMessageEdits(jid, msgId)      → [{editor, old_body, new_body, ts}]
+ *   async updateMessageBody(jid, msgId, message, ts)
+ *
+ *   async recordMessageReaction(jid, msgId, reactor, emoji, ts)
+ *   async getMessageReactions(jid, msgId)  → [{reactor, emoji, ts}]
+ *
+ *   async recordReceipt(jid, msgId, recipient, status, ts)
+ *   async getMessageReceipts(jid, msgId)   → [{recipient, status, ts}]
+ *
+ *   async markMessageDeleted(jid, msgId, by, ts)
+ *   async markChatMessagesDeleted(jid, ts)
+ *   async getDeletedInGroup(jid, limit=100) → [{id, participant, deleted_at}]
+ *
+ *   async updateMessageStatus(jid, msgId, status, ts)    // 1=sent .. 4=played
+ *
  *   recordStat(key, inc=1)                 → counter ++
  *   async getStats()                       → { key: number, … }
  *
@@ -41,6 +40,7 @@
  *
  *   async countGroups()                    → number
  *   async countUniqueUsers()               → number
+ *   async listGroups()                     → [{jid, subject, participantCount}]
  *
  *   bind(ev)                               → wire to Baileys ev emitter
  *   close()

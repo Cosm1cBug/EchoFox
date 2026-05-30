@@ -3,11 +3,6 @@
  * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
  * Licensed under the GNU AGPL-3.0-or-later. See LICENSE. @license AGPL-3.0
  */
-/*
- * EchoFox - WhatsApp bot built on Baileys
- * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
- */
 'use strict';
 
 /**
@@ -18,20 +13,11 @@
  *     stats                                   — fixed counters (typed via metrics svc)
  *     stats_gauges                            — fixed gauges
  *     group_participants_events               — append-only participant log
+ *     message_edits / message_reactions /
+ *       message_receipts                      — append-only message timeline
  *
- *   Uniform store interface (also implemented by postgres/mongo/redis):
- *     getMessage(key)                         → proto.IMessage | undefined
- *     getGroupMetadata(jid)                   → GroupMetadata
- *     saveGroupMetadata(jid, meta)            → void
- *     recordParticipantEvent(group, p, action, actor, ts)
- *     getParticipantHistory(group, limit?)    → [{participant, action, actor, ts}]
- *     getCurrentParticipants(group)           → derived from latest events
- *     recordStat(key, inc=1)                  → counter (freeform escape hatch)
- *     setGauge(key, value)                    → gauge
- *     getStats()                              → { key: number, … }
- *     getGauges()                             → { key: number, … }
- *     bind(ev)                                — wire to baileys events
- *     close()
+ *   Uniform store interface (also implemented by postgres/mongo/redis) —
+ *   see src/store/db.js for the full contract.
  */
 
 const Database = require('better-sqlite3');
@@ -39,9 +25,13 @@ const path     = require('node:path');
 const { existsSync, mkdirSync } = require('node:fs');
 const { LRUCache } = require('lru-cache');
 const { proto }    = require('@whiskeysockets/baileys');
-
+const { config } = require('../lib/configLoader');
 const { SQL_DDL: PARTICIPANTS_DDL } = require('./schema/participants');
 const { SQL_DDL: STATS_DDL }        = require('./schema/stats');
+const {
+  SQL_DDL: EXTRAS_DDL,
+  applyMessagesMigration_sqlite,
+} = require('./schema/messages-extras');
 
 function makeSQLiteStore({ dbPath, logger, groupCache }) {
   const dir = path.dirname(dbPath);
@@ -65,7 +55,11 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       ts          INTEGER NOT NULL,
       PRIMARY KEY (jid, id)
     );
+    
     CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages (ts);
+    CREATE INDEX IF NOT EXISTS idx_messages_jid_ts ON messages (jid, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_groups_subject ON groups (subject COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts (name);
 
     CREATE TABLE IF NOT EXISTS chats (
       jid    TEXT PRIMARY KEY,
@@ -90,7 +84,12 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
 
     ${STATS_DDL.sqlite}
     ${PARTICIPANTS_DDL.sqlite}
+    ${EXTRAS_DDL.sqlite}
   `);
+
+  // In-place migration: add deleted_at + status columns to existing
+  // messages table (idempotent — silently no-ops if already present).
+  applyMessagesMigration_sqlite(db);
 
   // ── Prepared statements ────────────────────────────────────────────────
   const stmts = {
@@ -115,20 +114,18 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       INSERT OR REPLACE INTO groups (jid,subject,creation,meta) VALUES (?,?,?,?)`),
     groupGet:   db.prepare(`SELECT meta FROM groups WHERE jid = ?`),
     groupCount: db.prepare(`SELECT COUNT(*) AS n FROM groups`),
+    groupsList: db.prepare(`SELECT jid, subject, meta FROM groups ORDER BY subject COLLATE NOCASE`),
 
-    // Counters (stats table)
     statUpsert: db.prepare(`
       INSERT INTO stats (key,value) VALUES (?,?)
       ON CONFLICT(key) DO UPDATE SET value = value + excluded.value`),
     statsAll:   db.prepare(`SELECT key, value FROM stats`),
 
-    // Gauges (stats_gauges table)
     gaugeUpsert: db.prepare(`
       INSERT INTO stats_gauges (key,value,updated_at) VALUES (?,?,?)
       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`),
     gaugesAll:   db.prepare(`SELECT key, value FROM stats_gauges`),
 
-    // Participants
     partInsert: db.prepare(`
       INSERT INTO group_participants_events (group_jid, participant, action, actor, ts)
       VALUES (?, ?, ?, ?, ?)`),
@@ -146,6 +143,43 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       GROUP BY participant`),
     uniqueUsersCount: db.prepare(`
       SELECT COUNT(DISTINCT participant) AS n FROM group_participants_events`),
+
+    // ── Edits / Reactions / Receipts / Deletions ─────────────────────
+    editInsert: db.prepare(`
+      INSERT INTO message_edits (jid, message_id, editor, old_body, new_body, ts)
+      VALUES (?, ?, ?, ?, ?, ?)`),
+    editsByMsg: db.prepare(`
+      SELECT editor, old_body, new_body, ts FROM message_edits
+      WHERE jid = ? AND message_id = ? ORDER BY ts ASC`),
+
+    reactInsert: db.prepare(`
+      INSERT INTO message_reactions (jid, message_id, reactor, emoji, ts)
+      VALUES (?, ?, ?, ?, ?)`),
+    reactionsByMsg: db.prepare(`
+      SELECT reactor, emoji, ts FROM message_reactions
+      WHERE jid = ? AND message_id = ? ORDER BY ts ASC`),
+
+    receiptUpsert: db.prepare(`
+      INSERT INTO message_receipts (jid, message_id, recipient, status, ts)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(jid, message_id, recipient) DO UPDATE
+        SET status = MAX(status, excluded.status), ts = excluded.ts`),
+    receiptsByMsg: db.prepare(`
+      SELECT recipient, status, ts FROM message_receipts
+      WHERE jid = ? AND message_id = ? ORDER BY ts ASC`),
+
+    msgMarkDeletedExtra: db.prepare(`
+      UPDATE messages SET deleted_at = ? WHERE jid = ? AND id = ? AND deleted_at IS NULL`),
+    chatMarkAllDeleted: db.prepare(`
+      UPDATE messages SET deleted_at = ? WHERE jid = ? AND deleted_at IS NULL`),
+    msgUpdateBody: db.prepare(`
+      UPDATE messages SET msg = ?, ts = ? WHERE jid = ? AND id = ?`),
+    msgUpdateStatus: db.prepare(`
+      UPDATE messages SET status = MAX(IFNULL(status,0), ?) WHERE jid = ? AND id = ?`),
+    deletedInGroup: db.prepare(`
+      SELECT id, participant, deleted_at FROM messages
+      WHERE jid = ? AND deleted_at IS NOT NULL
+      ORDER BY deleted_at DESC LIMIT ?`),
   };
 
   const msgHot = new LRUCache({ max: 5_000, ttl: 1000 * 60 * 30 });
@@ -154,19 +188,46 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     for (const r of rows) stmts.msgInsert.run(r);
   });
 
-  // Periodic prune (last 7 days)
+    // ─── v0.4.5: WAL checkpoint hourly (truncates -wal file growth) ─────
+  setInterval(() => {
+    try { db.pragma('wal_checkpoint(TRUNCATE)'); }
+    catch (e) { logger.warn({ err: e }, 'store: wal_checkpoint failed'); }
+  }, 60 * 60 * 1000).unref();
+
+  // ─── v0.4.5: weekly VACUUM (reclaims space from pruned rows) ─────────
+  //    Runs at startup + 30 s offset, then every 7 days.
+  setTimeout(() => {
+    try { db.exec('VACUUM'); logger.info('store: weekly VACUUM ok'); }
+    catch (e) { logger.warn({ err: e }, 'store: VACUUM failed'); }
+    setInterval(() => {
+      try { db.exec('VACUUM'); }
+      catch (e) { logger.warn({ err: e }, 'store: VACUUM failed'); }
+    }, 7 * 24 * 60 * 60 * 1000).unref();
+  }, 30_000).unref();
+  
+  // Periodic prune — honours config.privacy.messageBodyRetentionDays
+  //   0 = forever (default), otherwise prune messages older than N days.
   setInterval(() => {
     try {
-      const cutoff = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7;
+      const days = config.privacy?.messageBodyRetentionDays || 0;
+      if (days <= 0) {
+        // Legacy 7-day default still applies for the message-store hot path,
+        // BUT only because we don't want unbounded growth. Override via
+        // privacy.messageBodyRetentionDays in v0.4.4+.
+        const cutoff = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7;
+        const r = stmts.msgPrune.run(cutoff);
+        if (r.changes) logger.debug({ removed: r.changes }, 'store: pruned old messages');
+        return;
+      }
+      const cutoff = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * days;
       const r = stmts.msgPrune.run(cutoff);
-      if (r.changes) logger.debug({ removed: r.changes }, 'store: pruned old messages');
+      if (r.changes) logger.debug({ removed: r.changes, days }, 'store: pruned old messages (privacy)');
     } catch (e) { logger.warn({ err: e }, 'store: prune failed'); }
   }, 60 * 60 * 1000).unref();
 
   return {
     db,
 
-    // ── Retry-decryption hook (Baileys getMessage) ──────────────────────
     async getMessage(key) {
       const k = `${key.remoteJid}|${key.id}`;
       const hot = msgHot.get(k);
@@ -178,7 +239,6 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       return decoded;
     },
 
-    // ── Group metadata cache ────────────────────────────────────────────
     async getGroupMetadata(jid) {
       const mem = groupCache.get(jid);
       if (mem) return mem;
@@ -197,7 +257,6 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       );
     },
 
-    // ── Participant event log ───────────────────────────────────────────
     recordParticipantEvent(groupJid, participant, action, actor, ts) {
       try {
         stmts.partInsert.run(
@@ -213,7 +272,6 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     },
 
     getCurrentParticipants(groupJid) {
-      // "Current" = those whose latest event is not LEAVE or KICK
       try {
         return stmts.partCurrent.all(groupJid).filter(
           (r) => r.last_action !== 'leave' && r.last_action !== 'kick' && r.last_action !== 'reject',
@@ -224,9 +282,9 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       }
     },
 
-    // ── Stats: counters (freeform escape hatch, used by typed metrics) ─
     recordStat(key, inc = 1) {
-      try { stmts.statUpsert.run(key, inc); } catch (e) { logger.warn({ err: e, key }, 'recordStat failed'); }
+      try { stmts.statUpsert.run(key, inc); }
+      catch (e) { logger.warn({ err: e, key }, 'recordStat failed'); }
     },
 
     getStats() {
@@ -236,7 +294,6 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       } catch { return {}; }
     },
 
-    // ── Stats: gauges ───────────────────────────────────────────────────
     setGauge(key, value) {
       try {
         stmts.gaugeUpsert.run(key, value, Math.floor(Date.now() / 1000));
@@ -250,25 +307,40 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       } catch { return {}; }
     },
 
-    // ── Derived counts (used by metrics.refreshDerivedGauges) ───────────
     countGroups()       { try { return stmts.groupCount.get().n; }       catch { return 0; } },
     countUniqueUsers()  { try { return stmts.uniqueUsersCount.get().n; } catch { return 0; } },
 
-    // ── Bind to Baileys events ──────────────────────────────────────────
+    listGroups() {
+      try {
+        return stmts.groupsList.all().map((r) => {
+          let meta = null;
+          try { meta = r.meta ? JSON.parse(r.meta.toString('utf8')) : null; } catch {}
+          return {
+            jid:              r.jid,
+            subject:          r.subject || meta?.subject || '(unnamed)',
+            participantCount: meta?.participants?.length || 0,
+          };
+        });
+      } catch { return []; }
+    },
+
     bind(ev) {
       ev.on('messages.upsert', ({ messages }) => {
+        const storeBodies = config.privacy?.storeMessageBodies !== false;
+        const excluded    = new Set(config.privacy?.excludeFromStore || []);
         const rows = [];
         for (const m of messages) {
           if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
+          if (excluded.has(m.key.remoteJid)) continue;     // privacy: skip these chats
           rows.push({
             jid: m.key.remoteJid,
             id:  m.key.id,
             fromMe: m.key.fromMe ? 1 : 0,
             participant: m.key.participant ?? null,
-            msg: Buffer.from(proto.Message.encode(m.message).finish()),
+            msg: storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null,
             ts:  Number(m.messageTimestamp) || Math.floor(Date.now() / 1000),
           });
-          msgHot.set(`${m.key.remoteJid}|${m.key.id}`, m.message);
+          if (storeBodies) msgHot.set(`${m.key.remoteJid}|${m.key.id}`, m.message);
         }
         if (rows.length) {
           try { writeMessages(rows); } catch (e) { logger.warn({ err: e }, 'store: msg write failed'); }
@@ -307,6 +379,71 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       ev.on('groups.upsert', (groups) => {
         for (const g of groups) this.saveGroupMetadata(g.id, g);
       });
+    },
+
+    // ── Edits ──────────────────────────────────────────────────────────
+    recordMessageEdit(jid, messageId, editor, oldBody, newBody, ts) {
+      try {
+        stmts.editInsert.run(jid, messageId, editor || null, oldBody || '', newBody || '',
+          ts ?? Math.floor(Date.now()/1000));
+      } catch (e) { logger.warn({err:e}, 'editInsert failed'); }
+    },
+    getMessageEdits(jid, messageId) {
+      try { return stmts.editsByMsg.all(jid, messageId); }
+      catch (e) { logger.warn({err:e}, 'editsByMsg failed'); return []; }
+    },
+
+    updateMessageBody(jid, messageId, message, ts) {
+      try {
+        const buf = Buffer.from(proto.Message.encode(message).finish());
+        stmts.msgUpdateBody.run(buf, ts ?? Math.floor(Date.now()/1000), jid, messageId);
+      } catch (e) { logger.warn({err:e}, 'msgUpdateBody failed'); }
+    },
+
+    // ── Reactions ──────────────────────────────────────────────────────
+    recordMessageReaction(jid, messageId, reactor, emoji, ts) {
+      try {
+        stmts.reactInsert.run(jid, messageId, reactor || '', emoji || null,
+          ts ?? Math.floor(Date.now()/1000));
+      } catch (e) { logger.warn({err:e}, 'reactInsert failed'); }
+    },
+    getMessageReactions(jid, messageId) {
+      try { return stmts.reactionsByMsg.all(jid, messageId); }
+      catch (e) { logger.warn({err:e}, 'reactionsByMsg failed'); return []; }
+    },
+
+    // ── Receipts ───────────────────────────────────────────────────────
+    recordReceipt(jid, messageId, recipient, status, ts) {
+      try {
+        stmts.receiptUpsert.run(jid, messageId, recipient, status,
+          ts ?? Math.floor(Date.now()/1000));
+      } catch (e) { logger.warn({err:e}, 'receiptUpsert failed'); }
+    },
+    getMessageReceipts(jid, messageId) {
+      try { return stmts.receiptsByMsg.all(jid, messageId); }
+      catch (e) { logger.warn({err:e}, 'receiptsByMsg failed'); return []; }
+    },
+
+    // ── Deletions ──────────────────────────────────────────────────────
+    markMessageDeleted(jid, messageId, _by, ts) {
+      try {
+        stmts.msgMarkDeletedExtra.run(ts ?? Math.floor(Date.now()/1000), jid, messageId);
+      } catch (e) { logger.warn({err:e}, 'markMessageDeleted failed'); }
+    },
+    markChatMessagesDeleted(jid, ts) {
+      try {
+        stmts.chatMarkAllDeleted.run(ts ?? Math.floor(Date.now()/1000), jid);
+      } catch (e) { logger.warn({err:e}, 'markChatMessagesDeleted failed'); }
+    },
+    getDeletedInGroup(jid, limit = 100) {
+      try { return stmts.deletedInGroup.all(jid, limit); }
+      catch (e) { logger.warn({err:e}, 'deletedInGroup failed'); return []; }
+    },
+
+    // ── Aggregate message status (1=sent…4=played) ─────────────────────
+    updateMessageStatus(jid, messageId, status, _ts) {
+      try { stmts.msgUpdateStatus.run(Number(status), jid, messageId); }
+      catch (e) { logger.warn({err:e}, 'msgUpdateStatus failed'); }
     },
 
     close() { db.close(); },

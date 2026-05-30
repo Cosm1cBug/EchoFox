@@ -1,41 +1,42 @@
 /*
  * EchoFox - WhatsApp bot built on Baileys
  * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details. @license AGPL-3.0
- *
- * You should have received a copy of the GNU AGPL along with this program.
- * If not, see <https://www.gnu.org/licenses/>.
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
  */
 'use strict';
+
 /**
  * Event router – thin dispatcher.
- * Keeps the worker file lean; each event type is in its own handler module.
+ *
+ * Keeps the worker file lean; each event type lives in its own handler.
+ * Async handlers are invoked but not awaited at the bus level — the
+ * underlying handler is responsible for its own error handling.
  */
 const { EventEmitter } = require('node:events');
-const handleMessage = require('./messages.upsert');
-const onGroupsUpdate = require('./groups.update');
-const onGroupParticipants = require('./group-participants.update');
-const onContactsUpsert = require('./contacts.upsert');
-const onCall = require('./call');
+
+const handleMessage        = require('./messages.upsert');
+const onGroupsUpdate       = require('./groups.update');
+const onGroupParticipants  = require('./group-participants.update');
+const onContactsUpsert     = require('./contacts.upsert');
+const onCall               = require('./call');
+const onMessagesUpdate     = require('./messages.update');
+const onMessagesDelete     = require('./messages.delete');
+const onMessageReaction    = require('./messages.reaction');
+const onMessageReceipt     = require('./message-receipt.update');
 
 const bus = new EventEmitter();
 bus.setMaxListeners(50);
 
-bus.on('groups.update', onGroupsUpdate);
-bus.on('group-participants.update', onGroupParticipants);
-bus.on('contacts.upsert', onContactsUpsert);
-bus.on('call', onCall);
+bus.on('groups.update',             (p) => Promise.resolve(onGroupsUpdate(p)).catch(() => {}));
+bus.on('group-participants.update', (p) => Promise.resolve(onGroupParticipants(p)).catch(() => {}));
+bus.on('contacts.upsert',           (p) => Promise.resolve(onContactsUpsert(p)).catch(() => {}));
+bus.on('call',                      (p) => Promise.resolve(onCall(p)).catch(() => {}));
+bus.on('messages.update',           (p) => Promise.resolve(onMessagesUpdate(p)).catch(() => {}));
+bus.on('messages.delete',           (p) => Promise.resolve(onMessagesDelete(p)).catch(() => {}));
+bus.on('messages.reaction',         (p) => Promise.resolve(onMessageReaction(p)).catch(() => {}));
+bus.on('message-receipt.update',    (p) => Promise.resolve(onMessageReceipt(p)).catch(() => {}));
 
 module.exports = {
-  handleMessage,           // called directly from worker for back-pressure
+  handleMessage,                                 // direct, called per-message for back-pressure
   emit: (e, payload) => bus.emit(e, payload),
 };

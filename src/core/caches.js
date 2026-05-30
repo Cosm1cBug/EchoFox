@@ -32,6 +32,9 @@ const userDevicesCache     = new NodeCache({ stdTTL: 60 * 5,  useClones: false }
 // ─── Media cache – prevents re-uploading same buffers (stickers, etc.) ──
 const mediaCache           = new NodeCache({ stdTTL: 60 * 30, useClones: false });
 
+// --- profile picture URLs — 1h TTL, avoids repeated sock.profilePictureUrl() calls
+const profilePicCache      = new NodeCache({ stdTTL: 60 * 60, useClones: false });
+
 // ─── App-level command/argument parse cache (cheap micro-opt) ────────────
 const parseCache = new LRUCache({ max: 500, ttl: 1000 * 30 });
 
@@ -42,6 +45,7 @@ module.exports = {
   placeholderResendCache,
   userDevicesCache,
   mediaCache,
+  profilePicCache,
   parseCache,
   clearAll() {
     groupMetadataCache.clear();
@@ -50,6 +54,7 @@ module.exports = {
     placeholderResendCache.flushAll();
     userDevicesCache.flushAll();
     mediaCache.flushAll();
+    profilePicCache.flushAll();
     parseCache.clear();
   },
 };

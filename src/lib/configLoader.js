@@ -14,28 +14,26 @@
  * Configuration loader for EchoFox.
  *
  * ┌──────────────────────────────────────────────────────────────────────┐
- * │  WHY NOT JUST `require('../config')`?                                 │
+ * │  Internal modules should require THIS file (not ../config) so they   │
+ * │  get the validated + frozen config + legacy shim.                    │
  * │                                                                       │
- * │  The user's editable config lives at `src/config.js` (gitignored).    │
- * │  Older commands already do `require('../../config')` and get back a   │
- * │  flat `{ config: {...} }` object — we MUST preserve that contract.    │
- * │                                                                       │
- * │  This loader is a separate module that:                               │
- * │    1. reads `src/config.js` (or example) from disk,                   │
- * │    2. auto-translates legacy v5/v6-style configs into the new shape,  │
- * │    3. applies optional ECHOFOX_* env overrides,                       │
- * │    4. validates everything via zod,                                   │
- * │    5. deep-freezes,                                                   │
- * │    6. glues back a `config.options`, `config.WApp`, … compat shim,    │
- * │    7. exports `{ config, warnIfChannelMissing }`.                     │
- * │                                                                       │
- * │  Internal modules import THIS loader, not the raw file:               │
- * │      const { config } = require('../lib/configLoader');               │
- * │                                                                       │
- * │  User-authored commands that still do `require('../../config')` keep  │
- * │  working — they just bypass validation and use their own raw object.  │
- * │  We tolerate this for backwards compatibility.                        │
+ * │  The user's editable config still lives at src/config.js (gitignored)│
+ * │  in any shape they prefer (legacy v5/v6 flat shape OR new shape).    │
+ * │  We auto-translate on load — they never touch the new schema unless  │
+ * │  they want to.                                                       │
  * └──────────────────────────────────────────────────────────────────────┘
+ *
+ * Resolution order:
+ *   1. src/config.js              (user data)
+ *   2. src/config.example.js      (committed template)
+ *   3. schema defaults            (empty config still boots)
+ *
+ * Override mechanism:
+ *   ECHOFOX_<SECTION>_<CAMELCASE_KEY>=value
+ *   e.g.  ECHOFOX_BOT_PREFIX=!
+ *         ECHOFOX_APIS_OMDB_APIKEY=xyz
+ *         ECHOFOX_STOREDB_TYPE=POSTGRES
+ *         ECHOFOX_DASHBOARD_ENABLED=true
  */
 
 const fs   = require('node:fs');
@@ -47,7 +45,7 @@ const PATHS = {
   example: path.join(__dirname, '..', 'config.example.js'),
 };
 
-// ─── 1. Read raw config object from disk ─────────────────────────────────
+// ─── 1. Read raw config from disk ────────────────────────────────────────
 function loadRaw() {
   if (fs.existsSync(PATHS.real)) {
     delete require.cache[require.resolve(PATHS.real)];
@@ -55,8 +53,6 @@ function loadRaw() {
   }
   if (fs.existsSync(PATHS.example)) {
     delete require.cache[require.resolve(PATHS.example)];
-    // First-run helper: silently copy example → real so the user has an
-    // editable file. They'll see this message only once.
     try {
       fs.copyFileSync(PATHS.example, PATHS.real);
       console.warn('[config] no config.js found — initialised from config.example.js. Edit src/config.js with your values.');
@@ -69,17 +65,29 @@ function loadRaw() {
   return { source: '<defaults>', raw: {} };
 }
 
-// ─── 2. Legacy auto-translator (v5/v6 → new schema) ──────────────────────
+// ─── 2. Legacy auto-translator ───────────────────────────────────────────
+/**
+ * The pre-fork repo (v5/v6) used a flat module.exports = { config: {...} }
+ * with keys like options, WApp, Exif, OpenAI, Gemini, store, etc.
+ *
+ * Your current src/config.js (v0.4.0+) is a *hybrid*: still has the legacy
+ * sections but also new ones (login, auth, storeDB, dashboard, processing).
+ * The detector below recognises BOTH shapes and unifies them into the new
+ * schema-friendly form.
+ */
 function translateLegacy(raw) {
+  // Unwrap { config: {...} } if present
   let o = raw && typeof raw === 'object' && raw.config ? raw.config : raw;
   if (!o || typeof o !== 'object') return {};
 
-  // Already-new shape? has at least one new top-level key
-  const NEW_KEYS = ['bot','features','channels','apis','sticker','runtime'];
-  if (NEW_KEYS.some((k) => k in o)) return o;
+  // Already-new shape? (has at least one of the v0.2+ top-level keys)
+  const NEW_KEYS = ['bot', 'features', 'channels', 'apis', 'sticker', 'runtime'];
+  const isNewShape = NEW_KEYS.some((k) => k in o);
 
-  return {
-    bot: {
+  // Build the unified object. We always derive from `o` because your current
+  // config has BOTH the legacy `options`/`WApp` AND the new `auth`/`storeDB`.
+  const unified = {
+    bot: isNewShape ? (o.bot || {}) : {
       prefix:       o.options?.prefix       ?? '.',
       adminPrefix:  o.options?.adminPrefix  ?? '$',
       sessionName:  o.options?.sessionName  ?? '@session',
@@ -87,14 +95,28 @@ function translateLegacy(raw) {
       language:     o.options?.language     ?? 'en',
       public:       o.WorkMode?.public      ?? true,
     },
-    features: {
+    features: isNewShape ? (o.features || {}) : {
       readMessages: o.options?.ReadMessages ?? true,
       readStatus:   o.options?.ReadStatus   ?? true,
       reactStatus:  o.options?.ReactStatus  ?? false,
       antiCall:     o.options?.antiCall     ?? false,
+      syncHistory:  o.syncHistory           ?? true,
     },
-    admins: Array.isArray(o.options?.BAdmin) ? o.options.BAdmin.filter((j) => j && !j.startsWith('1234567890')) : [],
-    channels: {
+
+    // These sections are NEW (added by you in v0.4) — pass through as-is.
+    login:      o.login      || {},
+    auth:       o.auth       || {},
+    storeDB:    o.storeDB    || {},
+    dashboard:  o.dashboard  || {},
+    processing: o.processing || {},
+
+    admins: Array.isArray(o.admins)
+      ? o.admins
+      : (Array.isArray(o.options?.BAdmin)
+          ? o.options.BAdmin.filter((j) => j && !j.startsWith('1234567890'))
+          : []),
+
+    channels: isNewShape ? (o.channels || {}) : {
       syslogs:      o.WApp?.Syslogs    ?? '',
       botLogs:      o.WApp?.BotLogs    ?? '',
       userLogs:     o.WApp?.UserLogs   ?? '',
@@ -103,7 +125,8 @@ function translateLegacy(raw) {
       errLogs:      o.WApp?.ErrLogs    ?? '',
       movGroup:     o.WApp?.MovGrp     ?? '',
     },
-    apis: {
+
+    apis: isNewShape ? (o.apis || {}) : {
       omdb: {
         apiKey: o.omdb?.apiKey ?? o.omdb?.key ?? '',
         url:    o.omdb?.url    ?? 'https://www.omdbapi.com/',
@@ -113,16 +136,21 @@ function translateLegacy(raw) {
       openai:     { apiKey: o.OpenAI?.apiKey     ?? '' },
       gemini:     { apiKey: o.Gemini?.apiKey     ?? '' },
     },
-    sticker: {
+
+    sticker: isNewShape ? (o.sticker || {}) : {
       packName:   o.Exif?.packName   ?? 'EchoFox',
       packAuthor: o.Exif?.packAuthor ?? 'COSM1CBUG',
     },
-    store: {
-      instanceId: o.store?.ininstanceID ?? o.store?.instanceId ?? 'EchoFox',
-      storePath:  o.store?.storePath    ?? './src/store/',
-      runtimeDir: './src/store/runtime/',
-    },
+
+    runtime: o.runtime || {},
+
+    store: o.store ? {
+      instanceId: o.store.ininstanceID ?? o.store.instanceId ?? 'EchoFox',
+      storePath:  o.store.storePath    ?? './src/store/',
+      runtimeDir: o.store.runtimeDir   ?? './src/store/runtime/',
+    } : {},
   };
+  return unified;
 }
 
 // ─── 3. Env-var overrides ────────────────────────────────────────────────
@@ -146,7 +174,7 @@ function applyEnv(cfg) {
   return cfg;
 }
 
-// ─── 4. Legacy compat shim (so old commands keep working unchanged) ──────
+// ─── 4. Legacy aliases (keep old commands working) ───────────────────────
 function attachLegacyAliases(cfg) {
   cfg.options = {
     prefix:       cfg.bot.prefix,
@@ -176,7 +204,7 @@ function attachLegacyAliases(cfg) {
   cfg.OpenAI     = { apiKey: cfg.apis.openai.apiKey };
   cfg.Gemini     = { apiKey: cfg.apis.gemini.apiKey };
   cfg.WorkMode   = { public: cfg.bot.public };
-  cfg.store      = cfg.store || { instanceId: 'EchoFox', storePath: './src/store/' };
+  cfg.syncHistory = cfg.features.syncHistory;          // worker reads this
   return cfg;
 }
 
@@ -199,7 +227,7 @@ function warnIfChannelMissing(channelKey, contextLabel) {
       `channel '${channelKey}' is not configured — skipping (set channels.${channelKey} in config.js to enable)`,
     );
   } catch {
-    console.warn(`[config] channel '${channelKey}' not configured — skipping${contextLabel ? ' ('+contextLabel+')' : ''}`);
+    console.warn(`[config] channel '${channelKey}' not configured${contextLabel ? ' ('+contextLabel+')' : ''}`);
   }
   return true;
 }

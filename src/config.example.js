@@ -1,108 +1,244 @@
 /*
  * EchoFox - WhatsApp bot built on Baileys
  * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details. @license AGPL-3.0
- *
- * You should have received a copy of the GNU AGPL along with this program.
- * If not, see <https://www.gnu.org/licenses/>.
- */
-/*
- * EchoFox - WhatsApp bot built on Baileys
- * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE. @license AGPL-3.0
  */
 'use strict';
 
 /**
  * EchoFox configuration template.
  *
- *   1. Copy this file:  cp src/config.example.js src/config.js
+ *   1. Copy this file:   cp src/config.example.js src/config.js
  *   2. Edit src/config.js with your values (it's gitignored — safe).
  *   3. Optionally override any field with an environment variable:
- *        ECHOFOX_<SECTION>_<KEY>=value
+ *        ECHOFOX_<SECTION>_<CAMELCASEKEY>=value
  *      e.g.   ECHOFOX_APIS_OMDB_APIKEY=abc123
  *             ECHOFOX_BOT_PREFIX=!
- *             ECHOFOX_RUNTIME_PORT=4000
+ *             ECHOFOX_STOREDB_TYPE=POSTGRES
+ *             ECHOFOX_DASHBOARD_ENABLED=true
  *
- * Any commands that need keys you haven't set will simply not load
- * (warning, not crash). See docs/configuration.md for the full reference.
+ * Sections marked `enabled: false` are scaffolded — the schema and
+ * runtime wiring is partially in place; flip to `true` and supply the
+ * fields once you're ready. See README.md "Configuration reference"
+ * for the full per-field documentation.
  */
 module.exports = {
 
-  // ─── Bot identity & prefixes ────────────────────────────────────────────
+  // ═══ Core ═════════════════════════════════════════════════════════════
+
   bot: {
     name:         'EchoFox',
-    prefix:       '.',                    // user commands: ".ping"
-    adminPrefix:  '$',                    // admin commands: "$eval"
-    sessionName:  '@session',             // folder under src/ for WA auth files
+    prefix:       '.',                    // user commands
+    adminPrefix:  '$',                    // admin commands
+    sessionName:  '@session',
     timezone:     'Asia/Kolkata',
     language:     'en',
-    public:       true,                   // false = bot only responds to admins
+    public:       true,                   // false = admin-only mode
   },
 
-  // ─── Behavioural switches ───────────────────────────────────────────────
   features: {
-    readMessages: true,                   // mark incoming msgs as read
-    readStatus:   true,                   // mark statuses as read
-    reactStatus:  false,                  // auto-react to statuses
-    antiCall:     false,                  // auto-reject incoming calls
+    readMessages: true,
+    readStatus:   true,
+    reactStatus:  false,
+    antiCall:     false,
+    syncHistory:  true,
   },
 
-  // ─── Admins (full JIDs, ending in @s.whatsapp.net) ──────────────────────
+  login: {
+    type:        'QR',                    // 'QR' or 'PAIRING'
+    phoneNumber: '',                      // required when type = 'PAIRING' (digits only)
+  },
+
+  auth: {
+    method:      'MULTIFILE',             // 'MULTIFILE' | 'REDIS' | 'SQLITE' | 'POSTGRES'
+    redisUrl:    'redis://localhost:6379',
+    sqlitePath:  './src/store/auth.db',
+    postgresUrl: 'postgresql://postgres:postgres@localhost:5432/echofox',
+  },
+
+  storeDB: {
+    type:        'SQLITE',                // 'SQLITE' | 'POSTGRES' | 'MONGODB' | 'REDIS'
+    sqlitePath:  './src/store/runtime/wa.db',
+    postgresUrl: 'postgresql://postgres:postgres@localhost:5432/echofox',
+    mongoUri:    'mongodb://localhost:27017/echofox',
+    redisUrl:    'redis://localhost:6379',
+  },
+
+  dashboard: {
+    enabled:  false,
+    port:     3001,
+    username: 'admin',
+    password: 'change-me-please',
+  },
+
+  processing: {
+    concurrencyPerChat: 1,
+    globalRateLimit:    20,
+    userRateLimit:      10,
+    sendConcurrency:    4,
+  },
+
+  // ═══ Anti-ban (human-like presence + ban-mitigation) ══════════════════
+
+  antiBan: {
+    typingIndicator: true,
+    shortReplyChars: 40,
+    pauseAfterSend:  true,
+    typingDelayMs:   { min: 800, max: 2500 },
+
+    presenceOnConnect: 'available',
+    warmupMode:        false,
+    warmupDays:        14,
+    warmupMultiplier:  3,
+    maxGroupsPerDay:   0,
+    maxNewContactsPerHour: 0,
+  },
+
   admins: [
     // '1234567890@s.whatsapp.net',
   ],
 
-  // ─── WhatsApp log channels (group JIDs, ending in @g.us) ────────────────
-  //    Leave empty to silently skip the related notification.
   channels: {
-    syslogs:      '',                     // bot connection / restart events
-    botLogs:      '',                     // generic bot-side logs
-    userLogs:     '',                     // first-time user records
-    groupUpdates: '',                     // join/leave/promote/demote
-    callLogs:     '',                     // incoming call events
-    errLogs:      '',                     // uncaught command errors
-    movGroup:     '',                     // optional moderator group
+    syslogs:      '',
+    botLogs:      '',
+    userLogs:     '',
+    groupUpdates: '',
+    callLogs:     '',
+    errLogs:      '',
+    movGroup:     '',
   },
 
-  // ─── External API keys ──────────────────────────────────────────────────
-  //    Each command that needs a key declares `requires: ['apis.<x>.apiKey']`
-  //    and is auto-skipped at load time if its key is empty.
   apis: {
     omdb:       { apiKey: '', url: 'https://www.omdbapi.com/' },
     virustotal: { apiKey: '' },
     alienvault: { apiKey: '' },
-    openai:     { apiKey: '' },
-    gemini:     { apiKey: '' },
   },
 
-  // ─── Sticker pack metadata ──────────────────────────────────────────────
   sticker: {
     packName:   'EchoFox',
     packAuthor: 'COSM1CBUG',
   },
 
-  // ─── Runtime / observability ────────────────────────────────────────────
   runtime: {
-    logLevel:    'info',                  // trace | debug | info | warn | error | fatal
-    port:        3000,                    // /healthz + /metrics live here
+    logLevel:    'info',                  // trace|debug|info|warn|error|fatal
+    port:        3000,                    // /healthz + /metrics
     healthPath:  '/healthz',
     metricsPath: '/metrics',
+
+    // ── v0.4.5: stability ─────────────────────────────────────────────
+    maxHeapPercent:  90,                  // restart worker above this heap %
+    autoRestart:     true,                // false = only alert, no exit
+    checkIntervalMs: 30000,
+    gracePeriodMs:   5000,                // delay before restart (drains in-flight)
+    logFile: {
+      enabled: false,                     // also write JSON logs to file
+      dir:     './logs',
+      prefix:  'echofox',                 // → ./logs/echofox-YYYY-MM-DD.log
+    },
   },
 
-  // ─── Storage paths (rarely needs changing) ──────────────────────────────
   store: {
     instanceId: 'EchoFox',
     storePath:  './src/store/',
     runtimeDir: './src/store/runtime/',
+  },
+
+  // ═══ Production sections (v0.4.4) ═════════════════════════════════════
+
+  network: {
+    httpProxy:    '',
+    httpsProxy:   '',
+    socksProxy:   '',
+    noProxy:      [],
+    fetchTimeoutMs:  30000,
+    extraCaCertPath: '',
+    userAgent: 'EchoFox/0.4 (+https://github.com/Cosm1cBug/EchoFox)',
+  },
+
+  backup: {
+    enabled:     false,
+    schedule:    '0 3 * * *',
+    destination: '',
+    retain:      7,
+    include:     ['@session', 'store/runtime'],
+    encryptionPassphrase: '',
+  },
+
+  metrics: {
+    enabled:           true,
+    prometheusEnabled: false,
+    prometheusPort:    9100,
+    retentionDays:     90,
+  },
+
+  webhooks: {
+    enabled: false,
+    endpoints: [
+      // { url: 'https://hooks.example.com/echofox',
+      //   events: ['command.success', 'participant.kick'],
+      //   secret: 'shared-hmac', headers: {} },
+    ],
+    retries:   3,
+    timeoutMs: 5000,
+  },
+
+  i18n: {
+    defaultLocale:    'en',
+    enabledLocales:   ['en'],
+    perGroupLocale:   {},
+    fallbackToDefault: true,
+  },
+
+  groupSettings: {
+    // '120111@g.us': { public: false, prefix: '!', disabledCommands: ['eval'] },
+  },
+
+  schedules: [
+    // { name: 'daily-stats', cron: '0 9 * * *', command: 'stats', target: '', enabled: true },
+  ],
+
+  privacy: {
+    storeMessageBodies:       true,
+    messageBodyRetentionDays: 0,
+    blockUnknownSenders:      false,
+    forwardingDisabled:       false,
+    excludeFromStore:         [],
+    minimiseLogs:             false,
+  },
+
+  ai: {
+    enabled:         false,
+    defaultProvider: 'openai',
+    model:           'gpt-4o-mini',
+    maxTokens:       500,
+    costCapPerDayUsd: 5,
+    providers: {
+      openai:    { apiKey: '', baseUrl: '' },
+      gemini:    { apiKey: '', baseUrl: '' },
+      anthropic: { apiKey: '', baseUrl: '' },
+      local:     { baseUrl: 'http://localhost:11434' },
+    },
+  },
+
+  // ─── A5 — per-command failure-rate alerts ─────────────────────────────
+  alerts: {
+    enabled:              true,
+    windowMinutes:        60,             // rolling window
+    minInvocations:       10,             // need at least N runs to alert
+    failureRateThreshold: 0.30,           // alert if ≥30% fail in window
+    notifyChannel:        '',             // empty = use channels.errLogs
+  },
+
+  // ─── #11 Telegram bridge ──────────────────────────────────────────────
+  telegram: {
+    enabled:      false,
+    botToken:     '',
+    botUsername:  '',
+    userId:       '',
+    apiId:        '',
+    apiHash:      '',
+    channelId:    '',
+    groupId:      '',
+    bridgedChats: {},
   },
 };

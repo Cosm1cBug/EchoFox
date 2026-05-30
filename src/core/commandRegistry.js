@@ -34,17 +34,13 @@ class CommandRegistry {
         const full = path.join(catDir, f);
         try {
           delete require.cache[require.resolve(full)];
-          const cmd = require(full);
-          if (!cmd?.name || typeof cmd.start !== 'function') {
-            this.logger.warn({ file: full }, 'skipped: malformed command');
-            continue;
-          }
-          cmd.category = cat.name;
-          this.commands.set(cmd.name.toLowerCase(), cmd);
-          for (const a of cmd.alias || []) this.aliases.set(a.toLowerCase(), cmd.name.toLowerCase());
-          list.push(cmd);
+          cmd = require(full);
         } catch (e) {
-          this.logger.error({ err: e, file: full }, 'failed to load command');
+          // v0.4.5: don't HARD-FAIL the whole registry just because one command
+          // has a missing optional dep. Record as skipped and continue.
+          this.logger.error({ err: e, file: full }, 'failed to load command (optional dep missing?)');
+          this.skipped.push({ name: f, file: full, reason: 'load_error', err: e.message });
+          continue;
         }
       }
       this.categories.set(cat.name, list);

@@ -87,19 +87,28 @@
 
 <header>
   <h1>🦊 __BOT_NAME__ Dashboard</h1>
-  <div class="meta">v__VERSION__ · <code>__BACKEND__</code> · <span id="health-dot">●</span> <span id="health-text">…</span></div>
+  <div class="meta">v__VERSION__ · <code>__BACKEND__</code> · <span id="health-dot">●</span>
+    <span id="health-text">…</span>
+    <span id="alert-pill"
+      style="display:none;padding:2px 8px;background:rgba(248,81,73,.15);color:var(--bad);border-radius:10px;margin-left:8px;font-size:11px">🚨
+      <span id="alert-count">0</span> alert(s)</span>
+  </div>
 </header>
 
 <nav>
   <button data-view="overview" class="active">Overview</button>
   <button data-view="groups">Groups</button>
   <button data-view="metrics">Metrics</button>
+  <button data-view="diagnostics">Diagnostics</button>
+  <button data-view="alerts">Alerts</button>
 </nav>
 
 <main>
   <div id="view-overview"></div>
   <div id="view-groups" hidden></div>
   <div id="view-metrics" hidden></div>
+  <div id="view-diagnostics" hidden></div>
+  <div id="view-alerts" hidden></div>
 </main>
 
 <footer>
@@ -134,7 +143,7 @@ async function getJson(path) {
 }
 
 // ─── Nav ────────────────────────────────────────────────────────────────
-const views = ['overview','groups','metrics'];
+const views = ['overview','groups','metrics','diagnostics','alerts'];
 document.querySelectorAll('nav button').forEach((b) => {
   b.addEventListener('click', () => {
     const v = b.dataset.view;
@@ -154,6 +163,14 @@ async function pingHealth() {
     $('#health-dot').style.color = 'var(--bad)';
     $('#health-text').textContent = 'down';
   }
+  // v0.4.5: header alert pill
+  try {
+    const a = await getJson('/api/alerts');
+    const n = (a.active || []).length;
+    const pill = $('#alert-pill');
+    if (n > 0) { pill.style.display = ''; $('#alert-count').textContent = n; }
+    else pill.style.display = 'none';
+  } catch (_) { /* ignore */ }
 }
 
 // ─── Overview view ──────────────────────────────────────────────────────
@@ -254,12 +271,13 @@ async function renderGroupDetail(jid) {
     renderGroups();
   });
 
-  let meta, current, history;
+  let meta, current, history, deleted;
   try {
-    [meta, current, history] = await Promise.all([
+    [meta, current, history, deleted] = await Promise.all([
       getJson('/api/groups/' + encodeURIComponent(jid)),
       getJson('/api/groups/' + encodeURIComponent(jid) + '/participants'),
       getJson('/api/groups/' + encodeURIComponent(jid) + '/participants/history?limit=500'),
+      getJson('/api/groups/' + encodeURIComponent(jid) + '/deleted?limit=100').catch(() => []),
     ]);
   } catch (e) {
     root.innerHTML = `<button class="back">← Back</button>
@@ -353,13 +371,64 @@ async function renderMetrics() {
     </div>`;
 }
 
-// ─── Refresh loop ──────────────────────────────────────────────────────
+// ─── Diagnostics view ───────────────────────────────────────────────
+async function renderDiagnostics() {
+  const root = $('#view-diagnostics');
+  let rep;
+  try { rep = await getJson('/api/diagnostics'); }
+  catch (e) { root.innerHTML = `<div class="empty err">Failed: ${esc(e.message)}</div>`; return; }
+  const rows = Object.entries(rep.checks || {}).map(([name, c]) => {
+    const icon = c.ok ? '✅' : '❌';
+    const ms = `${c.ms}ms`;
+    const detail = c.error
+      ? `<span style="color:var(--bad)">${esc(c.error)}</span>`
+      : `<code style="color:var(--muted);font-size:11px">${esc(JSON.stringify(c.details || {}))}</code>`;
+    return `<tr><td>${icon} <b>${esc(name)}</b></td><td>${ms}</td><td>${detail}</td></tr>`;
+  }).join('');
+  root.innerHTML = `
+    <div class="panel">
+      <h2>Diagnostics — overall ${rep.ok ? '✅ OK' : '❌ DEGRADED'}</h2>
+      <table><thead><tr><th>Subsystem</th><th>Latency</th><th>Detail</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+    </div>`;
+}
+
+// ─── Alerts view ────────────────────────────────────────────────────
+async function renderAlerts() {
+  const root = $('#view-alerts');
+  let data;
+  try { data = await getJson('/api/alerts'); }
+  catch (e) { root.innerHTML = `<div class="empty err">Failed: ${esc(e.message)}</div>`; return; }
+  const list = data.active || [];
+  if (!list.length) {
+    root.innerHTML = '<div class="panel empty">No active command alerts. Every command is healthy.</div>';
+    return;
+  }
+  const rows = list.map(a => `
+    <tr>
+      <td><b>.${esc(a.command)}</b></td>
+      <td>${(a.rate * 100).toFixed(0)}%</td>
+      <td>${a.invocations}</td>
+      <td>${esc(fmtTs(a.since))}</td>
+    </tr>`).join('');
+  root.innerHTML = `
+    <div class="panel">
+      <h2>🚨 Active alerts <span class="pill">${list.length}</span></h2>
+      <table>
+        <thead><tr><th>Command</th><th>Failure rate</th><th>Invocations</th><th>Since</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 function refresh() {
   pingHealth();
   const active = document.querySelector('nav button.active').dataset.view;
   if (active === 'overview') renderOverview();
   else if (active === 'groups')  renderGroups();
   else if (active === 'metrics') renderMetrics();
+  else if (active === 'diagnostics') renderDiagnostics();
+  else if (active === 'alerts') renderAlerts();
 }
 
 refresh();

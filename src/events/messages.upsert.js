@@ -3,11 +3,6 @@
  * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
  * Licensed under the GNU AGPL-3.0-or-later. See LICENSE. @license AGPL-3.0
  */
-/*
- * EchoFox - WhatsApp bot built on Baileys
- * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
- */
 'use strict';
 
 /**
@@ -15,21 +10,17 @@
  *
  *   Pipeline per inbound message:
  *     1. Drop non-actionable (fromMe / status / protocol).
- *     2. Enrich into `ctx` (text, mtype, sender, isGroup, quoted,
+ *     2. Privacy gates: skip excluded chats; optionally block unknown senders.
+ *     3. Enrich into `ctx` (text, mtype, sender, isGroup, quoted,
  *        reply(), react(), downloadMsg(), …).
- *     3. Fire-and-forget analytics + user-directory writes.
- *     4. Mark as read (cheap WS frame, optional).
- *     5. Detect prefix (user `.` vs admin `$`) — dual prefix supported.
- *     6. Per-sender inbound rate limit (admins exempt).
- *     7. Resolve command, gate by admin/group/public-mode.
- *     8. Hand off to commandRunner.
+ *     4. Fire-and-forget analytics + user-directory writes.
+ *     5. Mark as read (cheap WS frame, optional).
+ *     6. Detect prefix (user `.` vs admin `$`) — dual prefix supported.
+ *     7. Per-sender inbound rate limit (admins exempt).
+ *     8. Resolve command, gate by admin/group/public-mode.
+ *     9. Hand off to commandRunner.
  *
  *   Commands receive only `ctx` (no legacy `m.*` shim). See CONTRIBUTING.md.
- *
- *   ctx.downloadMsg(): a convenience helper. If the current message has
- *   a quoted media message, downloads THAT (most common case — user
- *   replies to a sticker with .toimg, etc.). Otherwise downloads media
- *   from the current message. Returns Buffer.
  */
 
 const {
@@ -47,16 +38,11 @@ const { makeRateLimiter } = require('../middleware/rateLimit');
 const metrics             = require('../services/metrics');
 
 // ─── Inbound rate limiter (token bucket per sender) ──────────────────────
-//
-//   capacity     = burst allowance (config.processing.userRateLimit, min 5)
-//   refillPerSec = sustained rate (userRateLimit / 60 — per-minute → per-sec)
-//
 const senderLimiter = makeRateLimiter({
   capacity:     Math.max(config.processing.userRateLimit, 5),
   refillPerSec: config.processing.userRateLimit / 60,
 });
 
-// ─── Prefix matcher (string OR RegExp OR array) ─────────────────────────
 function matchPrefix(text, p) {
   if (!text || p == null) return null;
   if (typeof p === 'string') return text.startsWith(p) ? p : null;
@@ -70,7 +56,6 @@ function matchPrefix(text, p) {
   return null;
 }
 
-// ─── Text extraction (handles every WhatsApp message body location) ─────
 function pickText(m) {
   const msg = m.message;
   if (!msg) return '';
@@ -87,7 +72,6 @@ function pickText(m) {
   );
 }
 
-// ─── Enrichment: raw Baileys message → flat `ctx` object ────────────────
 function enrich(m, sock) {
   const remoteJid = m.key.remoteJid;
   const isGroup   = remoteJid?.endsWith('@g.us');
@@ -105,7 +89,7 @@ function enrich(m, sock) {
   const ctxInfo = inner?.contextInfo;
 
   return {
-    raw: m,                        // the original Baileys message
+    raw: m,
     id: m.key.id,
     chat: remoteJid,
     from: remoteJid,
@@ -133,7 +117,6 @@ function enrich(m, sock) {
         }
       : null,
 
-    // ── Convenience senders ────────────────────────────────────────────
     reply: (text, opts = {}) => {
       const p = sock.sendMessage(remoteJid, { text }, { quoted: m, ...opts });
       p.then(() => metrics.incSent()).catch(() => {});
@@ -142,17 +125,6 @@ function enrich(m, sock) {
     react: (emoji) =>
       sock.sendMessage(remoteJid, { react: { text: emoji, key: m.key } }),
 
-    /**
-     * ctx.downloadMsg() — download media as a Buffer.
-     *
-     * If the message has a quoted media message, downloads the QUOTED one
-     * (the most common case — user replies to an image with .toimg etc.).
-     * Otherwise downloads media from this message itself.
-     *
-     *   const buf = await ctx.downloadMsg();
-     *
-     * Throws if there is no media to download. Always returns Buffer.
-     */
     downloadMsg: async () => {
       let msgToDownload = m;
       if (ctxInfo?.quotedMessage) {
@@ -180,14 +152,36 @@ function enrich(m, sock) {
   };
 }
 
-// ─── Main entry point ───────────────────────────────────────────────────
 module.exports = async function handleMessage({ sock, m, commands, store, logger }) {
   if (!m?.message) return;
   if (m.key?.fromMe) return;
   if (m.message.protocolMessage) return;
   if (m.key.remoteJid === 'status@broadcast' && !config.features.readStatus) return;
 
+  // ─── Privacy: skip excluded chats entirely (no persistence, no handling) ──
+  if ((config.privacy?.excludeFromStore || []).includes(m.key.remoteJid)) return;
+
   const ctx = enrich(m, sock);
+
+  // ─── Privacy: block messages from unknown senders (private chats only) ──
+  //   "Unknown" = the sender is not an admin and is not in the contacts store.
+  //   Group messages are never blocked (admins control group membership).
+  if (config.privacy?.blockUnknownSenders && ctx.isPrivate) {
+    const isAdmin = (config.admins || []).includes(ctx.sender);
+    if (!isAdmin) {
+      try {
+        const known = await store.db?.prepare?.('SELECT 1 FROM contacts WHERE jid = ? LIMIT 1')
+          ?.get?.(ctx.sender);
+        if (!known) {
+          logger.debug?.({ sender: ctx.sender }, 'privacy: blocked unknown sender');
+          return;
+        }
+      } catch {
+        // Non-SQLite stores: fall back to "allow" — we don't have a
+        // synchronous contacts check; future versions add a uniform method.
+      }
+    }
+  }
 
   // Fire-and-forget side effects
   rememberUser(ctx, sock).catch(() => {});

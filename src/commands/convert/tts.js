@@ -84,6 +84,12 @@ module.exports = {
       return ctx.reply('↩️ Reply to a *text* message with `.tts` to get an audio reply.');
     }
 
+    // v0.4.5: cap text length (gTTS API limits + memory protection)
+    const MAX_CHARS_HARD = 8000;
+    if (text.length > MAX_CHARS_HARD) {
+      return ctx.reply(`🚫 Text too long (${text.length} chars). Max is ${MAX_CHARS_HARD}.`);
+    }
+
     let lang = (args[0] || DEFAULT_LANG).toLowerCase();
     if (!SUPPORTED_LANGS.has(lang)) {
       return ctx.reply(`Unsupported language *${lang}*. Try: en, hi, es, fr, de, ja, ko, ml, ta…`);

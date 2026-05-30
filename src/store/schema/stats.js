@@ -40,6 +40,11 @@ const COUNTERS = Object.freeze([
   // ── Throttling ──────────────────────────────────────────────────────
   'rate_limit_hits_total',
   'cooldown_hits_total',
+  // ── v0.4.5: stability ──────────────────────────────────────────────
+  'heap_pressure_alerts_total',
+  'worker_restarts_total',
+  'command_alerts_triggered_total',
+  'command_alerts_cleared_total',
 ]);
 
 const GAUGES = Object.freeze([
@@ -47,6 +52,9 @@ const GAUGES = Object.freeze([
   'bot_uptime_seconds',
   'groups_count',
   'unique_users_seen',
+  // ── v0.4.5: stability ──────────────────────────────────────────────
+  'heap_pressure_percent',
+  'active_command_alerts',
 ]);
 
 /**

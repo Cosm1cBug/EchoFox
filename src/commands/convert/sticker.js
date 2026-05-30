@@ -44,6 +44,12 @@ module.exports = {
       throw new Error(`Could not download source media: ${err.message}`);
     }
 
+    // v0.4.5: cap source media size to protect from OOM on hostile inputs
+    const MAX_BYTES = 8 * 1024 * 1024;
+    if (buf.length > MAX_BYTES) {
+      return ctx.reply(`🚫 Source too large (${(buf.length/1e6).toFixed(1)}MB). Max for sticker conversion is 8MB.`);
+    }
+
     const sticker = new Sticker(buf, {
       pack:     config.sticker.packName   || 'EchoFox',
       author:   config.sticker.packAuthor || 'COSM1CBUG',

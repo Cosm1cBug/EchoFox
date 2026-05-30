@@ -22,6 +22,7 @@
  */
 
 const fs   = require('node:fs');
+const { profilePicCache } = require('../../core/caches');
 const path = require('node:path');
 
 const DEFAULT_AVATAR = path.join(__dirname, '..', '..', 'Utils', 'assets', 'default.jpg');
@@ -40,18 +41,33 @@ async function fetchStatusSafely(sock, jid) {
 }
 
 async function fetchAvatar(sock, jid) {
+  // v0.4.5: cached lookup
+  const cached = profilePicCache.get(jid);
+  if (cached !== undefined) return cached;
+
+  let result = null;
+
   // 1. Standard profile picture
   try {
     const url = await sock.profilePictureUrl(jid, 'image');
-    if (url) return { url };
+    if (url) { result = { url }; profilePicCache.set(jid, result); return result; }
   } catch { /* user has no PP / privacy */ }
   // 2. Business profile picture
   try {
     const biz = await sock.getBusinessProfile(jid);
-    if (biz?.profilePictureUrl) return { url: biz.profilePictureUrl };
+    if (biz?.profilePictureUrl) {
+      result = { url: biz.profilePictureUrl };
+      profilePicCache.set(jid, result);
+      return result;
+    }
   } catch { /* not a business account */ }
-  // 3. Bundled default
-  if (fs.existsSync(DEFAULT_AVATAR)) return { url: 'file://' + DEFAULT_AVATAR };
+  // 3. Bundled default — cache the *null* lookup so we don't retry every call
+  if (fs.existsSync(DEFAULT_AVATAR)) {
+    result = { url: 'file://' + DEFAULT_AVATAR };
+    profilePicCache.set(jid, result);
+    return result;
+  }
+  profilePicCache.set(jid, null);
   return null;
 }
 

@@ -3,27 +3,37 @@
  * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
  * Licensed under the GNU AGPL-3.0-or-later. See LICENSE. @license AGPL-3.0
  */
-/*
- * EchoFox - WhatsApp bot built on Baileys
- * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
- */
 'use strict';
 
+const { config } = require('../lib/configLoader');
 const { Pool } = require('pg');
 const { proto } = require('@whiskeysockets/baileys');
 const { SQL_DDL: PARTICIPANTS_DDL } = require('./schema/participants');
 const { SQL_DDL: STATS_DDL }        = require('./schema/stats');
+const {
+  SQL_DDL: EXTRAS_DDL,
+  applyMessagesMigration_postgres,
+} = require('./schema/messages-extras');
 
 function makePostgresStore(url, logger, groupCache) {
-  const pool = new Pool({ connectionString: url });
+  const pool = new Pool({
+    connectionString:        url,
+    max:                     20,
+    idleTimeoutMillis:       30_000,
+    connectionTimeoutMillis: 2_000,
+    allowExitOnIdle:         false,
+  });
+  pool.on('error', (e) => logger.error({ err: e }, 'pg pool error (idle client)'));
 
-  // Schema init (fire-and-forget; logs on failure)
   pool.query(`
     CREATE TABLE IF NOT EXISTS messages (
       jid TEXT, id TEXT, from_me BOOLEAN, participant TEXT,
       msg BYTEA, ts BIGINT, PRIMARY KEY (jid, id));
+        
     CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages (ts);
+    CREATE INDEX IF NOT EXISTS idx_messages_jid_ts ON messages (jid, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_groups_subject ON groups (subject);
+    CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts (name);
 
     CREATE TABLE IF NOT EXISTS chats (
       jid TEXT PRIMARY KEY, name TEXT, unread INTEGER DEFAULT 0, ts BIGINT);
@@ -36,10 +46,11 @@ function makePostgresStore(url, logger, groupCache) {
 
     ${STATS_DDL.postgres}
     ${PARTICIPANTS_DDL.postgres}
-  `).catch((e) => logger.error({ err: e }, 'Postgres init failed'));
+    ${EXTRAS_DDL.postgres}
+  `).then(() => applyMessagesMigration_postgres(pool))
+    .catch((e) => logger.error({ err: e }, 'Postgres init failed'));
 
   return {
-    // ── Retry-decryption hook ──────────────────────────────────────────
     async getMessage(key) {
       const r = await pool.query(
         'SELECT msg FROM messages WHERE jid = $1 AND id = $2',
@@ -49,7 +60,6 @@ function makePostgresStore(url, logger, groupCache) {
       return proto.Message.decode(r.rows[0].msg);
     },
 
-    // ── Groups ─────────────────────────────────────────────────────────
     async getGroupMetadata(jid) {
       const mem = groupCache.get(jid);
       if (mem) return mem;
@@ -69,7 +79,6 @@ function makePostgresStore(url, logger, groupCache) {
       );
     },
 
-    // ── Participants event-log ─────────────────────────────────────────
     async recordParticipantEvent(groupJid, participant, action, actor, ts) {
       try {
         await pool.query(
@@ -107,7 +116,17 @@ function makePostgresStore(url, logger, groupCache) {
       } catch (e) { logger.warn({ err: e }, 'current participants query failed'); return []; }
     },
 
-    // ── Stats: counters ────────────────────────────────────────────────
+    async listGroups() {
+      try {
+        const r = await pool.query(`SELECT jid, subject, meta FROM groups ORDER BY subject`);
+        return r.rows.map((row) => ({
+          jid:              row.jid,
+          subject:          row.subject || row.meta?.subject || '(unnamed)',
+          participantCount: row.meta?.participants?.length || 0,
+        }));
+      } catch { return []; }
+    },
+
     recordStat(key, inc = 1) {
       pool.query(
         `INSERT INTO stats (key, value) VALUES ($1, $2)
@@ -123,7 +142,6 @@ function makePostgresStore(url, logger, groupCache) {
       } catch { return {}; }
     },
 
-    // ── Stats: gauges ──────────────────────────────────────────────────
     setGauge(key, value) {
       pool.query(
         `INSERT INTO stats_gauges (key, value, updated_at) VALUES ($1, $2, $3)
@@ -139,7 +157,6 @@ function makePostgresStore(url, logger, groupCache) {
       } catch { return {}; }
     },
 
-    // ── Derived counts ─────────────────────────────────────────────────
     async countGroups() {
       try { const r = await pool.query('SELECT COUNT(*) AS n FROM groups'); return Number(r.rows[0].n); }
       catch { return 0; }
@@ -152,12 +169,14 @@ function makePostgresStore(url, logger, groupCache) {
       } catch { return 0; }
     },
 
-    // ── Bind to Baileys events ─────────────────────────────────────────
     bind(ev) {
       ev.on('messages.upsert', async ({ messages }) => {
+        const storeBodies = config.privacy?.storeMessageBodies !== false;
+        const excluded    = new Set(config.privacy?.excludeFromStore || []);
         for (const m of messages) {
           if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
-          const msgBuf = Buffer.from(proto.Message.encode(m.message).finish());
+          if (excluded.has(m.key.remoteJid)) continue;
+          const msgBuf = storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null;
           try {
             await pool.query(
               `INSERT INTO messages (jid, id, from_me, participant, msg, ts)
@@ -201,6 +220,113 @@ function makePostgresStore(url, logger, groupCache) {
       ev.on('groups.upsert', (groups) => {
         for (const g of groups) this.saveGroupMetadata(g.id, g);
       });
+    },
+
+    // ── Edits ──────────────────────────────────────────────────────────
+    async recordMessageEdit(jid, messageId, editor, oldBody, newBody, ts) {
+      try {
+        await pool.query(
+          `INSERT INTO message_edits (jid, message_id, editor, old_body, new_body, ts)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [jid, messageId, editor || null, oldBody || '', newBody || '',
+           ts ?? Math.floor(Date.now()/1000)]);
+      } catch (e) { logger.warn({err:e}, 'edit insert failed'); }
+    },
+    async getMessageEdits(jid, messageId) {
+      try {
+        const r = await pool.query(
+          `SELECT editor, old_body, new_body, ts FROM message_edits
+           WHERE jid = $1 AND message_id = $2 ORDER BY ts ASC`,
+          [jid, messageId]);
+        return r.rows;
+      } catch (e) { logger.warn({err:e}, 'edits query failed'); return []; }
+    },
+    async updateMessageBody(jid, messageId, message, ts) {
+      try {
+        const buf = Buffer.from(proto.Message.encode(message).finish());
+        await pool.query(
+          `UPDATE messages SET msg = $1, ts = $2 WHERE jid = $3 AND id = $4`,
+          [buf, ts ?? Math.floor(Date.now()/1000), jid, messageId]);
+      } catch (e) { logger.warn({err:e}, 'updateMessageBody failed'); }
+    },
+
+    // ── Reactions ──────────────────────────────────────────────────────
+    async recordMessageReaction(jid, messageId, reactor, emoji, ts) {
+      try {
+        await pool.query(
+          `INSERT INTO message_reactions (jid, message_id, reactor, emoji, ts)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [jid, messageId, reactor || '', emoji || null,
+           ts ?? Math.floor(Date.now()/1000)]);
+      } catch (e) { logger.warn({err:e}, 'reaction insert failed'); }
+    },
+    async getMessageReactions(jid, messageId) {
+      try {
+        const r = await pool.query(
+          `SELECT reactor, emoji, ts FROM message_reactions
+           WHERE jid = $1 AND message_id = $2 ORDER BY ts ASC`,
+          [jid, messageId]);
+        return r.rows;
+      } catch (e) { logger.warn({err:e}, 'reactions query failed'); return []; }
+    },
+
+    // ── Receipts ───────────────────────────────────────────────────────
+    async recordReceipt(jid, messageId, recipient, status, ts) {
+      try {
+        await pool.query(
+          `INSERT INTO message_receipts (jid, message_id, recipient, status, ts)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (jid, message_id, recipient) DO UPDATE
+             SET status = GREATEST(message_receipts.status, EXCLUDED.status),
+                 ts = EXCLUDED.ts`,
+          [jid, messageId, recipient, status, ts ?? Math.floor(Date.now()/1000)]);
+      } catch (e) { logger.warn({err:e}, 'receipt upsert failed'); }
+    },
+    async getMessageReceipts(jid, messageId) {
+      try {
+        const r = await pool.query(
+          `SELECT recipient, status, ts FROM message_receipts
+           WHERE jid = $1 AND message_id = $2 ORDER BY ts ASC`,
+          [jid, messageId]);
+        return r.rows;
+      } catch (e) { logger.warn({err:e}, 'receipts query failed'); return []; }
+    },
+
+    // ── Deletions ──────────────────────────────────────────────────────
+    async markMessageDeleted(jid, messageId, _by, ts) {
+      try {
+        await pool.query(
+          `UPDATE messages SET deleted_at = $1
+           WHERE jid = $2 AND id = $3 AND deleted_at IS NULL`,
+          [ts ?? Math.floor(Date.now()/1000), jid, messageId]);
+      } catch (e) { logger.warn({err:e}, 'markMessageDeleted failed'); }
+    },
+    async markChatMessagesDeleted(jid, ts) {
+      try {
+        await pool.query(
+          `UPDATE messages SET deleted_at = $1 WHERE jid = $2 AND deleted_at IS NULL`,
+          [ts ?? Math.floor(Date.now()/1000), jid]);
+      } catch (e) { logger.warn({err:e}, 'markChatMessagesDeleted failed'); }
+    },
+    async getDeletedInGroup(jid, limit = 100) {
+      try {
+        const r = await pool.query(
+          `SELECT id, participant, deleted_at FROM messages
+           WHERE jid = $1 AND deleted_at IS NOT NULL
+           ORDER BY deleted_at DESC LIMIT $2`,
+          [jid, limit]);
+        return r.rows;
+      } catch (e) { logger.warn({err:e}, 'deletedInGroup failed'); return []; }
+    },
+
+    // ── Aggregate status ───────────────────────────────────────────────
+    async updateMessageStatus(jid, messageId, status, _ts) {
+      try {
+        await pool.query(
+          `UPDATE messages SET status = GREATEST(COALESCE(status,0), $1)
+           WHERE jid = $2 AND id = $3`,
+          [Number(status), jid, messageId]);
+      } catch (e) { logger.warn({err:e}, 'updateMessageStatus failed'); }
     },
 
     close() { pool.end(); },

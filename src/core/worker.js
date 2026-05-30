@@ -24,6 +24,10 @@
 
 require('events').EventEmitter.defaultMaxListeners = 100;
 
+// ─── Network: load extra CAs into process-wide TLS contexts ────────────
+// (must run before any HTTPS/WSS connection — including Baileys' WS).
+require('../lib/network').applyExtraCAsToProcess();
+
 const path   = require('node:path');
 const PQueue = require('p-queue').default;
 const qrcode = require('qrcode-terminal');
@@ -48,6 +52,11 @@ const eventRouter     = require('../events/router');
 const { startDashboard } = require('../dashboard/server');
 const { startGC }        = require('../lib/tempManager');
 const { wrapSocketSend } = require('../middleware/sendQueue');
+const { wrapWithPresence } = require('../middleware/presence');
+const { getWsAgent, applyExtraCAsToProcess } = require('../lib/network');
+const { startMemoryGuard } = require('../lib/memoryGuard');
+const alertEngine          = require('../services/alertEngine');
+const diagnostics          = require('../lib/diagnostics');
 
 const log = logger.child({ mod: 'worker' });
 
@@ -117,10 +126,18 @@ async function start(retry = 0) {
   // ─── Phase 4: store backend (only on first boot) ───────────────────
   if (!store) {
     store = lifecycle.selectStore();
-    // ─── Phase 5: metrics ────────────────────────────────────────────
     lifecycle.initMetrics(store);
     startGaugeRefresh();
+
+    // ─── v0.4.5: alert engine + memory guard ───────────────────────
+    alertEngine.init({
+      windowMinutes:        config.alerts.windowMinutes,
+      minInvocations:       config.alerts.minInvocations,
+      failureRateThreshold: config.alerts.failureRateThreshold,
+    });
+    startMemoryGuard({ config });
   }
+  
 
   // ─── Phase 6: command registry (only on first boot) ────────────────
   if (!commands) {
@@ -141,6 +158,8 @@ async function start(retry = 0) {
 
   sock = makeWASocket({
     version,
+    agent:       getWsAgent(),                  // proxy / extra-CA aware
+    fetchAgent:  getWsAgent(),                  // ditto for media up/download
     logger: logger.child({ mod: 'baileys' }),
     browser: Browsers.macOS('EchoFox'),
     auth: {
@@ -202,6 +221,22 @@ async function start(retry = 0) {
         log.info({ concurrency: config.processing.sendConcurrency || 4 },
           'outbound send queue wired');
       }
+
+      // Presence-on-send: wrap AFTER sendQueue so the queue dispatches
+      // first → presence-wrap sees the queued send and does typing/recording.
+      if (!sock._presenceWrapped) {
+        wrapWithPresence(sock, config);
+      }
+
+      // ─── v0.4.5: bind diagnostics ctx + attach sock to alert engine ──
+      diagnostics.bindRuntimeContext({ sock, store, commands, auth, caches });
+      alertEngine.attachSock(sock, config.alerts.notifyChannel || config.channels.errLogs);
+
+      // ─── Initial presence (anti-ban: tell WA we're "available" not "online forever") ─
+      const initialPresence = config.antiBan?.presenceOnConnect || 'available';
+      sock.sendPresenceUpdate(initialPresence)
+        .then(()  => log.info({ presence: initialPresence }, 'sent initial presence'))
+        .catch((e)=> log.debug({ err: e }, 'sendPresenceUpdate at connect failed'));
 
       // Optional dashboard (once)
       if (config.dashboard.enabled && !dashboardStarted) {
@@ -280,6 +315,12 @@ async function start(retry = 0) {
   sock.ev.on('contacts.upsert', (u) => eventRouter.emit('contacts.upsert', { sock, u }));
   sock.ev.on('call',            (u) => eventRouter.emit('call',            { sock, u }));
   sock.ev.on('groups.update',   (u) => eventRouter.emit('groups.update',   { sock, u }));
+
+  // ─── NEW v0.4.3: full message timeline ─────────────────────────────
+  sock.ev.on('messages.update',        (payload) => eventRouter.emit('messages.update',        { sock, store, payload }));
+  sock.ev.on('messages.delete',        (payload) => eventRouter.emit('messages.delete',        { sock, store, payload }));
+  sock.ev.on('messages.reaction',      (payload) => eventRouter.emit('messages.reaction',      { sock, store, payload }));
+  sock.ev.on('message-receipt.update', (payload) => eventRouter.emit('message-receipt.update', { sock, store, payload }));
 
   // ─── The hot path: message routing ─────────────────────────────────
   sock.ev.on('messages.upsert', (payload) => {

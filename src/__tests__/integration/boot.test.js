@@ -38,12 +38,12 @@ test('metrics service init() then snapshot()', async () => {
   metrics.init(store);
   metrics.incReceived(3);
   metrics.incCommand('ping', 'success');
-  metrics.setGauge('test_gauge', 42);
+  metrics.setGauge('groups_count', 42);
   const snap = await metrics.snapshot();
   assert.ok(snap.counters);
   assert.ok(snap.gauges);
   assert.ok(snap.counters.messages_received_total >= 3);
-  assert.equal(snap.gauges.test_gauge, 42);
+  assert.equal(snap.gauges.groups_count, 42);
 });
 
 test('alertEngine: init → record many failures → triggers', () => {

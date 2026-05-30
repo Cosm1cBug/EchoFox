@@ -18,7 +18,6 @@
 const fs   = require('node:fs');
 const path = require('node:path');
 
-// Resolve a dotted path like "apis.omdb.apiKey" against the config object.
 function dig(obj, dotted) {
   return dotted.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
 }
@@ -36,10 +35,10 @@ class CommandRegistry {
     this.prefix     = prefix;
     this.logger     = logger;
     this.config     = config || {};
-    this.commands   = new Map();          // name -> cmd
-    this.aliases    = new Map();          // alias -> name
-    this.categories = new Map();          // category -> [cmd]
-    this.skipped    = [];                 // { name, reason, file }
+    this.commands   = new Map();
+    this.aliases    = new Map();
+    this.categories = new Map();
+    this.skipped    = [];
   }
 
   async load() {
@@ -65,8 +64,6 @@ class CommandRegistry {
           delete require.cache[require.resolve(full)];
           cmd = require(full);
         } catch (e) {
-          // v0.4.5: don't HARD-FAIL the whole registry just because one
-          // command has a missing optional dep. Record as skipped and continue.
           this.logger.error({ err: e, file: full }, 'failed to load command (optional dep missing?)');
           this.skipped.push({ name: f, file: full, reason: 'load_error', err: e.message });
           continue;
@@ -77,7 +74,6 @@ class CommandRegistry {
           continue;
         }
 
-        // Check `requires` — every listed config path must be non-empty
         if (Array.isArray(cmd.requires) && cmd.requires.length) {
           const missing = cmd.requires.filter((req) => isMissing(dig(this.config, req)));
           if (missing.length) {
@@ -104,7 +100,6 @@ class CommandRegistry {
       skipped:    this.skipped.length,
     }, 'commands loaded');
 
-    // Hot-reload (debounced)
     if (!this._watching) {
       this._watching = true;
       let t;
@@ -115,7 +110,6 @@ class CommandRegistry {
             this.logger.error({ err: e }, 'hot-reload failed')), 250);
         });
       } catch (e) {
-        // recursive watch unsupported on some Linux kernels → not fatal
         this.logger.debug({ err: e }, 'fs.watch recursive unsupported; hot-reload disabled');
       }
     }
@@ -131,7 +125,6 @@ class CommandRegistry {
 
   all() { return [...this.commands.values()]; }
 
-  /** Markdown-friendly summary, used by .help/.menu and docs generator. */
   describe() {
     const out = {};
     for (const [cat, list] of this.categories) {

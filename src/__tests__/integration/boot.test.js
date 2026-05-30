@@ -38,7 +38,7 @@ test('metrics service init() then snapshot()', async () => {
   metrics.init(store);
   metrics.incReceived(3);
   metrics.incCommand('ping', 'success');
-  metrics.setGauge('groups_count', 42);
+  metrics.setGauge('groups_count', 42);   // known gauge, no warning
   const snap = await metrics.snapshot();
   assert.ok(snap.counters);
   assert.ok(snap.gauges);

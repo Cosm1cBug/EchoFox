@@ -19,7 +19,7 @@
  */
 
 module.exports = {
-  name: 'ctx',
+  name: 'ctxi',
   alias: ['inspect', 'whoami'],
   desc: 'Print the parsed message context (debug helper)',
   category: 'general',

@@ -3,9 +3,12 @@ const fs = require('fs');
 const { config }  = require('../../config.js');
 
 module.exports = {
-    name: 'ctx',
+    name: 'ctxmsg',
     alias: ['ctest'],
-    //type: "entertainment",
+    desc: 'Print the parsed message context (debug helper)',
+    category: 'general',
+    cooldown: 3,
+    
     start: async(sock, m, { command, prefix, text }) => {
         const msg = generateWAMessageFromContent(m.chat, {
             viewOnceMessage: {

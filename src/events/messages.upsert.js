@@ -46,7 +46,13 @@ const senderLimiter = makeRateLimiter({
 function matchPrefix(text, p) {
   if (!text || p == null) return null;
   if (typeof p === 'string') return text.startsWith(p) ? p : null;
-  if (p instanceof RegExp)   return (text.match(p) || [null])[0];
+  if (p instanceof RegExp) {
+    // p comes from frozen config — its lastIndex can't be mutated.
+    // Build a stateless clone (no g/y flags) so exec() doesn't crash.
+    const re = new RegExp(p.source, p.flags.replace(/[gy]/g, ''));
+    const m = re.exec(text);
+    return m ? m[0] : null;
+  }
   if (Array.isArray(p)) {
     for (const x of p) {
       const m = matchPrefix(text, x);

@@ -242,11 +242,3 @@ module.exports = {
     bridgedChats: {},
   },
 };
-
-let file = require.resolve(__filename)
-fs.watchFile(file, () => {
-    fs.unwatchFile(file)
-    console.log(`Updated:'${__filename}'`)
-    delete require.cache[file]
-    require(file)
-})

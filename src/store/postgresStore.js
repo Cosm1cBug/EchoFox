@@ -29,20 +29,19 @@ function makePostgresStore(url, logger, groupCache) {
     CREATE TABLE IF NOT EXISTS messages (
       jid TEXT, id TEXT, from_me BOOLEAN, participant TEXT,
       msg BYTEA, ts BIGINT, PRIMARY KEY (jid, id));
-        
     CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages (ts);
     CREATE INDEX IF NOT EXISTS idx_messages_jid_ts ON messages (jid, ts DESC);
-    CREATE INDEX IF NOT EXISTS idx_groups_subject ON groups (subject);
-    CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts (name);
 
     CREATE TABLE IF NOT EXISTS chats (
       jid TEXT PRIMARY KEY, name TEXT, unread INTEGER DEFAULT 0, ts BIGINT);
 
     CREATE TABLE IF NOT EXISTS contacts (
       jid TEXT PRIMARY KEY, name TEXT, notify TEXT, img_url TEXT);
+    CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts (name);
 
     CREATE TABLE IF NOT EXISTS groups (
       jid TEXT PRIMARY KEY, subject TEXT, creation BIGINT, meta JSONB);
+    CREATE INDEX IF NOT EXISTS idx_groups_subject ON groups (subject);
 
     ${STATS_DDL.postgres}
     ${PARTICIPANTS_DDL.postgres}

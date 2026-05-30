@@ -1,6 +1,6 @@
 const { proto, generateWAMessageFromContent, prepareWAMessageMedia } = require("@whiskeysockets/baileys") 
 const fs = require('fs');
-const { config }  = require('../../config.js');
+const { config }  = require('../../lib/configLoader');
 
 module.exports = {
     name: 'ctxmsg',
@@ -8,7 +8,7 @@ module.exports = {
     desc: 'Print the parsed message context (debug helper)',
     category: 'general',
     cooldown: 3,
-    
+
     start: async(sock, m, { command, prefix, text }) => {
         const msg = generateWAMessageFromContent(m.chat, {
             viewOnceMessage: {

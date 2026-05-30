@@ -1,4 +1,4 @@
-@'
+# Enforce LF line endings across all platforms
 * text=auto eol=lf
 
 *.js   text eol=lf
@@ -6,11 +6,16 @@
 *.md   text eol=lf
 *.yml  text eol=lf
 *.yaml text eol=lf
-'@ | Out-File -Encoding ascii .gitattributes
+*.sh   text eol=lf
 
-git add .gitattributes
-git rm --cached -r .
-git reset --hard
-npm run headers
-git add -A
-git commit -m "fix: enforce LF line endings via .gitattributes"
+# Binary files — never convert
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.mp3    binary
+*.mp4    binary
+*.opus   binary
+*.ico    binary
+*.tar.gz binary

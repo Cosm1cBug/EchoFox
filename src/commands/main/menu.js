@@ -6,7 +6,7 @@
 'use strict';
 
 const fs = require('fs').promises;
-const { config } = require('../../config');
+const { config } = require('../../lib/configLoader');
 const {
     proto,
     generateWAMessageFromContent,

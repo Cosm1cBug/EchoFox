@@ -201,6 +201,7 @@ function attachLegacyAliases(cfg) {
   cfg.omdb       = { ...cfg.apis.omdb,       key: cfg.apis.omdb.apiKey };
   cfg.virustotal = { ...cfg.apis.virustotal, key: cfg.apis.virustotal.apiKey };
   cfg.alienvault = { ...cfg.apis.alienvault, key: cfg.apis.alienvault.apiKey };
+  
   cfg.OpenAI     = { apiKey: cfg.ai?.providers?.openai?.apiKey || '' };
   cfg.Gemini     = { apiKey: cfg.ai?.providers?.gemini?.apiKey || '' };
   cfg.WorkMode   = { public: cfg.bot.public };

@@ -55,11 +55,8 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       ts          INTEGER NOT NULL,
       PRIMARY KEY (jid, id)
     );
-    
     CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages (ts);
     CREATE INDEX IF NOT EXISTS idx_messages_jid_ts ON messages (jid, ts DESC);
-    CREATE INDEX IF NOT EXISTS idx_groups_subject ON groups (subject COLLATE NOCASE);
-    CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts (name);
 
     CREATE TABLE IF NOT EXISTS chats (
       jid    TEXT PRIMARY KEY,
@@ -74,6 +71,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       notify  TEXT,
       img_url TEXT
     );
+    CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts (name);
 
     CREATE TABLE IF NOT EXISTS groups (
       jid      TEXT PRIMARY KEY,
@@ -81,6 +79,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       creation INTEGER,
       meta     BLOB
     );
+    CREATE INDEX IF NOT EXISTS idx_groups_subject ON groups (subject COLLATE NOCASE);
 
     ${STATS_DDL.sqlite}
     ${PARTICIPANTS_DDL.sqlite}

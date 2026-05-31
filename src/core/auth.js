@@ -85,7 +85,7 @@ async function useRedisAuth(redisUrl, sessionName) {
   }
 
   return {
-    state: { creds, keys: makeKeysWrapper({ read, write, remove }) },
+    state: { creds, keys: makeCacheableSignalKeyStore(makeKeysWrapper({ read, write, remove }), log.child({ mod: 'signal-keys' }))},
     saveCreds: () => write(creds, 'creds'),
     clear: async () => {
       const keys = await client.keys(prefix + '*');
@@ -136,7 +136,7 @@ async function useSqliteAuth(sqlitePath, sessionName) {
   }
 
   return {
-    state: { creds, keys: makeKeysWrapper({ read, write, remove }) },
+    state: { creds, keys: makeCacheableSignalKeyStore(makeKeysWrapper({ read, write, remove }), log.child({ mod: 'signal-keys' }))},
     saveCreds: () => write(creds, 'creds'),
     clear: async () => { stmts.delAll.run(sessionName); },
     close: () => db.close(),
@@ -184,7 +184,7 @@ async function usePostgresAuth(pgUrl, sessionName) {
   }
 
   return {
-    state: { creds, keys: makeKeysWrapper({ read, write, remove }) },
+    state: { creds, keys: makeCacheableSignalKeyStore(makeKeysWrapper({ read, write, remove }), log.child({ mod: 'signal-keys' }))},
     saveCreds: () => write(creds, 'creds'),
     clear: async () => { await pool.query('DELETE FROM auth WHERE session = $1', [sessionName]); },
     close: () => pool.end(),

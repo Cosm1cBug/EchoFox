@@ -5,22 +5,9 @@
  */
 'use strict';
 
-/**
- * EchoFox worker — orchestrates the boot chain via lifecycle.js, then
- * runs the Baileys socket.
- *
- * Boot order is enforced by src/core/lifecycle.js (config → auth → store
- * → metrics → commands → socket → login → ready). This file's only job
- * is to glue lifecycle's outputs into a live Baileys socket.
- *
- * Everything specific to "how do we authenticate" or "where do we store"
- * lives in lifecycle/auth/store modules. This file should stay short.
- */
-
 require('events').EventEmitter.defaultMaxListeners = 100;
 
 // ─── Network: load extra CAs into process-wide TLS contexts ────────────
-// (must run before any HTTPS/WSS connection — including Baileys' WS).
 require('../lib/network').applyExtraCAsToProcess();
 
 const path   = require('node:path');
@@ -55,7 +42,6 @@ const diagnostics          = require('../lib/diagnostics');
 
 const log = logger.child({ mod: 'worker' });
 
-// ─── Per-chat queues (back-pressure) ─────────────────────────────────────
 const chatQueues = new Map();
 function queueFor(jid) {
   let q = chatQueues.get(jid);
@@ -79,7 +65,6 @@ let auth;
 let dashboardStarted = false;
 let shuttingDown = false;
 
-// ─── IPC from supervisor ─────────────────────────────────────────────────
 process.on('message', async (msg) => {
   if (msg === 'shutdown') {
     shuttingDown = true;
@@ -92,7 +77,6 @@ process.on('message', async (msg) => {
   }
 });
 
-// ─── Periodic gauge refresh (uptime, group counts, unique users) ────────
 function startGaugeRefresh() {
   setInterval(async () => {
     try {
@@ -107,24 +91,19 @@ function startGaugeRefresh() {
   }, 30_000).unref();
 }
 
-// ─── Boot ────────────────────────────────────────────────────────────────
 async function start(retry = 0) {
   if (shuttingDown) return;
 
-  // ─── Phases 1-2: logger + config (already done; emit banner log) ───
   if (retry === 0) lifecycle.logBoot();
 
-  // ─── Phase 3: auth backend ─────────────────────────────────────────
   auth = await lifecycle.selectAuth();
   const { state, saveCreds, clear } = auth;
 
-  // ─── Phase 4: store backend (only on first boot) ───────────────────
   if (!store) {
     store = lifecycle.selectStore();
     lifecycle.initMetrics(store);
     startGaugeRefresh();
 
-    // ─── v0.4.5: alert engine + memory guard ───────────────────────
     alertEngine.init({
       windowMinutes:        config.alerts.windowMinutes,
       minInvocations:       config.alerts.minInvocations,
@@ -133,8 +112,6 @@ async function start(retry = 0) {
     startMemoryGuard({ config });
   }
   
-
-  // ─── Phase 6: command registry (only on first boot) ────────────────
   if (!commands) {
     commands = new CommandRegistry({
       dir:    path.join(__dirname, '..', 'commands'),
@@ -143,18 +120,16 @@ async function start(retry = 0) {
       config,
     });
     await commands.load();
-    log.info({ phase: 'commands', status: 'ok', count: commands.commands.size },
-      '🧩 commands loaded');
+    log.info({ phase: 'commands', status: 'ok', count: commands.commands.size }, '🧩 commands loaded');
     startGC(log);
   }
 
-  // ─── Phase 7: socket ───────────────────────────────────────────────
   const version = await lifecycle.fetchVersion();
 
   sock = makeWASocket({
     version,
-    agent:       getWsAgent(),                  // proxy / extra-CA aware
-    fetchAgent:  getWsAgent(),                  // ditto for media up/download
+    agent:       getWsAgent(),
+    fetchAgent:  getWsAgent(),                  
     logger: logger.child({ mod: 'baileys' }),
     browser: Browsers.macOS('EchoFox'),
     auth: {
@@ -184,56 +159,46 @@ async function start(retry = 0) {
 
     getMessage:          (key) => store.getMessage(key),
     cachedGroupMetadata: (jid) => store.getGroupMetadata(jid),
-
-    shouldIgnoreJid: (jid) =>
-      jid?.endsWith('@newsletter') ||
-      (jid === 'status@broadcast' && !config.features.readStatus),
+    shouldIgnoreJid:     (jid) => jid?.endsWith('@newsletter') || (jid === 'status@broadcast' && !config.features.readStatus),
   });
 
   sock.ev.on('creds.update', saveCreds);
   store.bind(sock.ev);
 
-  // ─── Phase 8: login flow (QR auto-renders here, pairing in lifecycle) ─
   await lifecycle.startLoginFlow(sock);
 
-  // ─── Connection lifecycle ──────────────────────────────────────────
+  let reconnectAttempts = 0;
+  const maxReconnectAttempts = 10;
+
   sock.ev.on('connection.update', async (u) => {
     const { connection, lastDisconnect, qr } = u;
 
     if (qr && (config.login.type || 'QR').toUpperCase() === 'QR') {
-      log.info({ phase: 'login', flow: 'QR' }, '🆔 scan QR to log in:');
+      log.info({ phase: 'login', flow: 'QR' }, 'Please scan the QR to begin using EchoFox');
       qrcode.generate(qr, { small: true });
     }
 
     if (connection === 'open') {
-      log.info({ phase: 'ready', status: 'ok', user: sock.user?.id }, '✅ connected');
+      log.info({ phase: 'ready', status: 'ok', user: sock.user?.id }, 'EchoFox Ready');
       process.send?.('ready');
+      reconnectAttempts = 0;
 
-      // Wrap outbound sends in a global concurrency queue (once)
       if (!sock._sendWrapped) {
         wrapSocketSend(sock, { concurrency: config.processing.sendConcurrency || 4 });
         sock._sendWrapped = true;
-        log.info({ concurrency: config.processing.sendConcurrency || 4 },
-          'outbound send queue wired');
+        log.info({ concurrency: config.processing.sendConcurrency || 4 }, 'outbound send queue wired');
       }
 
-      // Presence-on-send: wrap AFTER sendQueue so the queue dispatches
-      // first → presence-wrap sees the queued send and does typing/recording.
-      if (!sock._presenceWrapped) {
-        wrapWithPresence(sock, config);
-      }
+      if (!sock._presenceWrapped) { wrapWithPresence(sock, config) }
 
-      // ─── v0.4.5: bind diagnostics ctx + attach sock to alert engine ──
       diagnostics.bindRuntimeContext({ sock, store, commands, auth, caches });
       alertEngine.attachSock(sock, config.alerts.notifyChannel || config.channels.errLogs);
 
-      // ─── Initial presence (anti-ban: tell WA we're "available" not "online forever") ─
       const initialPresence = config.antiBan?.presenceOnConnect || 'available';
       sock.sendPresenceUpdate(initialPresence)
         .then(()  => log.info({ presence: initialPresence }, 'sent initial presence'))
         .catch((e)=> log.debug({ err: e }, 'sendPresenceUpdate at connect failed'));
 
-      // Optional dashboard (once)
       if (config.dashboard.enabled && !dashboardStarted) {
         try {
           startDashboard(config.dashboard.port, store, config);
@@ -244,13 +209,11 @@ async function start(retry = 0) {
         }
       }
 
-      // Warm group cache + snapshot current participants
       try {
         const groups = await sock.groupFetchAllParticipating();
         for (const [jid, meta] of Object.entries(groups)) {
           store.saveGroupMetadata(jid, meta);
-          // Bootstrap participant log if this group has no history yet.
-          // (We treat first-sight as 'add' so later 'leave' events have a baseline.)
+
           const existing = await store.getParticipantHistory(jid, 1).catch(() => []);
           if (!existing.length) {
             const now = Math.floor(Date.now() / 1000);
@@ -266,8 +229,7 @@ async function start(retry = 0) {
             }
           }
         }
-        log.info({ phase: 'warm', groups: Object.keys(groups).length },
-          '🔥 group cache warmed + participant snapshot ensured');
+        log.info({ phase: 'warm', groups: Object.keys(groups).length }, '🔥 group cache warmed + participant snapshot ensured');
       } catch (e) {
         log.warn({ err: e }, 'group warm-up failed');
       }
@@ -277,22 +239,56 @@ async function start(retry = 0) {
       const code = (lastDisconnect?.error instanceof Boom)
         ? lastDisconnect.error.output.statusCode
         : lastDisconnect?.error?.output?.statusCode;
+
       const reason = Object.entries(DisconnectReason).find(([, v]) => v === code)?.[0] || 'unknown';
       log.warn({ phase: 'connection', status: 'closed', code, reason }, 'connection closed');
 
       if (code === DisconnectReason.loggedOut || code === 401 || code === 403) {
-        log.error({ phase: 'connection', status: 'logged_out' },
-          'logged out / forbidden – exiting for re-pair');
-        try { if (clear) await clear(); } catch {}
+        log.error({ phase: 'connection', status: 'logged_out' }, 'logged out / forbidden – exiting for re-pair');
+        try { 
+          if (clear) await clear()
+        } catch {}
         process.exit(2);
       }
-      const wait = Math.min(2_000 * 2 ** retry, 30_000);
-      log.info({ wait }, 'reconnecting…');
-      setTimeout(() => start(retry + 1), wait);
+
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts++;
+
+        const baseDelay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        const jitter = Math.random() * 1500;
+        const delay = Math.floor(baseDelay + jitter);
+
+        log.info({ attempt: reconnectAttempts, delay }, 'reconnecting…');
+
+        setTimeout(() => {
+          start(reconnectAttempts);
+        }, delay);
+      } else {
+        log.error({ attempts: reconnectAttempts }, 'Max reconnection attempts reached. Exiting...');
+        process.exit(1);
+      }
     }
   });
 
-  // ─── Group metadata invalidation + participant-event recording ─────
+  sock.ev.on('messaging-history.set', ({ chats, contacts, messages, isLatest }) => {
+    log.info({
+      phase: 'history-sync',
+      chats: chats.length,
+      contacts: contacts.length,
+      messages: messages.length,
+      isLatest
+    }, 'messaging-history.set received')
+  });
+
+  sock.ev.on('contacts.update', (updates) => {
+    for (const update of updates) {
+      if (update.id) {
+        caches.userDevicesCache.del(update.id);
+        log.debug({ jid: update.id }, 'userDevicesCache invalidated');
+      }
+    }
+  });
+
   sock.ev.on('groups.update', async (updates) => {
     for (const u of updates) {
       try {
@@ -302,22 +298,15 @@ async function start(retry = 0) {
     }
   });
 
-  // Forward participant change to dedicated handler (records events).
-  sock.ev.on('group-participants.update', (u) =>
-    eventRouter.emit('group-participants.update', { sock, store, u }));
-
-  // Other event forwards
+  sock.ev.on('group-participants.update', (u) => eventRouter.emit('group-participants.update', { sock, store, u }));
   sock.ev.on('contacts.upsert', (u) => eventRouter.emit('contacts.upsert', { sock, u }));
   sock.ev.on('call',            (u) => eventRouter.emit('call',            { sock, u }));
   sock.ev.on('groups.update',   (u) => eventRouter.emit('groups.update',   { sock, u }));
-
-  // ─── NEW v0.4.3: full message timeline ─────────────────────────────
   sock.ev.on('messages.update',        (payload) => eventRouter.emit('messages.update',        { sock, store, payload }));
   sock.ev.on('messages.delete',        (payload) => eventRouter.emit('messages.delete',        { sock, store, payload }));
   sock.ev.on('messages.reaction',      (payload) => eventRouter.emit('messages.reaction',      { sock, store, payload }));
   sock.ev.on('message-receipt.update', (payload) => eventRouter.emit('message-receipt.update', { sock, store, payload }));
 
-  // ─── The hot path: message routing ─────────────────────────────────
   sock.ev.on('messages.upsert', (payload) => {
     if (!payload?.messages?.length) return;
     metrics.incReceived(payload.messages.length);
@@ -331,11 +320,9 @@ async function start(retry = 0) {
     }
   });
 
-  // Bind a helper used by some commands
   sock.decodeJid = (jid) => (jid ? jidNormalizedUser(jid) : jid);
 }
 
-// ─── Fatal handlers ──────────────────────────────────────────────────────
 process.on('uncaughtException',  (e) => log.fatal({ err: e }, 'uncaughtException'));
 process.on('unhandledRejection', (e) => log.fatal({ err: e }, 'unhandledRejection'));
 

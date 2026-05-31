@@ -84,9 +84,13 @@ async function selectAuth() {
 
     // MULTIFILE (default)
     const { useMultiFileAuthState } = require('@whiskeysockets/baileys');
+    
     const sessionDir = path.join(__dirname, '..', config.bot.sessionName);
+
     if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
+
     const auth = await useMultiFileAuthState(sessionDir);
+    
     auth.clear = async () => fs.rmSync(sessionDir, { recursive: true, force: true });
     log.info({ phase: 'auth', status: 'ok', backend: 'MULTIFILE', dir: sessionDir }, '🔐 auth ready');
     return auth;

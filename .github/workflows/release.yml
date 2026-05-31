@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get current version
+        id: current_version
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get previous version
+        id: previous_version
+        run: |
+          PREV_VERSION=$(git show HEAD~1:package.json 2>/dev/null | node -e "
+            const fs = require('fs');
+            try {
+              const pkg = JSON.parse(fs.readFileSync(0, 'utf8'));
+              console.log(pkg.version || '0.0.0');
+            } catch {
+              console.log('0.0.0');
+            }
+          " || echo '0.0.0')
+          echo "version=$PREV_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check for version change
+        id: version_check
+        run: |
+          CURRENT="${{ steps.current_version.outputs.version }}"
+          PREVIOUS="${{ steps.previous_version.outputs.version }}"
+          
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "new_version=$CURRENT" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        if: steps.version_check.outputs.changed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version_check.outputs.new_version }}
+          name: Release v${{ steps.version_check.outputs.new_version }}
+          draft: false
+          prerelease: ${{ contains(steps.version_check.outputs.new_version, 'beta') || contains(steps.version_check.outputs.new_version, 'alpha') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

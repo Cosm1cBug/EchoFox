@@ -83,7 +83,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
 
     ${STATS_DDL.sqlite}
     ${PARTICIPANTS_DDL.sqlite}
-    ${EXTRAS_DDL.sqlite}
+    ${EXTRAS_DDL.sqlite}    CREATE TABLE IF NOT EXISTS service_subscribers ( service TEXT NOT NULL, jid TEXT NOT NULL, last_seen_pulse_ts INTEGER, PRIMARY KEY (service, jid) );
   `);
 
   // In-place migration: add deleted_at + status columns to existing
@@ -140,8 +140,11 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       FROM group_participants_events e
       WHERE group_jid = ?
       GROUP BY participant`),
-    uniqueUsersCount: db.prepare(`
-      SELECT COUNT(DISTINCT participant) AS n FROM group_participants_events`),
+    uniqueUsersCount: db.prepare(`SELECT COUNT(DISTINCT participant) AS n FROM group_participants_events`),  
+    getSubscribers: db.prepare(`SELECT jid, last_seen_pulse_ts FROM service_subscribers WHERE service = ?`),    
+    addSubscriber: db.prepare(`INSERT OR IGNORE INTO service_subscribers (service, jid, last_seen_pulse_ts) VALUES (?, ?, NULL)`),    
+    removeSubscriber: db.prepare(`DELETE FROM service_subscribers WHERE service = ? AND jid = ?`),    
+    updateSubscriberTs: db.prepare(`UPDATE service_subscribers SET last_seen_pulse_ts = ? WHERE service = ? AND jid = ?`),
 
     // ── Edits / Reactions / Receipts / Deletions ─────────────────────
     editInsert: db.prepare(`
@@ -330,7 +333,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         const rows = [];
         for (const m of messages) {
           if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
-          if (excluded.has(m.key.remoteJid)) continue;     // privacy: skip these chats
+          if (excluded.has(m.key.remoteJid)) continue;
           rows.push({
             jid: m.key.remoteJid,
             id:  m.key.id,
@@ -444,6 +447,27 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       try { stmts.msgUpdateStatus.run(Number(status), jid, messageId); }
       catch (e) { logger.warn({err:e}, 'msgUpdateStatus failed'); }
     },
+
+    async getSubscribers(service) { 
+      try { 
+        return stmts.getSubscribers.all(service); 
+      } catch { return []; } 
+    },    
+    async addSubscriber(service, jid) { 
+      try { 
+        stmts.addSubscriber.run(service, jid); 
+      } catch(e){} 
+    },    
+    async removeSubscriber(service, jid) { 
+      try { 
+        stmts.removeSubscriber.run(service, jid); 
+      } catch(e){} 
+    },    
+    async updateSubscriberTimestamp(service, jid, ts) { 
+      try { 
+        stmts.updateSubscriberTs.run(ts, service, jid); 
+      } catch(e){} 
+    }
 
     close() { db.close(); },
   };

@@ -74,4 +74,4 @@ function createStore(config, logger, groupCache) {
   }
 }
 
-module.exports = { createStore };
+module.exports = { createStore }; *   async getSubscribers(service)          → [{jid, last_seen_pulse_ts}]

@@ -78,7 +78,7 @@
     "@distube/ytdl-core": "^4.16.5",
     "axios": "^1.7.7",
     "axios-retry": "^4.5.0",
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.10.0",
     "cfonts": "^3.3.0",
     "country-data": "^0.0.31",
     "express": "^4.21.2",

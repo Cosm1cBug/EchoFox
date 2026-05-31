@@ -61,7 +61,10 @@ function walk(dir, out = []) {
 }
 
 function hasHeader(content) {
-  return content.includes(SHORT_HEADER_MARKER);
+  // Accept either the long form (with @license marker) OR the short form
+  // we used in some early files. Both are valid AGPL headers.
+  return content.includes(SHORT_HEADER_MARKER) ||
+         content.includes('Licensed under the GNU AGPL-3.0-or-later. See LICENSE.');
 }
 
 function addHeader(file, content, useShort) {

@@ -1,3 +1,8 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
 const axios = require("axios");  // Importing axios for HTTP requests
 const fs = require("fs");  // Importing fs for file system operations
 const path = require("path");  // Importing path for file path manipulation

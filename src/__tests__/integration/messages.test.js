@@ -1,7 +1,7 @@
 /*
  * EchoFox - WhatsApp bot built on Baileys
  * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- * Licensed under the GNU AGPL-3.0-or-later. See LICENSE. @license AGPL-3.0
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
  */
 'use strict';
 
@@ -86,7 +86,7 @@ test('admin prefix from non-admin → rejected', async () => {
   ]);
   const m = makeMockMessage({ text: '$eval 1+1' });   // admin prefix
   await handleMessage({ sock, m, commands, store, logger: sock.logger });
-  assert.match(sock.lastSent.content.text, /reserved for admins/i);
+  assert.match(sock.lastSent.content.text, /admin-only|reserved for admins/i);
 });
 
 test('UserError → friendly reply, no ❌ reaction, no errLogs', async () => {

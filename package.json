@@ -99,6 +99,7 @@
     "node-cron": "^3.0.3",
     "node-gtts": "^2.0.2",
     "node-webpmux": "^3.2.0",
+    "opossum": "^8.4.0",
     "p-queue": "^8.0.1",
     "pg": "^8.13.0",
     "pino": "^9.5.0",

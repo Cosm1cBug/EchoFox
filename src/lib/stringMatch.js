@@ -1,3 +1,8 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
 'use strict';
 /** Fuzzy match using Dice's coefficient – preserved from src/lib/Correct.js. */
 function compareTwoStrings(a, b) {

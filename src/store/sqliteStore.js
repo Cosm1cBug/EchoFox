@@ -197,22 +197,90 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     },
 
     getParticipantHistory(groupJid, limit = 500) {
-      try { return Promise.resolve(stmts.partHistory.all(groupJid, limit)); }
-      catch (e) { logger.warn({ err: e }, 'participant history query failed'); return Promise.resolve([]); }
+      return new Promise((resolve) => {
+        setImmediate(() => {
+          try {
+            const result = stmts.partHistory.all(groupJid, limit);
+            resolve(result);
+          } catch (e) {
+            logger.warn({ err: e }, 'participant history query failed');
+            resolve([]);
+          }
+        });
+      });
     },
 
     getCurrentParticipants(groupJid) {
-      try {
-        const result = stmts.partCurrent.all(groupJid).filter(
-          (r) => r.last_action !== 'leave' && r.last_action !== 'kick' && r.last_action !== 'reject',
-        );
-        return Promise.resolve(result);
-      } catch (e) {
-        logger.warn({ err: e }, 'current participants query failed');
-        return Promise.resolve([]);
-      }
+      return new Promise((resolve) => {
+        setImmediate(() => {
+          try {
+            const result = stmts.partCurrent.all(groupJid).filter(
+              (r) => r.last_action !== 'leave' && r.last_action !== 'kick' && r.last_action !== 'reject',
+            );
+            resolve(result);
+          } catch (e) {
+            logger.warn({ err: e }, 'current participants query failed');
+            resolve([]);
+          }
+        });
+      });
     },
 
+    getDeletedInGroup(jid, limit = 100) {
+      return new Promise((resolve) => {
+        setImmediate(() => {
+          try {
+            const result = stmts.deletedInGroup.all(jid, limit);
+            resolve(result);
+          } catch (e) {
+            logger.warn({ err: e }, 'deletedInGroup failed');
+            resolve([]);
+          }
+        });
+      });
+    },
+
+    getMessageEdits(jid, messageId) {
+      return new Promise((resolve) => {
+        setImmediate(() => {
+          try {
+            const result = stmts.editsByMsg.all(jid, messageId);
+            resolve(result);
+          } catch (e) {
+            logger.warn({ err: e }, 'editsByMsg failed');
+            resolve([]);
+          }
+        });
+      });
+    },
+
+    getMessageReactions(jid, messageId) {
+      return new Promise((resolve) => {
+        setImmediate(() => {
+          try {
+            const result = stmts.reactionsByMsg.all(jid, messageId);
+            resolve(result);
+          } catch (e) {
+            logger.warn({ err: e }, 'reactionsByMsg failed');
+            resolve([]);
+          }
+        });
+      });
+    },
+
+    getMessageReceipts(jid, messageId) {
+      return new Promise((resolve) => {
+        setImmediate(() => {
+          try {
+            const result = stmts.receiptsByMsg.all(jid, messageId);
+            resolve(result);
+          } catch (e) {
+            logger.warn({ err: e }, 'receiptsByMsg failed');
+            resolve([]);
+          }
+        });
+      });
+    },
     recordStat(key, inc = 1) {
       try { stmts.statUpsert.run(key, inc); }
       catch (e) { logger.warn({ err: e, key }, 'recordStat failed'); }
@@ -240,17 +308,24 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     countUniqueUsers()  { try { return stmts.uniqueUsersCount.get().n; } catch { return 0; } },
 
     listGroups() {
-      try {
-        return stmts.groupsList.all().map((r) => {
-          let meta = null;
-          try { meta = r.meta ? JSON.parse(r.meta.toString('utf8')) : null; } catch {}
-          return {
-            jid:              r.jid,
-            subject:          r.subject || meta?.subject || '(unnamed)',
-            participantCount: meta?.participants?.length || 0,
-          };
+      return new Promise((resolve) => {
+        setImmediate(() => {
+          try {
+            const result = stmts.groupsList.all().map((r) => {
+              let meta = null;
+              try { meta = r.meta ? JSON.parse(r.meta.toString('utf8')) : null; } catch {}
+              return {
+                jid: r.jid,
+                subject: r.subject || meta?.subject || '(unnamed)',
+                participantCount: meta?.participants?.length || 0,
+              };
+            });
+            resolve(result);
+          } catch {
+            resolve([]);
+          }
         });
-      } catch { return []; }
+      });
     },
 
     bind(ev) {

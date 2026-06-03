@@ -8,7 +8,7 @@
 const express = require('express');
 const path    = require('node:path');
 const fs      = require('node:fs');
-
+const { config } = require('../lib/configLoader');
 const metrics = require('../services/metrics');
 const logger  = require('../core/logger').child({ mod: 'dashboard' });
 
@@ -40,6 +40,12 @@ function startDashboard(port, store, config) {
   }
 
   app.use(express.json({ limit: '64kb' }));
+
+  app.use('/dashboard', express.static(path.join(__dirname, 'react')));
+
+  app.get('/dashboard/*', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'react', 'index.html'));
+  });
 
   app.get('/', (_req, res) => {
     res.type('html').send(

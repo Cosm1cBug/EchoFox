@@ -105,3 +105,17 @@
 - 👥 **group** — only works inside group chats
 - 🔑 **needs** — auto-disabled at startup if listed config paths are empty
 - ⏱️ **cooldown** — per-user delay between consecutive uses
+
+---
+
+# Commands
+
+EchoFox uses a folder-based command system.
+
+## Structure
+
+Commands are located in `src/commands/<category>/<name>.js`.
+
+## Writing Commands
+
+See the example in the README or `CONTRIBUTING.md`.

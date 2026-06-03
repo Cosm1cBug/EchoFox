@@ -19,15 +19,15 @@
 - 📦 **Pluggable store backend** — SQLite (default), Postgres, MongoDB, or Redis
 - 🔑 **Pluggable auth backend** — multi-file (default), Redis, or SQLite
 - 🆔 **Login via QR or pairing code**
-- 📊 **Built-in web dashboard** at `:3001` (optional)
-- 🚦 **Per-chat queue** for back-pressure — one slow command no longer stalls the whole bot
+- 📊 **Built-in web dashboard** at `:3000/dashboard` (React-based, for internal use)
+- 🚦 **Per-chat queue** for back-pressure
 - ❤️ **Health & metrics** at `GET /healthz` and `GET /metrics` (Prometheus)
-- 📝 **Structured logging** via [pino](https://github.com/pinojs/pino) (pretty in dev, JSON in prod)
-- 🛡️ **Built-in middleware** for inbound rate-limiting and outbound concurrency capping
-- 🛟 **Centralised command runner** with per-command timeouts, cooldowns, and crash → ❌ react + ops-channel report
-- 🔄 **Supervisor + worker** model with exponential-backoff restart and graceful shutdown
+- 📝 **Structured logging** via Pino
+- 🛡️ **Built-in middleware** for rate-limiting and concurrency control
+- 🔄 **Supervisor + worker** model with exponential-backoff restart
 - 🌐 **Dual prefix** — `.` for users, `$` for admins
-- 🧪 **Zod-validated config** with auto-translation of legacy v5/v6 `config.js` files
+- 🧪 **Zod-validated config** with legacy support
+- 🛠️ **Professional CI/CD** with automated testing, releases, Docker publishing, and security scanning
 
 ---
 
@@ -87,24 +87,39 @@ curl http://localhost:3000/healthz
 
 ---
 
+## 🖥️ Dashboard
+
+EchoFox includes a modern **React-based dashboard** for monitoring and management.
+
+### Development
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173)
+
+### Production
+
+1. Build the dashboard:
+   ```bash
+   cd dashboard
+   npm run build
+   ```
+
+2. The built files can be served statically from the backend (see `src/dashboard/server.js`).
+
+> **Note**: The dashboard is intended for **internal/admin use only**.
+
+---
+
 ## 📦 Built-in commands
 
 Type `.menu` in any chat with the bot to see the live list. By category:
 
-| Category | Commands |
-|---|---|
-| **main**           | `menu` |
-| **misc**           | `ping`, `quote`, `test`, `eval` *(admin)*, `anti-viewOnce`, `sendstory` |
-| **general**        | `wiki`, `translate`, `ctx`, `virustotal` *, `alienvault` *, `thehackernews` |
-| **download**       | `apkdl`, `mediaGrabber`, `mediafire`, `pinterest`, `spotify`, `song` |
-| **convert**        | `sticker`, `stk`, `toimg`, `tts` |
-| **entertainment**  | `omdb` * |
-| **group**          | `link`, `approve` |
-| **tools**          | `ssweb` |
-| **user**           | `profile` |
-| **admin**          | `serverinfo` |
-
-`*` = requires an API key in `src/config.js`; auto-disabled if missing.
+`*` means requires an API key in `src/config.js`; auto-disabled if missing.
 
 Run `npm run docs:commands` to regenerate the full catalog at `docs/commands.md`.
 
@@ -206,7 +221,7 @@ module.exports = {
   admin: false,                      // (optional — restricts to admins)
   group: false,                      // (optional — group-only)
   needsMetadata: false,              // (optional — pre-fetch group metadata)
-  requires: ['apis.omdb.apiKey'],    // (optional — auto-skip if config path is empty)
+  requires: ['apis.<provider>.apiKey'],    // (optional — auto-skip if config path is empty)
   cooldown: 0,                       // (optional — seconds between uses per user)
   timeout: 60,                       // (optional — per-invocation timeout, seconds)
 
@@ -280,20 +295,6 @@ docker compose --profile observability up -d
 - [docs/deploy/podman.md](./docs/deploy/podman.md) — rootless alternative
 - [docs/deploy/multi-arch.md](./docs/deploy/multi-arch.md) — building your own multi-arch images
 - [docs/deploy/troubleshooting.md](./docs/deploy/troubleshooting.md) — when things go wrong
-
----
-
-## 🛣️ Roadmap
-
-| Milestone | Status | Tag |
-|---|---|---|
-| **M0** — New core boots, pairs, replies     | ✅ | `v0.1.0-alpha` |
-| **M1** — OSS readiness (licensing, config, docs) | ✅ | `v0.2.0-alpha` |
-| **M2** — Docker + multi-platform images     | ✅ | `v0.3.0-alpha` |
-| **M3** — Commands triage & rewrite          | ✅ | `v0.4.0-beta` (reconciled in `v0.4.1-beta`) |
-| **M4** — CI/CD + automated releases         | 🔜 | `v0.5.0-rc1` |
-| **M5** — Docs site (vitepress)              | 🔜 | `v1.0.0-rc1` |
-| **M6** — 2-week soak test → public release  | 🔜 | `v1.0.0` |
 
 ---
 

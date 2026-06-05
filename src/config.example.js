@@ -112,6 +112,9 @@ module.exports = {
     omdb:       { apiKey: '', url: 'https://www.omdbapi.com/' },
     virustotal: { apiKey: '' },
     alienvault: { apiKey: '' },
+    thehackersnews: { 
+      checkIntervalMin: 60 
+    },
   },
 
   sticker: {

@@ -173,6 +173,7 @@ const schema = z.object({
     }).default({}),
     virustotal: z.object({ apiKey: z.string().default('') }).default({}),
     alienvault: z.object({ apiKey: z.string().default('') }).default({}),
+    thehackersnews: z.object({ checkIntervalMin: z.number().min(5).default(60) }).default({ checkIntervalMin: 60 }),
   }).default({}),
 
   sticker: z.object({

@@ -1,3 +1,8 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
 import { useState } from "react";
 
 interface LoginProps {
@@ -57,4 +62,3 @@ export function Login({ onLogin }: LoginProps) {
     </div>
   );
 }
-```

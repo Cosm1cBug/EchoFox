@@ -1,3 +1,9 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
+
 interface ActivityItem {
   type: "message" | "command" | "alert";
   description: string;
@@ -27,4 +33,3 @@ export function RecentActivity({ activities }: RecentActivityProps) {
     </div>
   );
 }
-```

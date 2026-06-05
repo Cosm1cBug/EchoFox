@@ -1,3 +1,8 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
 import { useEffect, useState } from "react";
 
 export function useRealTime<T>(fetchFn: () => Promise<T>, intervalMs = 15000) {
@@ -30,4 +35,3 @@ export function useRealTime<T>(fetchFn: () => Promise<T>, intervalMs = 15000) {
 
   return { data, loading, error };
 }
-```

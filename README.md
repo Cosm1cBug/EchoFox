@@ -103,13 +103,15 @@ Open [http://localhost:5173](http://localhost:5173)
 
 ### Production
 
-1. Build the dashboard:
+1. Build the React dashboard and copy it into the backend:
    ```bash
-   cd dashboard
-   npm run build
+    npm run build:dashboard
    ```
 
-2. The built files can be served statically from the backend (see `src/dashboard/server.js`).
+2. The dashboard will be served automatically at:
+    ```bash
+    http://localhost:3000/dashboard
+    ```
 
 > **Note**: The dashboard is intended for **internal/admin use only**.
 

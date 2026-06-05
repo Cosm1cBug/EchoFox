@@ -8,8 +8,10 @@
 const express = require('express');
 const path    = require('node:path');
 const fs      = require('node:fs');
+
 const { config } = require('../lib/configLoader');
 const metrics = require('../services/metrics');
+
 const logger  = require('../core/logger').child({ mod: 'dashboard' });
 
 const PKG = (() => {
@@ -40,13 +42,16 @@ function startDashboard(port, store, config) {
   }
 
   app.use(express.json({ limit: '64kb' }));
+   // ─── Serve React Dashboard 
+  const reactPath = path.join(__dirname, 'react');
+  app.use('/dashboard', express.static(reactPath));
 
-  app.use('/dashboard', express.static(path.join(__dirname, 'react')));
-
+  // SPA fallback for React Router
   app.get('/dashboard/*', (_req, res) => {
-    res.sendFile(path.join(__dirname, 'react', 'index.html'));
+    res.sendFile(path.join(reactPath, 'index.html'));
   });
 
+    // ─── Old Static Dashboard (root)
   app.get('/', (_req, res) => {
     res.type('html').send(
       HTML

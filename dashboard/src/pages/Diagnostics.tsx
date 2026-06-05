@@ -1,3 +1,9 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
+
 import { useEffect, useState } from "react";
 import { getDiagnostics } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
@@ -63,4 +69,3 @@ export function Diagnostics() {
     </div>
   );
 }
-```

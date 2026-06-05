@@ -1,3 +1,9 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
+
 import { useState } from "react";
 import { Header } from "./components/Header";
 import { Login } from "./components/Login";
@@ -62,4 +68,3 @@ export default function App() {
     </div>
   );
 }
-```

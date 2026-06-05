@@ -1,3 +1,8 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
 let authHeader: string | null = null;
 
 export function setAuth(username: string, password: string) {
@@ -23,4 +28,3 @@ export const getStats = () => fetchJson("/api/stats");
 export const getGroups = () => fetchJson("/api/groups");
 export const getDiagnostics = () => fetchJson("/api/diagnostics");
 export const getAlerts = () => fetchJson("/api/alerts");
-```

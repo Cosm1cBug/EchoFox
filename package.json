@@ -16,7 +16,8 @@
     "docs:commands": "node scripts/generate-command-docs.js",
     "test": "node --test src/**/*.test.js src/commands/__tests__/*.test.js",
     "test:contract": "node --test src/commands/__tests__/contract.test.js",
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "build:dashboard": "cd dashboard && npm run build && mkdir -p ../src/dashboard/react && cp -r dist/* ../src/dashboard/react/"
   },
   "engines": {
     "node": ">=20.0.0"

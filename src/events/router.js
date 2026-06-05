@@ -71,6 +71,6 @@ bus.on('labels.edit',               (p) => Promise.resolve(onLabelsEdit(p)).catc
 bus.on('message-capping.update',    (p) => Promise.resolve(onMessageCappingUpdate(p)).catch(() => {}));
 
 module.exports = {
-  handleMessage,                                 // direct, called per-message for back-pressure
+  handleMessage,
   emit: (e, payload) => bus.emit(e, payload),
 };

@@ -94,7 +94,7 @@ function startGaugeRefresh() {
 
 setInterval(async () => {
   try {
-    await checkTheHackerNews();
+    await checkTheHackerNews(sock);
   } catch (err) {
     log.error({ err }, '[thehackersnews] Cron job failed');
   }

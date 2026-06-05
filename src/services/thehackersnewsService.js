@@ -12,7 +12,6 @@ const store = require('../store/db');
 const logger = require('../core/logger').child({ mod: 'thehackersnews-service' });
 
 const THEHACKERSNEWS_RSS = 'https://feeds.feedburner.com/TheHackersNews';
-
 const CHECK_INTERVAL = config.apis?.thehackersnews?.checkIntervalMin || 60;
 
 async function fetchLatestArticles(limit = 5) {
@@ -38,37 +37,35 @@ async function fetchLatestArticles(limit = 5) {
   }
 }
 
-async function sendArticle(jid, article) {
-  const message = `*${article.title}*\n\n${article.link}`;
-  // TODO: Replace with actual WhatsApp sending
-  logger.info({ jid, title: article.title }, 'Sending article');
+async function sendArticle(sock, jid, article) {
+  try {
+    await sock.sendMessage(jid, {
+      text: `*${article.title}*\n\n${article.link}`
+    });
+    logger.info({ jid, title: article.title }, 'Article sent successfully');
+  } catch (err) {
+    logger.error({ jid, title: article.title, err: err.message }, 'Failed to send article');
+  }
 }
 
-async function checkAndDeliver() {
+async function checkAndDeliver(sock) {
   try {
     const subscribers = await store.getSubscribers('thehackersnews');
-    if (!subscribers.length) return;
+    if (!subscribers.length || !sock) return;
 
     const articles = await fetchLatestArticles(5);
     if (!articles.length) return;
 
     for (const subscriber of subscribers) {
-      const { jid, last_seen_pulse_ts } = subscriber;
+      const { jid } = subscriber;
 
-      const newArticles = !last_seen_pulse_ts
-        ? articles
-        : articles.filter(a => new Date(a.pubDate).getTime() > last_seen_pulse_ts);
+      for (const article of articles) {
+        const alreadySent = await store.hasSentArticle('thehackersnews', jid, article.link);
+        if (alreadySent) continue;
 
-      if (!newArticles.length) continue;
-
-      const toSend = newArticles.slice(0, 3);
-
-      for (const article of toSend) {
-        await sendArticle(jid, article);
+        await sendArticle(sock, jid, article);
+        await store.recordSentArticle('thehackersnews', jid, article.link);
       }
-
-      const latestTimestamp = new Date(articles[0].pubDate).getTime();
-      await store.updateSubscriberTimestamp('thehackersnews', jid, latestTimestamp);
     }
   } catch (err) {
     logger.error({ err }, 'checkAndDeliver failed');

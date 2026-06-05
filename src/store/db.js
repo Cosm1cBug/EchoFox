@@ -41,6 +41,9 @@
  *   async countGroups()                    → number
  *   async countUniqueUsers()               → number
  *   async listGroups()                     → [{jid, subject, participantCount}]
+ * 
+ *   async hasSentArticle(service, jid, articleUrl) → boolean
+ *   async recordSentArticle(service, jid, articleUrl) → void
  *
  *   bind(ev)                               → wire to Baileys ev emitter
  *   close()

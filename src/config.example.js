@@ -127,8 +127,6 @@ module.exports = {
     port:        3000,                    // /healthz + /metrics
     healthPath:  '/healthz',
     metricsPath: '/metrics',
-
-    // ── v0.4.5: stability ─────────────────────────────────────────────
     maxHeapPercent:  90,                  // restart worker above this heap %
     autoRestart:     true,                // false = only alert, no exit
     checkIntervalMs: 30000,

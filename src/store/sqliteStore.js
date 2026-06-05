@@ -76,6 +76,14 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       last_seen_pulse_ts INTEGER,
       PRIMARY KEY (service, jid)
     );
+
+    CREATE TABLE IF NOT EXISTS thehackersnews_sent_articles (
+      service TEXT NOT NULL,
+      jid     TEXT NOT NULL,
+      article_url TEXT NOT NULL,
+      sent_at INTEGER NOT NULL,
+      PRIMARY KEY (service, jid, article_url)
+    );
   `);
 
   applyMessagesMigration_sqlite(db);
@@ -104,11 +112,13 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     partCurrent: db.prepare(`SELECT participant, MAX(ts) AS last_ts, (SELECT action FROM group_participants_events e2 WHERE e2.group_jid = e.group_jid AND e2.participant = e.participant ORDER BY ts DESC LIMIT 1) AS last_action FROM group_participants_events e WHERE group_jid = ? GROUP BY participant`),
     uniqueUsersCount: db.prepare(`SELECT COUNT(DISTINCT participant) AS n FROM group_participants_events`),
 
-    // Subscriber methods (v0.4.6)
     getSubscribers: db.prepare(`SELECT jid, last_seen_pulse_ts FROM service_subscribers WHERE service = ?`),
     addSubscriber: db.prepare(`INSERT OR IGNORE INTO service_subscribers (service, jid, last_seen_pulse_ts) VALUES (?, ?, NULL)`),
     removeSubscriber: db.prepare(`DELETE FROM service_subscribers WHERE service = ? AND jid = ?`),
     updateSubscriberTs: db.prepare(`UPDATE service_subscribers SET last_seen_pulse_ts = ? WHERE service = ? AND jid = ?`),
+
+    hasSentArticle: db.prepare(`SELECT 1 FROM thehackersnews_sent_articles WHERE service = ? AND jid = ? AND article_url = ?`),
+    recordSentArticle: db.prepare(`INSERT OR IGNORE INTO thehackersnews_sent_articles (service, jid, article_url, sent_at) VALUES (?, ?, ?, ?)`),
 
     editInsert: db.prepare(`INSERT INTO message_edits (jid, message_id, editor, old_body, new_body, ts) VALUES (?, ?, ?, ?, ?, ?)`),
     editsByMsg: db.prepare(`SELECT editor, old_body, new_body, ts FROM message_edits WHERE jid = ? AND message_id = ? ORDER BY ts ASC`),
@@ -304,8 +314,35 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       } catch { return {}; }
     },
 
-    countGroups()       { try { return stmts.groupCount.get().n; }       catch { return 0; } },
-    countUniqueUsers()  { try { return stmts.uniqueUsersCount.get().n; } catch { return 0; } },
+    async hasSentArticle(service, jid, articleUrl) {
+      try {
+        const row = stmts.hasSentArticle.get(service, jid, articleUrl);
+        return !!row;
+      } catch (e) {
+        logger.warn({ err: e }, 'hasSentArticle failed');
+        return false;
+      }
+    },
+
+    async recordSentArticle(service, jid, articleUrl) {
+      try {
+        stmts.recordSentArticle.run(service, jid, articleUrl, Math.floor(Date.now() / 1000));
+      } catch (e) {
+        logger.warn({ err: e }, 'recordSentArticle failed');
+      }
+    },
+
+    countGroups() { 
+      try { 
+        return stmts.groupCount.get().n; 
+      }       catch { return 0; } },
+    countUniqueUsers() { 
+      try { 
+        return stmts.uniqueUsersCount.get().n; 
+      } catch { 
+        return 0; 
+      } 
+    },
 
     listGroups() {
       return new Promise((resolve) => {

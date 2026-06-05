@@ -39,6 +39,7 @@ const { getWsAgent, applyExtraCAsToProcess } = require('../lib/network');
 const { startMemoryGuard } = require('../lib/memoryGuard');
 const alertEngine          = require('../services/alertEngine');
 const diagnostics          = require('../lib/diagnostics');
+const { checkAndDeliver: checkTheHackerNews } = require('../services/thehackersnewsService');
 
 const log = logger.child({ mod: 'worker' });
 
@@ -90,6 +91,14 @@ function startGaugeRefresh() {
     }
   }, 30_000).unref();
 }
+
+setInterval(async () => {
+  try {
+    await checkTheHackerNews();
+  } catch (err) {
+    log.error({ err }, '[thehackersnews] Cron job failed');
+  }
+}, 60 * 60 * 1000).unref();
 
 async function start(retry = 0) {
   if (shuttingDown) return;
@@ -203,7 +212,7 @@ async function start(retry = 0) {
         try {
           startDashboard(config.dashboard.port, store, config);
           dashboardStarted = true;
-          log.info({ phase: 'dashboard', port: config.dashboard.port }, '📊 dashboard started');
+          log.info({ phase: 'dashboard', port: config.dashboard.port }, 'Dashboard started');
         } catch (e) {
           log.error({ err: e }, 'dashboard failed to start');
         }

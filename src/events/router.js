@@ -23,6 +23,13 @@ const onMessagesUpdate     = require('./messages.update');
 const onMessagesDelete     = require('./messages.delete');
 const onMessageReaction    = require('./messages.reaction');
 const onMessageReceipt     = require('./message-receipt.update');
+const onConnectionUpdate   = require('./connection.update');
+const onNewsletterUpsert   = require('./newsletter.upsert');
+const onNewsletterReaction = require('./newsletter.reaction');
+const onNewsletterView     = require('./newsletter.view');
+const onBlocklistSet       = require('./blocklist.set');
+const onBlocklistUpdate    = require('./blocklist.update');
+const onLidMappingUpdate   = require('./lid-mapping.update');
 
 const bus = new EventEmitter();
 bus.setMaxListeners(50);
@@ -35,6 +42,13 @@ bus.on('messages.update',           (p) => Promise.resolve(onMessagesUpdate(p)).
 bus.on('messages.delete',           (p) => Promise.resolve(onMessagesDelete(p)).catch(() => {}));
 bus.on('messages.reaction',         (p) => Promise.resolve(onMessageReaction(p)).catch(() => {}));
 bus.on('message-receipt.update',    (p) => Promise.resolve(onMessageReceipt(p)).catch(() => {}));
+bus.on('connection.update',         (p) => Promise.resolve(onConnectionUpdate(p)).catch(() => {}));
+bus.on('newsletter.upsert',         (p) => Promise.resolve(onNewsletterUpsert(p)).catch(() => {}));
+bus.on('newsletter.reaction',       (p) => Promise.resolve(onNewsletterReaction(p)).catch(() => {}));
+bus.on('newsletter.view',           (p) => Promise.resolve(onNewsletterView(p)).catch(() => {}));
+bus.on('blocklist.set',             (p) => Promise.resolve(onBlocklistSet(p)).catch(() => {}));
+bus.on('blocklist.update',          (p) => Promise.resolve(onBlocklistUpdate(p)).catch(() => {}));
+bus.on('lid-mapping.update',        (p) => Promise.resolve(onLidMappingUpdate(p)).catch(() => {}));
 
 module.exports = {
   handleMessage,                                 // direct, called per-message for back-pressure

@@ -9,5 +9,5 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: '/dashboard/',   // ← Important for subpath deployment
+  base: '/dashboard/',
 })

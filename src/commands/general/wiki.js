@@ -13,7 +13,7 @@
  * across page layout changes.
  */
 
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 module.exports = {
   name: 'wiki',
@@ -29,17 +29,15 @@ module.exports = {
     await ctx.react('🔎');
 
     try {
-      // Step 1: opensearch to resolve to the canonical title.
-      const search = await axios.get(
-        'https://en.wikipedia.org/w/api.php',
-        {
-          timeout: 10_000,
-          params: {
-            action: 'opensearch', search: q, limit: 1, namespace: 0, format: 'json',
-          },
-          headers: { 'User-Agent': 'EchoFox/0.4 (https://github.com/Cosm1cBug/EchoFox)' },
+      const search = await axiosWithBreaker('wikipedia-rest', {
+        method: 'GET',
+        url:    'https://en.wikipedia.org/w/api.php',
+        timeout: 10_000,
+        params: {
+          action: 'opensearch', search: q, limit: 1, namespace: 0, format: 'json',
         },
-      );
+        headers: { 'User-Agent': 'EchoFox/0.4 (https://github.com/Cosm1cBug/EchoFox)' },
+      });
 
       const title = search.data?.[1]?.[0];
       const url   = search.data?.[3]?.[0];
@@ -48,15 +46,13 @@ module.exports = {
         return ctx.reply(`No Wikipedia page found for *${q}*.`);
       }
 
-      // Step 2: REST summary endpoint — stable JSON, no scraping.
-      const summary = await axios.get(
-        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
-        {
-          timeout: 10_000,
-          headers: { 'User-Agent': 'EchoFox/0.4' },
-          validateStatus: (s) => s < 500,
-        },
-      );
+      const summary = await axiosWithBreaker('wikipedia-rest', {
+        method: 'GET',
+        url:    `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
+        timeout: 10_000,
+        headers: { 'User-Agent': 'EchoFox/0.4' },
+        validateStatus: (s) => s < 500,
+      });
 
       if (summary.status === 404 || !summary.data?.extract) {
         await ctx.react('🤷');
@@ -69,6 +65,9 @@ module.exports = {
         `📖 *${summary.data.title}*\n\n${extract}\n\n🔗 ${url}`,
       );
     } catch (err) {
+      if (isOpenBreakerError(err)) {
+        return ctx.reply('⏱️ Wikipedia is currently overloaded. Try again in ~1 minute.');
+      }
       throw new Error(`Wikipedia lookup failed: ${err.message}`);
     }
   },

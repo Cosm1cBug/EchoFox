@@ -180,10 +180,26 @@ function applyExtraCAsToProcess() {
   return true;
 }
 
+function axiosWithBreaker(name, axiosCfg, breakerOpts = {}) {
+  const { get: getBreaker } = require('./circuitBreaker');
+  const ax = configuredAxios();
+  const breaker = getBreaker(name, (cfg) => ax.request(cfg), breakerOpts);
+  return breaker.fire(axiosCfg);
+}
+
+function isOpenBreakerError(err) {
+  if (!err) return false;
+  if (err.code === 'EOPENBREAKER') return true;
+  if (typeof err.message === 'string' && /breaker is open/i.test(err.message)) return true;
+  return false;
+}
+
 module.exports = {
   loadExtraCAs,
   getProxyAgents,
   getWsAgent,
   configuredAxios,
   applyExtraCAsToProcess,
+  axiosWithBreaker,
+  isOpenBreakerError,
 };

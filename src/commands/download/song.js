@@ -17,9 +17,10 @@
 const fs   = require('node:fs');
 const os   = require('node:os');
 const path = require('node:path');
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 let ytdl;
+
 try { ytdl = require('@distube/ytdl-core'); } catch { ytdl = null; }
 
 const TEMP_TTL_MS  = 60 * 60 * 1000;
@@ -27,7 +28,7 @@ const MAX_DURATION = 10 * 60;
 
 async function searchYouTube(query) {
   const url = `https://pipedapi.kavin.rocks/search?q=${encodeURIComponent(query)}&filter=music_songs`;
-  const { data } = await axios.get(url, { timeout: 15_000 });
+  const { data } = await axiosWithBreaker('piped', { method: 'GET', url, timeout: 15_000 });
   const item = (data?.items || []).find((i) => i.type === 'stream' || i.url);
   if (!item) return null;
   const fullUrl = item.url?.startsWith('http')
@@ -72,9 +73,17 @@ module.exports = {
     }
 
     await ctx.react('🔎');
-    const result = await searchYouTube(text).catch((e) => {
+    
+    let result;
+    
+    try {
+      result = await searchYouTube(text);
+    } catch (e) {
+      if (isOpenBreakerError(e)) {
+        return ctx.reply('⏱️ YouTube search is currently overloaded. Try again in ~1 minute.');
+      }
       throw new Error(`Search failed: ${e.message}`);
-    });
+    }
     if (!result) return ctx.reply(`Couldn't find anything for *${text}*.`);
 
     await ctx.reply(

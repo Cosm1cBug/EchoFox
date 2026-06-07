@@ -12,7 +12,7 @@
  * `config.apis.omdb.apiKey` — the command auto-disables at boot if missing.
  */
 
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 module.exports = {
   name: 'omdb',
@@ -29,13 +29,19 @@ module.exports = {
     await ctx.react('🎬');
 
     let data;
+
     try {
-      const res = await axios.get(config.apis.omdb.url, {
+      const res = await axiosWithBreaker('omdb', {
+        method: 'GET',
+        url:    config.apis.omdb.url,
         timeout: 10_000,
         params: { apikey: config.apis.omdb.apiKey, t: q, plot: 'full' },
       });
       data = res.data;
     } catch (err) {
+      if (isOpenBreakerError(err)) {
+        return ctx.reply('⏱️ OMDb is currently overloaded. Try again in ~1 minute.');
+      }
       throw new Error(`OMDb request failed: ${err.message}`);
     }
 
@@ -62,7 +68,12 @@ module.exports = {
     let thumb;
     if (data.Poster && data.Poster !== 'N/A') {
       try {
-        const img = await axios.get(data.Poster, { responseType: 'arraybuffer', timeout: 8000 });
+        const img = await axiosWithBreaker('omdb-poster', {
+          method:       'GET',
+          url:          data.Poster,
+          responseType: 'arraybuffer',
+          timeout:      8000,
+        });
         thumb = Buffer.from(img.data);
       } catch { /* ignore — fall back to text-only */ }
     }

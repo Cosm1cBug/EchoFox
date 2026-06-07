@@ -26,7 +26,7 @@
 const fs   = require('node:fs');
 const os   = require('node:os');
 const path = require('node:path');
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 let ytdl;
 try { ytdl = require('@distube/ytdl-core'); } catch { ytdl = null; }
@@ -36,8 +36,9 @@ const TEMP_TTL_MS = 60 * 60 * 1000;
 const MAX_DURATION = 12 * 60;
 
 async function resolveSpotify(url) {
-  // oEmbed endpoint — returns { title, thumbnail_url, … }; no key needed.
-  const r = await axios.get('https://open.spotify.com/oembed', {
+  const r = await axiosWithBreaker('spotify-oembed', {
+    method: 'GET',
+    url:    'https://open.spotify.com/oembed',
     params: { url },
     timeout: 10_000,
     headers: { 'User-Agent': 'EchoFox/0.4' },
@@ -49,7 +50,9 @@ async function resolveSpotify(url) {
 }
 
 async function searchPiped(query) {
-  const r = await axios.get('https://pipedapi.kavin.rocks/search', {
+  const r = await axiosWithBreaker('piped', {
+    method: 'GET',
+    url:    'https://pipedapi.kavin.rocks/search',
     params: { q: query, filter: 'music_songs' },
     timeout: 15_000,
   });
@@ -94,12 +97,28 @@ module.exports = {
 
     await ctx.react('🎵');
 
-    const meta = await resolveSpotify(url).catch((e) => {
+    let meta;
+
+    try {
+      meta = await resolveSpotify(url);
+    } catch (e) {
+      if (isOpenBreakerError(e)) {
+        return ctx.reply('⏱️ Spotify oEmbed is currently overloaded. Try again in ~1 minute.');
+      }
       throw new Error(`Spotify resolve failed: ${e.message}`);
-    });
+    }
     if (!meta?.title) throw new Error('Could not parse Spotify metadata');
 
-    const yt = await searchPiped(meta.title);
+    let yt;
+    
+    try {
+      yt = await searchPiped(meta.title);
+    } catch (e) {
+      if (isOpenBreakerError(e)) {
+        return ctx.reply('⏱️ YouTube search is currently overloaded. Try again in ~1 minute.');
+      }
+      throw e;
+    }
     if (!yt) throw new Error(`No YouTube match for "${meta.title}"`);
 
     await ctx.reply(`🎵 *${meta.title}*\n_Found on YouTube — downloading…_`);

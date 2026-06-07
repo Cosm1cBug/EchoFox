@@ -21,7 +21,7 @@
  *     • content-type sniffed for the send payload
  */
 
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 const MF_URL = /^https?:\/\/(www\.)?mediafire\.com\//i;
 const HREF_RE = /id=["']downloadButton["'][^>]*href=["']([^"']+)["']/i;
@@ -32,11 +32,13 @@ const SIZE_RE = /<li>\s*<span>File size:\s*<\/span>\s*([\d.]+)\s*(MB|KB|GB)\s*<\
 const MAX_BYTES = 95 * 1024 * 1024;
 
 async function resolveDirect(url) {
-  const r = await axios.get(url, {
+  const r = await axiosWithBreaker('mediafire', {
+    method: 'GET',
+    url,
     timeout: 15_000,
     maxRedirects: 5,
     headers: { 'User-Agent': 'Mozilla/5.0 EchoFox/0.4' },
-    validateStatus: (s) => s < 400,
+    validateStatus:(s) => s < 400,
   });
   const html = r.data || '';
   const m = HREF_RE.exec(html) || ALT_RE.exec(html);
@@ -69,9 +71,16 @@ module.exports = {
 
     await ctx.react('🔎');
 
-    const info = await resolveDirect(url).catch((e) => {
+    let info;
+
+    try {
+      info = await resolveDirect(url);
+    } catch (e) {
+      if (isOpenBreakerError(e)) {
+        return ctx.reply('⏱️ MediaFire is currently overloaded. Try again in ~1 minute.');
+      }
       throw new Error(`MediaFire resolve failed: ${e.message}`);
-    });
+    }
 
     if (info.sizeBytes && info.sizeBytes > MAX_BYTES) {
       return ctx.reply(
@@ -82,13 +91,16 @@ module.exports = {
     await ctx.reply(`⏬ *${info.name}*\n_Downloading…_`);
 
     let payload;
+    
     try {
-      const dl = await axios.get(info.direct, {
-        responseType: 'arraybuffer',
-        timeout: 200_000,
+      const dl = await axiosWithBreaker('mediafire-download', {
+        method:           'GET',
+        url:              info.direct,
+        responseType:     'arraybuffer',
+        timeout:          200_000,
         maxContentLength: MAX_BYTES,
         maxBodyLength:    MAX_BYTES,
-        headers: { 'User-Agent': 'Mozilla/5.0 EchoFox/0.4' },
+        headers:          { 'User-Agent': 'Mozilla/5.0 EchoFox/0.4' },
       });
       payload = {
         document: Buffer.from(dl.data),
@@ -96,6 +108,9 @@ module.exports = {
         fileName: info.name,
       };
     } catch (err) {
+      if (isOpenBreakerError(err)) {
+        return ctx.reply('⏱️ MediaFire CDN is currently overloaded. Try again in ~1 minute.');
+      }
       throw new Error(`Download failed: ${err.message}`);
     }
 

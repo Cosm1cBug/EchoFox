@@ -64,7 +64,7 @@ test('sqlite store: schema bootstraps and all 26 interface methods exist', () =>
   } finally { cleanup(); }
 });
 
-test('sqlite store: participant events — append + current/history reduction', () => {
+test('sqlite store: participant events — append + current/history reduction', async () => {
   const { store, cleanup } = newStore();
   try {
     const G = 'g1@g.us';
@@ -73,12 +73,12 @@ test('sqlite store: participant events — append + current/history reduction', 
     store.recordParticipantEvent(G, 'alice@s.whatsapp.net', 'leave', 'alice@s.whatsapp.net', 300);
     store.recordParticipantEvent(G, 'carol@s.whatsapp.net', 'join', null, 400);
 
-    const hist = store.getParticipantHistory(G);
+    const hist = await store.getParticipantHistory(G);
     assert.equal(hist.length, 4, '4 events in history');
     // History is newest-first
     assert.equal(hist[0].participant, 'carol@s.whatsapp.net');
 
-    const current = store.getCurrentParticipants(G);
+    const current = await store.getCurrentParticipants(G);
     // alice should be excluded (last=leave); bob + carol remain
     const ids = current.map((p) => p.participant).sort();
     assert.deepEqual(ids, ['bob@s.whatsapp.net', 'carol@s.whatsapp.net']);
@@ -124,18 +124,16 @@ test('sqlite store: counters + gauges round-trip', async () => {
   } finally { cleanup(); }
 });
 
-test('sqlite store: listGroups + countGroups + countUniqueUsers', () => {
+test('sqlite store: listGroups + countGroups + countUniqueUsers', async () => {
   const { store, cleanup } = newStore();
   try {
     store.saveGroupMetadata('g1@g.us', { subject: 'Alpha', participants: [{ id: 'a@s.whatsapp.net' }] });
     store.saveGroupMetadata('g2@g.us', { subject: 'Beta',  participants: [{ id: 'b@s.whatsapp.net' }, { id: 'c@s.whatsapp.net' }] });
     assert.equal(store.countGroups(), 2);
-    const list = store.listGroups();
+    const list = await store.listGroups();
     assert.equal(list.length, 2);
-    // sorted alphabetically
     assert.equal(list[0].subject, 'Alpha');
     assert.equal(list[1].participantCount, 2);
-
     store.recordParticipantEvent('g1@g.us', 'a@s.whatsapp.net', 'add', null, 100);
     store.recordParticipantEvent('g2@g.us', 'b@s.whatsapp.net', 'add', null, 100);
     store.recordParticipantEvent('g2@g.us', 'c@s.whatsapp.net', 'add', null, 100);

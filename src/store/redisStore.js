@@ -319,7 +319,8 @@ function makeRedisStore(url, logger, groupCache) {
       } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentArticle failed'); }
     },
 
-    close() { client.quit(); }
+    client,
+    close() { client.quit() }
   };
 }
 

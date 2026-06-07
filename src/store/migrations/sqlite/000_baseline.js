@@ -21,7 +21,7 @@ module.exports = {
   version: 0,
   description: 'baseline schema — re-asserts all sqliteStore tables/indexes',
 
-  async up({ db }) {
+  up({ db }) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS messages (
         jid         TEXT NOT NULL,
@@ -92,6 +92,23 @@ module.exports = {
         recipient TEXT NOT NULL, status INTEGER NOT NULL, ts INTEGER NOT NULL,
         PRIMARY KEY (jid, message_id, recipient)
       );
+
+      CREATE TABLE IF NOT EXISTS service_subscribers (
+        service            TEXT NOT NULL,
+        jid                TEXT NOT NULL,
+        last_seen_pulse_ts INTEGER,
+        PRIMARY KEY (service, jid)
+      );
+      CREATE INDEX IF NOT EXISTS idx_service_subscribers_service
+        ON service_subscribers (service);
+
+      CREATE TABLE IF NOT EXISTS thehackersnews_sent_articles (
+        service     TEXT NOT NULL,
+        jid         TEXT NOT NULL,
+        article_url TEXT NOT NULL,
+        sent_at     INTEGER NOT NULL,
+        PRIMARY KEY (service, jid, article_url)
+      );
     `);
 
     // In-place column additions (idempotent — PRAGMA-checked)
@@ -104,7 +121,7 @@ module.exports = {
     }
   },
 
-  async down({ db: _db }) {
+  down({ db: _db }) {
     // No-op. We don't drop the schema during rollback; data loss is unacceptable.
   },
 };

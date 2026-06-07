@@ -1,6 +1,6 @@
 {
   "name": "echofox",
-  "version": "0.4.5-beta",
+  "version": "0.4.6-beta",
   "description": "A production-grade WhatsApp bot built on Baileys 7.x — typed, observable, scalable.",
   "main": "src/core/bootstrap.js",
   "scripts": {
@@ -13,6 +13,7 @@
     "format:check": "prettier --check \"**/*.{js,json,md,yml,yaml}\"",
     "headers": "node scripts/add-license-headers.js",
     "headers:check": "node scripts/add-license-headers.js --check",
+    "migrate": "node scripts/migrate.js",
     "docs:commands": "node scripts/generate-command-docs.js",
     "test": "node --test src/**/*.test.js src/commands/__tests__/*.test.js",
     "test:contract": "node --test src/commands/__tests__/contract.test.js",

@@ -73,6 +73,23 @@ module.exports = {
         PRIMARY KEY (jid, message_id, recipient)
       );
 
+      CREATE TABLE IF NOT EXISTS service_subscribers (
+        service            TEXT NOT NULL,
+        jid                TEXT NOT NULL,
+        last_seen_pulse_ts BIGINT,
+        PRIMARY KEY (service, jid)
+      );
+      CREATE INDEX IF NOT EXISTS idx_service_subscribers_service
+        ON service_subscribers (service);
+
+      CREATE TABLE IF NOT EXISTS thehackersnews_sent_articles (
+        service     TEXT NOT NULL,
+        jid         TEXT NOT NULL,
+        article_url TEXT NOT NULL,
+        sent_at     BIGINT NOT NULL,
+        PRIMARY KEY (service, jid, article_url)
+      );
+
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at BIGINT;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS status INTEGER NOT NULL DEFAULT 0;
     `);

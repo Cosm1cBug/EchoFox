@@ -41,6 +41,7 @@ const { config }    = require('../lib/configLoader');
 const { useRedisAuth, useSqliteAuth, usePostgresAuth } = require('./auth');
 const { createStore } = require('../store/db');
 const { setStore } = require('../store/instance');
+const { runMigrations } = require('../lib/migrationsRunner');
 const metrics       = require('../services/metrics');
 const caches        = require('./caches');
 
@@ -101,20 +102,68 @@ async function selectAuth() {
   }
 }
 
+// Mapping from storeDB.type to migrationsRunner backend key (dir name)
+const MIGRATIONS_BACKEND = {
+  SQLITE:   'sqlite',
+  POSTGRES: 'postgres',
+  MONGODB:  'mongo',
+  REDIS:    'redis',
+};
+
 // ─── Phase 4: store backend selector ────────────────────────────────────
-function selectStore() {
+async function selectStore() {
   const type = (config.storeDB.type || 'SQLITE').toUpperCase();
   log.info({ phase: 'store', backend: type }, 'Selecting store backend');
 
+  let store;
   try {
-    const store = createStore(config, log.child({ mod: 'store' }), caches.groupMetadataCache);
-    setStore(store);
-    log.info({ phase: 'store', status: 'ok', backend: type }, 'Store ready');
-    return store;
+    store = createStore(config, log.child({ mod: 'store' }), caches.groupMetadataCache);
   } catch (err) {
     log.fatal({ phase: 'store', status: 'error', backend: type, err }, 'Store selection FAILED');
     throw err;
   }
+
+  // ─── auto-run pending migrations ──────────────────────────────
+  if (config.storeDB.runMigrationsOnBoot !== false) {
+    const mBackend = MIGRATIONS_BACKEND[type];
+    if (!mBackend) {
+      log.warn({ phase: 'migrations', backend: type },
+        'no migrations adapter for this backend — skipping');
+    } else {
+      // Build adapter-specific ctx from the freshly-constructed store.
+      const ctx = (
+        mBackend === 'sqlite'   ? { db:     store.db } :
+        mBackend === 'postgres' ? { pool:   store.pool } :
+        mBackend === 'mongo'    ? { conn:   store.conn } :
+        mBackend === 'redis'    ? { client: store.client } :
+        null
+      );
+      if (!ctx || Object.values(ctx).some((v) => v == null)) {
+        log.fatal({ phase: 'migrations', backend: type, ctx: Object.keys(ctx || {}) },
+          'store did not expose the primitive needed for migrations (db/pool/conn/client)');
+        throw new Error(`migrations: ${type} store did not expose its DB primitive`);
+      }
+      try {
+        const result = await runMigrations(mBackend, ctx);
+        log.info({ phase: 'migrations', backend: mBackend, applied: result.applied.length, skipped: result.skipped },
+          'migrations complete');
+      } catch (err) {
+        log.fatal({ phase: 'migrations', backend: mBackend, err },
+          'migrations failed — aborting boot');
+        // Close the half-bootstrapped store before re-throwing to avoid
+        // leaking handles to the supervisor's restart loop.
+        try { await store.close?.(); } catch {}
+        throw err;
+      }
+    }
+  } else {
+    log.info({ phase: 'migrations', backend: type },
+      'storeDB.runMigrationsOnBoot is false — skipping (use `npm run migrate` for manual runs)');
+  }
+
+  setStore(store);
+  log.info({ phase: 'store', status: 'ok', backend: type }, 'Store ready');
+  return store;
 }
 
 // ─── Phase 5: metrics ───────────────────────────────────────────────────

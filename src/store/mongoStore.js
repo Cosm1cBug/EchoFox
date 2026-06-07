@@ -7,6 +7,7 @@
 
 const { config } = require('../lib/configLoader');
 const mongoose  = require('mongoose');
+const { makeBatcher } = require('../lib/backpressure');
 const { proto } = require('@whiskeysockets/baileys');
 
 function makeMongoStore(uri, logger, groupCache) {
@@ -93,9 +94,22 @@ function makeMongoStore(uri, logger, groupCache) {
     sent_at:     { type: Number, required: true },
   }).index({ service: 1, jid: 1, article_url: 1 }, { unique: true }));
 
-  // Augment Message model with deleted_at + status (mongoose ignores
-  // fields not in the schema, so we explicitly support them via $set
-  // updates). Existing documents simply have no value — handled by client.
+  const batchCfg = config.processing?.messageBatch || {};
+  const messageBatcher = makeBatcher({
+    name: 'mongo-messages',
+    maxBatch:      batchCfg.maxBatch      ?? 100,
+    maxWaitMs:     batchCfg.maxWaitMs     ?? 250,
+    maxBufferSize: batchCfg.maxBufferSize ?? 5_000,
+    onDrop: (n) => logger.warn({ dropped: n }, 'mongo message batcher overflow'),
+    flush: async (ops) => {
+      if (!ops.length) return;
+      try {
+        await Message.bulkWrite(ops, { ordered: false });
+      } catch (e) {
+        logger.warn({ err: e, ops: ops.length }, 'mongo batched bulkWrite failed');
+      }
+    },
+  });
 
   return {
     async getMessage(key) {
@@ -204,15 +218,14 @@ function makeMongoStore(uri, logger, groupCache) {
     },
 
     bind(ev) {
-      ev.on('messages.upsert', async ({ messages }) => {
+      ev.on('messages.upsert', ({ messages }) => {
         const storeBodies = config.privacy?.storeMessageBodies !== false;
         const excluded    = new Set(config.privacy?.excludeFromStore || []);
-        const ops = [];
         for (const m of messages) {
           if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
           if (excluded.has(m.key.remoteJid)) continue;
           const msgBuf = storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null;
-          ops.push({
+          messageBatcher.push({
             updateOne: {
               filter: { jid: m.key.remoteJid, id: m.key.id },
               update: {
@@ -224,7 +237,6 @@ function makeMongoStore(uri, logger, groupCache) {
             },
           });
         }
-        if (ops.length) Message.bulkWrite(ops).catch(() => {});
       });
 
       ev.on('chats.upsert', async (chats) => {
@@ -403,7 +415,16 @@ function makeMongoStore(uri, logger, groupCache) {
       } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentArticle failed'); }
     },
 
-    close() { conn.close(); },
+    conn,
+    async close() {
+      try { 
+        await messageBatcher.drain(); 
+      }
+      catch (e) { 
+        logger.warn({ err: e }, 'mongo batcher drain failed'); 
+      }
+      conn.close();
+    },
   };
 }
 

@@ -118,7 +118,7 @@ const schema = z.object({
     postgresUrl: z.string().default('postgresql://postgres:postgres@localhost:5432/echofox'),
     mongoUri:    z.string().default('mongodb://localhost:27017/echofox'),
     redisUrl:    z.string().default('redis://localhost:6379'),
-  }).default({}),
+    runMigrationsOnBoot: z.boolean().default(true),
 
   dashboard: z.object({
     enabled:  z.boolean().default(false),
@@ -132,9 +132,13 @@ const schema = z.object({
     globalRateLimit:    z.coerce.number().int().min(1).default(20),
     userRateLimit:      z.coerce.number().int().min(1).default(10),
     sendConcurrency:    z.coerce.number().int().min(1).max(16).default(4),
+    messageBatch: z.object({
+      maxBatch:      z.coerce.number().int().min(1).max(10_000).default(100),
+      maxWaitMs:     z.coerce.number().int().min(10).max(60_000).default(250),
+      maxBufferSize: z.coerce.number().int().min(100).max(1_000_000).default(5_000),
+    }).default({}),
   }).default({}),
 
-  // ─── Anti-ban / human-like-presence knobs ───────────────────────────────
   antiBan: z.object({
     typingIndicator: z.boolean().default(true),
     shortReplyChars: z.coerce.number().int().min(0).default(40),
@@ -144,9 +148,7 @@ const schema = z.object({
       max: z.coerce.number().int().min(0).default(2500),
     }).default({}),
 
-    // ── v0.4.4 extended ban-mitigation ────────────────────────────
-    presenceOnConnect: z.enum(['available', 'unavailable', 'composing'])
-      .default('available'),
+    presenceOnConnect: z.enum(['available', 'unavailable', 'composing']).default('available'),
     warmupMode:        z.boolean().default(false),
     warmupDays:        z.coerce.number().int().min(0).default(14),
     warmupMultiplier:  z.coerce.number().min(0.1).max(10).default(3),
@@ -167,7 +169,7 @@ const schema = z.object({
   }).default({}),
 
   apis: z.object({
-    omdb:       z.object({
+    omdb: z.object({
       apiKey: z.string().default(''),
       url:    z.string().url().default('https://www.omdbapi.com/'),
     }).default({}),
@@ -187,7 +189,6 @@ const schema = z.object({
     healthPath:  z.string().startsWith('/').default('/healthz'),
     metricsPath: z.string().startsWith('/').default('/metrics'),
 
-    // ── v0.4.5: stability ──────────────────────────────────────────
     maxHeapPercent:   z.coerce.number().min(50).max(100).default(90),
     autoRestart:      z.boolean().default(true),
     checkIntervalMs:  z.coerce.number().int().min(5_000).default(30_000),
@@ -204,10 +205,6 @@ const schema = z.object({
     storePath:  z.string().default('./src/store/'),
     runtimeDir: z.string().default('./src/store/runtime/'),
   }).default({}),
-
-  // ══════════════════════════════════════════════════════════════════════
-  //  v0.4.4 production sections
-  // ══════════════════════════════════════════════════════════════════════
 
   network: z.object({
     httpProxy:    z.string().default(''),

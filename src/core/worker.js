@@ -125,7 +125,7 @@ async function start(retry = 0) {
   const { state, saveCreds, clear } = auth;
 
   if (!store) {
-    store = lifecycle.selectStore();
+    store = await lifecycle.selectStore();
     lifecycle.initMetrics(store);
     startGaugeRefresh();
 

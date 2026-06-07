@@ -9,11 +9,9 @@ const { config } = require('../lib/configLoader');
 const { Pool } = require('pg');
 const { proto } = require('@whiskeysockets/baileys');
 const { SQL_DDL: PARTICIPANTS_DDL } = require('./schema/participants');
+const { makeBatcher } = require('../lib/backpressure');
 const { SQL_DDL: STATS_DDL }        = require('./schema/stats');
-const {
-  SQL_DDL: EXTRAS_DDL,
-  applyMessagesMigration_postgres,
-} = require('./schema/messages-extras');
+const { SQL_DDL: EXTRAS_DDL, applyMessagesMigration_postgres } = require('./schema/messages-extras');
 
 function makePostgresStore(url, logger, groupCache) {
   const pool = new Pool({
@@ -24,6 +22,34 @@ function makePostgresStore(url, logger, groupCache) {
     allowExitOnIdle:         false,
   });
   pool.on('error', (e) => logger.error({ err: e }, 'pg pool error (idle client)'));
+
+  const batchCfg = config.processing?.messageBatch || {};
+  const messageBatcher = makeBatcher({
+    name: 'pg-messages',
+    maxBatch:      batchCfg.maxBatch      ?? 100,
+    maxWaitMs:     batchCfg.maxWaitMs     ?? 250,
+    maxBufferSize: batchCfg.maxBufferSize ?? 5_000,
+    onDrop: (n) => logger.warn({ dropped: n }, 'pg message batcher overflow'),
+    flush: async (rows) => {
+      if (!rows.length) return;
+      const params = [];
+      const tuples = rows.map((r, i) => {
+        const o = i * 6;
+        params.push(r.jid, r.id, r.fromMe, r.participant, r.msg, r.ts);
+        return `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6})`;
+      });
+      try {
+        await pool.query(
+          `INSERT INTO messages (jid, id, from_me, participant, msg, ts)
+           VALUES ${tuples.join(', ')}
+           ON CONFLICT (jid, id) DO UPDATE SET msg = EXCLUDED.msg`,
+          params,
+        );
+      } catch (e) {
+        logger.warn({ err: e, rows: rows.length }, 'pg batched message insert failed');
+      }
+    },
+  });
 
   pool.query(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -186,22 +212,20 @@ function makePostgresStore(url, logger, groupCache) {
     },
 
     bind(ev) {
-      ev.on('messages.upsert', async ({ messages }) => {
+      ev.on('messages.upsert', ({ messages }) => {
         const storeBodies = config.privacy?.storeMessageBodies !== false;
         const excluded    = new Set(config.privacy?.excludeFromStore || []);
         for (const m of messages) {
           if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
           if (excluded.has(m.key.remoteJid)) continue;
-          const msgBuf = storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null;
-          try {
-            await pool.query(
-              `INSERT INTO messages (jid, id, from_me, participant, msg, ts)
-               VALUES ($1, $2, $3, $4, $5, $6)
-               ON CONFLICT (jid, id) DO UPDATE SET msg = EXCLUDED.msg`,
-              [m.key.remoteJid, m.key.id, !!m.key.fromMe,
-               m.key.participant, msgBuf, Number(m.messageTimestamp)],
-            );
-          } catch { /* swallow per-row failures */ }
+          messageBatcher.push({
+            jid: m.key.remoteJid,
+            id: m.key.id,
+            fromMe: !!m.key.fromMe,
+            participant: m.key.participant,
+            msg: storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null,
+            ts: Number(m.messageTimestamp),
+          });
         }
       });
 
@@ -401,7 +425,16 @@ function makePostgresStore(url, logger, groupCache) {
       } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentArticle failed'); }
     },
 
-    close() { pool.end(); },
+    pool,
+    async close() {
+      try { 
+        await messageBatcher.drain(); 
+      }
+      catch (e) { 
+        logger.warn({ err: e }, 'pg batcher drain failed'); 
+      }
+      pool.end();
+    },
   };
 }
 

@@ -62,6 +62,7 @@ module.exports = {
     postgresUrl: 'postgresql://postgres:postgres@localhost:5432/echofox',
     mongoUri:    'mongodb://localhost:27017/echofox',
     redisUrl:    'redis://localhost:6379',
+    runMigrationsOnBoot: true,
   },
 
   dashboard: {
@@ -76,6 +77,11 @@ module.exports = {
     globalRateLimit:    20,
     userRateLimit:      10,
     sendConcurrency:    4,
+    messageBatch: {
+      maxBatch:      100,
+      maxWaitMs:     250,
+      maxBufferSize: 5000,
+  },
   },
 
   // ═══ Anti-ban (human-like presence + ban-mitigation) ══════════════════

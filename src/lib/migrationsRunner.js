@@ -93,12 +93,19 @@ const adapters = {
       );
     },
     async run(ctx, mig) {
-      const tx = ctx.db.transaction(async () => {
-        await mig.up(ctx);
+      const tx = ctx.db.transaction(() => {
+        const maybePromise = mig.up(ctx);
+        if (maybePromise && typeof maybePromise.then === 'function') {
+          throw new Error(
+            `SQLite migration ${mig.version} returned a Promise — sqlite ` +
+            'migrations must complete synchronously inside the transaction. ' +
+            'Use better-sqlite3 sync methods only (db.exec, prepare().run, ...).'
+          );
+        }
         ctx.db.prepare('INSERT INTO _migrations(version,slug,applied_at) VALUES(?,?,?)')
           .run(mig.version, mig.slug, Math.floor(Date.now() / 1000));
       });
-      await tx();
+      tx();
     },
   },
 

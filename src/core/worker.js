@@ -7,6 +7,9 @@
 
 require('events').EventEmitter.defaultMaxListeners = 100;
 
+const BOT_BOOT_TS = Math.floor(Date.now() / 1000);
+const HISTORY_GRACE_SEC = 30; 
+
 // ─── Network: load extra CAs into process-wide TLS contexts ────────────
 require('../lib/network').applyExtraCAsToProcess();
 
@@ -292,15 +295,7 @@ async function start(retry = 0) {
     }
   });
 
-  sock.ev.on('messaging-history.set', ({ chats, contacts, messages, isLatest }) => {
-    log.info({
-      phase: 'history-sync',
-      chats: chats.length,
-      contacts: contacts.length,
-      messages: messages.length,
-      isLatest
-    }, 'messaging-history.set received')
-  });
+  sock.ev.on('messaging-history.set', (payload) => eventRouter.emit('messaging-history.set', { sock, store, payload }));
 
   sock.ev.on('contacts.update', (updates) => {
     for (const update of updates) {
@@ -334,9 +329,21 @@ async function start(retry = 0) {
   sock.ev.on('messages.upsert', (payload) => {
     if (!payload?.messages?.length) return;
     metrics.incReceived(payload.messages.length);
+
+    if (payload.type && payload.type !== 'notify') {
+      log.debug({ type: payload.type, count: payload.messages.length }, 'Skipping command-routing for non-notify payload.');
+      return;
+    }
     for (const m of payload.messages) {
       const jid = m?.key?.remoteJid;
       if (!jid) continue;
+
+      const ts = Number(m.messageTimestamp) || 0;
+      if (ts && ts < BOT_BOOT_TS - HISTORY_GRACE_SEC) {
+        log.debug({ jid, ts, bootTs: BOT_BOOT_TS }, 'Skipping stale message (older than boot)');
+        continue;
+      }
+
       queueFor(jid).add(() =>
         eventRouter.handleMessage({ sock, m, commands, store, logger: log })
           .catch((e) => log.error({ err: e, jid }, 'message handler crashed')),

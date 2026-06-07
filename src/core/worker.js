@@ -306,15 +306,6 @@ async function start(retry = 0) {
     }
   });
 
-  sock.ev.on('groups.update', async (updates) => {
-    for (const u of updates) {
-      try {
-        const fresh = await sock.groupMetadata(u.id);
-        store.saveGroupMetadata(u.id, fresh);
-      } catch {}
-    }
-  });
-
   sock.ev.on('group-participants.update', (u) => eventRouter.emit('group-participants.update', { sock, store, u }));
   sock.ev.on('contacts.upsert', (u) => eventRouter.emit('contacts.upsert', { sock, u }));
   sock.ev.on('call',            (u) => eventRouter.emit('call',            { sock, u }));

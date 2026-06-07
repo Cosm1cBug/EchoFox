@@ -29,7 +29,9 @@ test('config loader returns frozen schema-validated object', () => {
   assert.ok(config.runtime);
   assert.equal(typeof config.runtime.maxHeapPercent, 'number');
   assert.ok(Array.isArray(config.admins));
-  assert.equal(Object.isFrozen(config), true);
+  assert.equal(Object.isFrozen(config.bot), true, 'config.bot should be frozen');
+  assert.equal(Object.isFrozen(config.features), true, 'config.features should be frozen');
+  assert.throws(() => { 'use strict'; config.foo = 'bar'; }, /read only|trap returned falsish/i);
 });
 
 test('metrics service init() then snapshot()', async () => {
@@ -96,4 +98,47 @@ test('errors module: classification helpers', () => {
   assert.equal(shouldCountAsFailure(new Error('x')), true);
   assert.equal(shouldCountAsFailure(new UserError('x')), false);
   assert.equal(shouldCountAsFailure(new UpstreamError('x')), false);
+});
+
+
+test('__testOverride: merges patch onto config and is visible via proxy', () => {
+  process.env.NODE_ENV = 'test';
+  const loader = require('../../lib/configLoader');
+  const originalPrefix = loader.config.bot.prefix;
+
+  loader.__testOverride({ bot: { prefix: '!!' } });
+
+  assert.equal(loader.config.bot.prefix, '!!');
+  assert.equal(loader.config.bot.adminPrefix, originalPrefix === '!!' ? '$' : loader.config.bot.adminPrefix);
+
+  loader.__resetForTests();
+  assert.equal(loader.config.bot.prefix, originalPrefix);
+});
+
+test('__testOverride: re-validates via Zod schema (rejects bad values)', () => {
+  process.env.NODE_ENV = 'test';
+  const loader = require('../../lib/configLoader');
+  assert.throws(
+    () => loader.__testOverride({ runtime: { maxHeapPercent: 'not-a-number' } }),
+    /maxHeapPercent|Expected number/i,
+  );
+
+  assert.equal(typeof loader.config.runtime.maxHeapPercent, 'number');
+});
+
+test('__testOverride: warns when NODE_ENV !== "test"', () => {
+  const loader = require('../../lib/configLoader');
+  const origEnv = process.env.NODE_ENV;
+  const origWarn = console.warn;
+  let captured = '';
+  try {
+    process.env.NODE_ENV = 'production';
+    console.warn = (msg) => { captured += String(msg) + '\n'; };
+    loader.__testOverride({ bot: { prefix: '.' } });
+  } finally {
+    console.warn = origWarn;
+    process.env.NODE_ENV = origEnv;
+    loader.__resetForTests();
+  }
+  assert.match(captured, /__testOverride.*tests only.*production/i);
 });

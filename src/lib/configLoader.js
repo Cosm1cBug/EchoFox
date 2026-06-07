@@ -40,7 +40,6 @@ const PATHS = {
   example: path.join(__dirname, '..', 'config.example.js'),
 };
 
-// ─── 1. Read raw config from disk ────────────────────────────────────────
 function loadRaw() {
   if (fs.existsSync(PATHS.real)) {
     delete require.cache[require.resolve(PATHS.real)];
@@ -60,27 +59,13 @@ function loadRaw() {
   return { source: '<defaults>', raw: {} };
 }
 
-// ─── 2. Legacy auto-translator ───────────────────────────────────────────
-/**
- * The pre-fork repo (v5/v6) used a flat module.exports = { config: {...} }
- * with keys like options, WApp, Exif, OpenAI, Gemini, store, etc.
- *
- * Your current src/config.js (v0.4.0+) is a *hybrid*: still has the legacy
- * sections but also new ones (login, auth, storeDB, dashboard, processing).
- * The detector below recognises BOTH shapes and unifies them into the new
- * schema-friendly form.
- */
 function translateLegacy(raw) {
-  // Unwrap { config: {...} } if present
   let o = raw && typeof raw === 'object' && raw.config ? raw.config : raw;
   if (!o || typeof o !== 'object') return {};
 
-  // Already-new shape? (has at least one of the v0.2+ top-level keys)
   const NEW_KEYS = ['bot', 'features', 'channels', 'apis', 'sticker', 'runtime'];
   const isNewShape = NEW_KEYS.some((k) => k in o);
 
-  // Build the unified object. We always derive from `o` because your current
-  // config has BOTH the legacy `options`/`WApp` AND the new `auth`/`storeDB`.
   const unified = {
     bot: isNewShape ? (o.bot || {}) : {
       prefix:       o.options?.prefix       ?? '.',
@@ -98,7 +83,6 @@ function translateLegacy(raw) {
       syncHistory:  o.syncHistory           ?? true,
     },
 
-    // These sections are NEW (added by you in v0.4) — pass through as-is.
     login:      o.login      || {},
     auth:       o.auth       || {},
     storeDB:    o.storeDB    || {},
@@ -148,7 +132,6 @@ function translateLegacy(raw) {
   return unified;
 }
 
-// ─── 3. Env-var overrides ────────────────────────────────────────────────
 function coerce(v) {
   if (v === 'true')  return true;
   if (v === 'false') return false;
@@ -169,7 +152,6 @@ function applyEnv(cfg) {
   return cfg;
 }
 
-// ─── 4. Legacy aliases (keep old commands working) ───────────────────────
 function attachLegacyAliases(cfg) {
   cfg.options = {
     prefix:       cfg.bot.prefix,
@@ -200,17 +182,27 @@ function attachLegacyAliases(cfg) {
   cfg.OpenAI     = { apiKey: cfg.ai?.providers?.openai?.apiKey || '' };
   cfg.Gemini     = { apiKey: cfg.ai?.providers?.gemini?.apiKey || '' };
   cfg.WorkMode   = { public: cfg.bot.public };
-  cfg.syncHistory = cfg.features.syncHistory;          // worker reads this
+  cfg.syncHistory = cfg.features.syncHistory;
   return cfg;
 }
 
-// ─── 5. Helpers ──────────────────────────────────────────────────────────
 function deepFreeze(o) {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
     Object.freeze(o);
     for (const k of Object.keys(o)) deepFreeze(o[k]);
   }
   return o;
+}
+
+function deepMerge(target, patch) {
+  if (Array.isArray(patch)) return patch.slice();
+  if (patch === null || typeof patch !== 'object') return patch;
+  const out = (target && typeof target === 'object' && !Array.isArray(target))
+    ? { ...target } : {};
+  for (const k of Object.keys(patch)) {
+    out[k] = (k in out) ? deepMerge(out[k], patch[k]) : deepMerge(undefined, patch[k]);
+  }
+  return out;
 }
 
 const _warnedChannels = new Set();
@@ -259,6 +251,76 @@ function load() {
   return deepFreeze(parsed);
 }
 
-const config = load();
+let _current = load();
 
-module.exports = { config, warnIfChannelMissing };
+const config = new Proxy({}, {
+  get(_target, prop, receiver) {
+    if (prop === '__meta') return _current.__meta;
+    return Reflect.get(_current, prop, receiver);
+  },
+  has(_target, prop) { return Reflect.has(_current, prop); },
+  ownKeys()          { return Reflect.ownKeys(_current); },
+  getOwnPropertyDescriptor(_target, prop) {
+    // Make enumerable so spread/Object.keys behave correctly.
+    const d = Reflect.getOwnPropertyDescriptor(_current, prop);
+    if (!d) return undefined;
+    return { ...d, configurable: true };
+  },
+  // Mutation traps — silently reject writes/deletes (matches the frozen
+  // contract). Strict-mode writes will throw; sloppy-mode no-op.
+  set()            { return false; },
+  defineProperty() { return false; },
+  deleteProperty() { return false; },
+});
+
+function _warnIfNotTestEnv(method) {
+  if (process.env.NODE_ENV !== 'test') {
+    // We deliberately use console.warn (not the structured logger) so
+    // the warning shows up even before logger is configured, and so it
+    // can't be silenced by a misbehaving log config in production.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[configLoader] ${method}() called with NODE_ENV='${process.env.NODE_ENV ?? '(unset)'}' — ` +
+      `this API is intended for tests only and MUST NOT be called in production code.`,
+    );
+  }
+}
+
+function __testOverride(obj) {
+  _warnIfNotTestEnv('__testOverride');
+  if (!obj || typeof obj !== 'object') {
+    throw new TypeError('__testOverride: argument must be an object');
+  }
+  // Strip __meta + legacy aliases so we re-validate the canonical shape.
+  // (Zod's schema allows extra keys to pass through, but we want a clean
+  // merge so legacy aliases get regenerated from the new values.)
+  const base = { ..._current };
+  delete base.__meta;
+  const merged = deepMerge(base, obj);
+  const parsed = schema.parse(merged);
+  attachLegacyAliases(parsed);
+  Object.defineProperty(parsed, '__meta', {
+    value: { ..._current.__meta, source: `${_current.__meta?.source || 'unknown'} + __testOverride`, overriddenAt: new Date().toISOString() },
+    enumerable: false, writable: false,
+  });
+  _current = deepFreeze(parsed);
+  return _current;
+}
+
+function __resetForTests() {
+  _warnIfNotTestEnv('__resetForTests');
+  _current = load();
+  return _current;
+}
+
+function __getCurrent() {
+  return _current;
+}
+
+module.exports = {
+  config,
+  warnIfChannelMissing,
+  __testOverride,
+  __resetForTests,
+  __getCurrent,
+};

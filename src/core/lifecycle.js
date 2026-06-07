@@ -39,6 +39,7 @@ const fs   = require('node:fs');
 const logger        = require('./logger');
 const { config }    = require('../lib/configLoader');
 const { useRedisAuth, useSqliteAuth, usePostgresAuth } = require('./auth');
+const { createStore } = require('../store/db');
 const { setStore } = require('../store/instance');
 const metrics       = require('../services/metrics');
 const caches        = require('./caches');

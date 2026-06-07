@@ -8,7 +8,7 @@
 const axios = require('axios');
 const xml2js = require('xml2js');
 const config = require('../lib/configLoader').config;
-const store = require('../store/db');
+const { getStore } = require('../store/instance');
 const logger = require('../core/logger').child({ mod: 'thehackersnews-service' });
 
 const THEHACKERSNEWS_RSS = 'https://feeds.feedburner.com/TheHackersNews';
@@ -50,6 +50,7 @@ async function sendArticle(sock, jid, article) {
 
 async function checkAndDeliver(sock) {
   try {
+    const store = getStore();
     const subscribers = await store.getSubscribers('thehackersnews');
     if (!subscribers.length || !sock) return;
 

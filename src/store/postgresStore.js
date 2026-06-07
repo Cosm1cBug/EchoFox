@@ -46,6 +46,23 @@ function makePostgresStore(url, logger, groupCache) {
     ${STATS_DDL.postgres}
     ${PARTICIPANTS_DDL.postgres}
     ${EXTRAS_DDL.postgres}
+
+    CREATE TABLE IF NOT EXISTS service_subscribers (
+      service TEXT NOT NULL,
+      jid     TEXT NOT NULL,
+      last_seen_pulse_ts BIGINT,
+      PRIMARY KEY (service, jid)
+    );
+    CREATE INDEX IF NOT EXISTS idx_service_subscribers_service
+      ON service_subscribers (service);
+
+    CREATE TABLE IF NOT EXISTS thehackersnews_sent_articles (
+      service     TEXT NOT NULL,
+      jid         TEXT NOT NULL,
+      article_url TEXT NOT NULL,
+      sent_at     BIGINT NOT NULL,
+      PRIMARY KEY (service, jid, article_url)
+    );
   `).then(() => applyMessagesMigration_postgres(pool))
     .catch((e) => logger.error({ err: e }, 'Postgres init failed'));
 
@@ -326,6 +343,62 @@ function makePostgresStore(url, logger, groupCache) {
            WHERE jid = $2 AND id = $3`,
           [Number(status), jid, messageId]);
       } catch (e) { logger.warn({err:e}, 'updateMessageStatus failed'); }
+    },
+
+    // ── Subscribers + sent-article tracker (v0.4.6) ─────────────────────
+    async getSubscribers(service) {
+      try {
+        const r = await pool.query(
+          'SELECT jid, last_seen_pulse_ts FROM service_subscribers WHERE service = $1',
+          [service]);
+        return r.rows.map((row) => ({
+          jid: row.jid,
+          last_seen_pulse_ts: row.last_seen_pulse_ts == null
+            ? null : Number(row.last_seen_pulse_ts),
+        }));
+      } catch (e) { logger.warn({ err: e, service }, 'getSubscribers failed'); return []; }
+    },
+    async addSubscriber(service, jid) {
+      try {
+        await pool.query(
+          `INSERT INTO service_subscribers (service, jid, last_seen_pulse_ts)
+           VALUES ($1, $2, NULL)
+           ON CONFLICT (service, jid) DO NOTHING`,
+          [service, jid]);
+      } catch (e) { logger.warn({ err: e, service, jid }, 'addSubscriber failed'); }
+    },
+    async removeSubscriber(service, jid) {
+      try {
+        await pool.query(
+          'DELETE FROM service_subscribers WHERE service = $1 AND jid = $2',
+          [service, jid]);
+      } catch (e) { logger.warn({ err: e, service, jid }, 'removeSubscriber failed'); }
+    },
+    async updateSubscriberTimestamp(service, jid, ts) {
+      try {
+        await pool.query(
+          `UPDATE service_subscribers SET last_seen_pulse_ts = $1
+           WHERE service = $2 AND jid = $3`,
+          [ts, service, jid]);
+      } catch (e) { logger.warn({ err: e }, 'updateSubscriberTimestamp failed'); }
+    },
+    async hasSentArticle(service, jid, articleUrl) {
+      try {
+        const r = await pool.query(
+          `SELECT 1 FROM thehackersnews_sent_articles
+           WHERE service = $1 AND jid = $2 AND article_url = $3 LIMIT 1`,
+          [service, jid, articleUrl]);
+        return r.rowCount > 0;
+      } catch { return false; }
+    },
+    async recordSentArticle(service, jid, articleUrl) {
+      try {
+        await pool.query(
+          `INSERT INTO thehackersnews_sent_articles (service, jid, article_url, sent_at)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (service, jid, article_url) DO NOTHING`,
+          [service, jid, articleUrl, Math.floor(Date.now() / 1000)]);
+      } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentArticle failed'); }
     },
 
     close() { pool.end(); },

@@ -39,7 +39,7 @@ const fs   = require('node:fs');
 const logger        = require('./logger');
 const { config }    = require('../lib/configLoader');
 const { useRedisAuth, useSqliteAuth, usePostgresAuth } = require('./auth');
-const { createStore } = require('../store/db');
+const { setStore } = require('../store/instance');
 const metrics       = require('../services/metrics');
 const caches        = require('./caches');
 
@@ -78,7 +78,7 @@ async function selectAuth() {
         config.auth.postgresUrl || config.storeDB.postgresUrl,
         config.bot.sessionName,
       );
-      log.info({ phase: 'auth', status: 'ok', backend: 'POSTGRES' }, '🔐 auth ready');
+      log.info({ phase: 'auth', status: 'ok', backend: 'POSTGRES' }, 'Auth ready');
       return auth;
     }
 
@@ -90,12 +90,12 @@ async function selectAuth() {
     if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
 
     const auth = await useMultiFileAuthState(sessionDir);
-    
+
     auth.clear = async () => fs.rmSync(sessionDir, { recursive: true, force: true });
-    log.info({ phase: 'auth', status: 'ok', backend: 'MULTIFILE', dir: sessionDir }, '🔐 auth ready');
+    log.info({ phase: 'auth', status: 'ok', backend: 'MULTIFILE', dir: sessionDir }, 'Auth ready');
     return auth;
   } catch (err) {
-    log.fatal({ phase: 'auth', status: 'error', backend: method, err }, '🔐 auth selection FAILED');
+    log.fatal({ phase: 'auth', status: 'error', backend: method, err }, 'Auth selection FAILED');
     throw err;
   }
 }
@@ -103,14 +103,15 @@ async function selectAuth() {
 // ─── Phase 4: store backend selector ────────────────────────────────────
 function selectStore() {
   const type = (config.storeDB.type || 'SQLITE').toUpperCase();
-  log.info({ phase: 'store', backend: type }, '📦 selecting store backend');
+  log.info({ phase: 'store', backend: type }, 'Selecting store backend');
 
   try {
     const store = createStore(config, log.child({ mod: 'store' }), caches.groupMetadataCache);
-    log.info({ phase: 'store', status: 'ok', backend: type }, '📦 store ready');
+    setStore(store);
+    log.info({ phase: 'store', status: 'ok', backend: type }, 'Store ready');
     return store;
   } catch (err) {
-    log.fatal({ phase: 'store', status: 'error', backend: type, err }, '📦 store selection FAILED');
+    log.fatal({ phase: 'store', status: 'error', backend: type, err }, 'Store selection FAILED');
     throw err;
   }
 }
@@ -119,9 +120,9 @@ function selectStore() {
 function initMetrics(store) {
   try {
     metrics.init(store);
-    log.info({ phase: 'metrics', status: 'ok' }, '📊 metrics initialised');
+    log.info({ phase: 'metrics', status: 'ok' }, 'Metrics initialised');
   } catch (err) {
-    log.error({ phase: 'metrics', status: 'error', err }, '📊 metrics init failed (continuing)');
+    log.error({ phase: 'metrics', status: 'error', err }, 'Metrics init failed (continuing)');
   }
 }
 

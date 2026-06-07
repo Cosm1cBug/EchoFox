@@ -22,6 +22,8 @@
  *     deleted:<jid>                   HASH { messageId -> deleted_at_ts }
  *     chat-deleted:<jid>              String (ts of full-chat delete)
  *     msg-status:<jid>                HASH { messageId -> aggregate_status }
+ *     subscribers:<service>           HASH { jid -> last_seen_pulse_ts | "" }
+ *     sent-articles:<service>:<jid>   SET of article_url strings
  *
  * Privacy (v0.4.4):
  *   • config.privacy.storeMessageBodies = false → message body writes skipped
@@ -278,6 +280,43 @@ function makeRedisStore(url, logger, groupCache) {
         if (existing && Number(existing) >= status) return;
         await client.hset(key, messageId, String(status));
       } catch (e) { logger.warn({err:e}, 'updateMessageStatus failed'); }
+    },
+
+    // ── Subscribers + sent-article tracker (v0.4.6) ─────────────────────
+    async getSubscribers(service) {
+      try {
+        const h = await client.hgetall(`subscribers:${service}`);
+        return Object.entries(h).map(([jid, v]) => ({
+          jid,
+          last_seen_pulse_ts: v === '' || v == null ? null : Number(v),
+        }));
+      } catch (e) { logger.warn({ err: e, service }, 'getSubscribers failed'); return []; }
+    },
+    async addSubscriber(service, jid) {
+      try {
+        await client.hsetnx(`subscribers:${service}`, jid, '');
+      } catch (e) { logger.warn({ err: e, service, jid }, 'addSubscriber failed'); }
+    },
+    async removeSubscriber(service, jid) {
+      try {
+        await client.hdel(`subscribers:${service}`, jid);
+      } catch (e) { logger.warn({ err: e, service, jid }, 'removeSubscriber failed'); }
+    },
+    async updateSubscriberTimestamp(service, jid, ts) {
+      try {
+        await client.hset(`subscribers:${service}`, jid, String(ts));
+      } catch (e) { logger.warn({ err: e }, 'updateSubscriberTimestamp failed'); }
+    },
+    async hasSentArticle(service, jid, articleUrl) {
+      try {
+        const v = await client.sismember(`sent-articles:${service}:${jid}`, articleUrl);
+        return Number(v) === 1;
+      } catch { return false; }
+    },
+    async recordSentArticle(service, jid, articleUrl) {
+      try {
+        await client.sadd(`sent-articles:${service}:${jid}`, articleUrl);
+      } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentArticle failed'); }
     },
 
     close() { client.quit(); }

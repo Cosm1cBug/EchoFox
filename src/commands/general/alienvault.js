@@ -5,8 +5,7 @@
  */
 'use strict';
 
-const store = require('../../store/db');
-const { checkAndDeliver } = require('../../services/alienvaultService');
+const { getStore } = require('../../store/instance');
 
 module.exports = {
   name: 'alienvault',
@@ -16,19 +15,39 @@ module.exports = {
   info: 'Subscribe or unsubscribe to AlienVault pulses.',
   start: async (sock, m, { text }) => {
     if (!m.isPrivate) {
-      return await sock.sendMessage(m.chat, { text: '❌ Can only be used in Private Chats.' }, { quoted: m });
+      return await sock.sendMessage(
+        m.chat,
+        { text: '❌ Can only be used in Private Chats.' },
+        { quoted: m },
+      );
     }
 
-    const jid = String(m.sender || m.from);
+    const jid   = String(m.sender || m.from);
+    const store = getStore();
+    const verb  = String(text || '').trim().toLowerCase();
 
-    if (['on', 'enable', 'subscribe'].includes(text)) {
+    if (['on', 'enable', 'subscribe'].includes(verb)) {
       await store.addSubscriber('alienvault', jid);
-      await sock.sendMessage(m.chat, { text: '✅ Subscribed to AlienVault pulses.' }, { quoted: m });
-    } else if (['off', 'disable', 'unsubscribe'].includes(text)) {
-      await store.removeSubscriber('alienvault', jid);
-      await sock.sendMessage(m.chat, { text: '❌ Unsubscribed from AlienVault pulses.' }, { quoted: m });
-    } else {
-      await sock.sendMessage(m.chat, { text: 'Use .alienvault on or .alienvault off' }, { quoted: m });
+      return await sock.sendMessage(
+        m.chat,
+        { text: '✅ Subscribed to AlienVault pulses.' },
+        { quoted: m },
+      );
     }
-  }
+
+    if (['off', 'disable', 'unsubscribe'].includes(verb)) {
+      await store.removeSubscriber('alienvault', jid);
+      return await sock.sendMessage(
+        m.chat,
+        { text: '❌ Unsubscribed from AlienVault pulses.' },
+        { quoted: m },
+      );
+    }
+
+    await sock.sendMessage(
+      m.chat,
+      { text: 'Use *.alienvault on* or *.alienvault off*' },
+      { quoted: m },
+    );
+  },
 };

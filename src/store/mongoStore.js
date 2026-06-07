@@ -79,6 +79,20 @@ function makeMongoStore(uri, logger, groupCache) {
     ts:         Number,
   }).index({ jid: 1, message_id: 1, recipient: 1 }, { unique: true }));
 
+  const ServiceSubscriber = conn.model('ServiceSubscriber', new mongoose.Schema({
+    service:            { type: String, required: true },
+    jid:                { type: String, required: true },
+    last_seen_pulse_ts: { type: Number, default: null },
+  }).index({ service: 1, jid: 1 }, { unique: true })
+    .index({ service: 1 }));
+
+  const SentArticle = conn.model('SentArticle', new mongoose.Schema({
+    service:     { type: String, required: true },
+    jid:         { type: String, required: true },
+    article_url: { type: String, required: true },
+    sent_at:     { type: Number, required: true },
+  }).index({ service: 1, jid: 1, article_url: 1 }, { unique: true }));
+
   // Augment Message model with deleted_at + status (mongoose ignores
   // fields not in the schema, so we explicitly support them via $set
   // updates). Existing documents simply have no value — handled by client.
@@ -338,6 +352,55 @@ function makeMongoStore(uri, logger, groupCache) {
           { jid, id: messageId },
           { $max: { status: Number(status) } });
       } catch (e) { logger.warn({err:e}, 'updateMessageStatus failed'); }
+    },
+
+    async getSubscribers(service) {
+      try {
+        const docs = await ServiceSubscriber.find({ service }).lean();
+        return docs.map((d) => ({
+          jid: d.jid,
+          last_seen_pulse_ts: d.last_seen_pulse_ts == null ? null : Number(d.last_seen_pulse_ts),
+        }));
+      } catch (e) { logger.warn({ err: e, service }, 'getSubscribers failed'); return []; }
+    },
+    async addSubscriber(service, jid) {
+      try {
+        await ServiceSubscriber.updateOne(
+          { service, jid },
+          { $setOnInsert: { service, jid, last_seen_pulse_ts: null } },
+          { upsert: true });
+      } catch (e) { logger.warn({ err: e, service, jid }, 'addSubscriber failed'); }
+    },
+    async removeSubscriber(service, jid) {
+      try {
+        await ServiceSubscriber.deleteOne({ service, jid });
+      } catch (e) { logger.warn({ err: e, service, jid }, 'removeSubscriber failed'); }
+    },
+    async updateSubscriberTimestamp(service, jid, ts) {
+      try {
+        await ServiceSubscriber.updateOne(
+          { service, jid },
+          { $set: { last_seen_pulse_ts: ts } });
+      } catch (e) { logger.warn({ err: e }, 'updateSubscriberTimestamp failed'); }
+    },
+    async hasSentArticle(service, jid, articleUrl) {
+      try {
+        const doc = await SentArticle.findOne(
+          { service, jid, article_url: articleUrl },
+          { _id: 1 }).lean();
+        return !!doc;
+      } catch { return false; }
+    },
+    async recordSentArticle(service, jid, articleUrl) {
+      try {
+        await SentArticle.updateOne(
+          { service, jid, article_url: articleUrl },
+          { $setOnInsert: {
+              service, jid, article_url: articleUrl,
+              sent_at: Math.floor(Date.now() / 1000),
+          } },
+          { upsert: true });
+      } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentArticle failed'); }
     },
 
     close() { conn.close(); },

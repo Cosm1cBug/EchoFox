@@ -40,6 +40,10 @@ const { startMemoryGuard } = require('../lib/memoryGuard');
 const alertEngine          = require('../services/alertEngine');
 const diagnostics          = require('../lib/diagnostics');
 const { checkAndDeliver: checkTheHackerNews } = require('../services/thehackersnewsService');
+const {
+  checkAndDeliver: checkAlienVault,
+  CHECK_INTERVAL: AV_INTERVAL_MIN,
+} = require('../services/alienvaultService');
 
 const log = logger.child({ mod: 'worker' });
 
@@ -99,6 +103,15 @@ setInterval(async () => {
     log.error({ err }, '[thehackersnews] Cron job failed');
   }
 }, 60 * 60 * 1000).unref();
+
+
+setInterval(async () => {
+  try {
+    await checkAlienVault(sock);
+  } catch (err) {
+    log.error({ err }, '[alienvault] Cron job failed');
+  }
+}, (AV_INTERVAL_MIN || 60) * 60 * 1000).unref();
 
 async function start(retry = 0) {
   if (shuttingDown) return;

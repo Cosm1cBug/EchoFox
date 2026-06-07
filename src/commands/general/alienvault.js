@@ -10,7 +10,7 @@ const { checkAndDeliver } = require('../../services/alienvaultService');
 
 module.exports = {
   name: 'alienvault',
-  aliase: ['pulse'],
+  alias: ['pulse'],
   usage: `<on/off>`,
   type: 'general',
   info: 'Subscribe or unsubscribe to AlienVault pulses.',

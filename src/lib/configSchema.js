@@ -119,6 +119,7 @@ const schema = z.object({
     mongoUri:    z.string().default('mongodb://localhost:27017/echofox'),
     redisUrl:    z.string().default('redis://localhost:6379'),
     runMigrationsOnBoot: z.boolean().default(true),
+  }).default({}),
 
   dashboard: z.object({
     enabled:  z.boolean().default(false),

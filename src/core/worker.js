@@ -315,7 +315,7 @@ async function start(retry = 0) {
   sock.ev.on('messages.reaction',      (payload) => eventRouter.emit('messages.reaction',      { sock, store, payload }));
   sock.ev.on('message-receipt.update', (payload) => eventRouter.emit('message-receipt.update', { sock, store, payload }));
   sock.ev.on('newsletter.upsert', (newsletters) => eventRouter.emit('newsletter.upsert', { sock, newsletters }));
-  sock.ev.on('newsletters.update', (updates) => eventRouter.emit('newsletters.update', { sock, updates }));
+  sock.ev.on('newsletter.update', (updates) => eventRouter.emit('newsletters.update', { sock, updates }));
   
   sock.ev.on('messages.upsert', (payload) => {
     if (!payload?.messages?.length) return;

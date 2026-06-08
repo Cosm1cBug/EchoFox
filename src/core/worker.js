@@ -296,27 +296,32 @@ async function start(retry = 0) {
   });
 
   sock.ev.on('messaging-history.set', (payload) => eventRouter.emit('messaging-history.set', { sock, store, payload }));
-
-  sock.ev.on('contacts.update', (updates) => {
-    for (const update of updates) {
-      if (update.id) {
-        caches.userDevicesCache.del(update.id);
-        log.debug({ jid: update.id }, 'userDevicesCache invalidated');
-      }
-    }
-  });
-
+  sock.ev.on('contacts.update', (updates) => eventRouter.emit('contacts.update', { sock, updates }));
   sock.ev.on('group-participants.update', (u) => eventRouter.emit('group-participants.update', { sock, store, u }));
   sock.ev.on('contacts.upsert', (u) => eventRouter.emit('contacts.upsert', { sock, u }));
   sock.ev.on('call',            (u) => eventRouter.emit('call',            { sock, u }));
-  sock.ev.on('groups.update',   (u) => eventRouter.emit('groups.update',   { sock, u }));
+  sock.ev.on('groups.update',   (u) => eventRouter.emit('groups.update',   { sock, store, u }));
   sock.ev.on('messages.update',        (payload) => eventRouter.emit('messages.update',        { sock, store, payload }));
   sock.ev.on('messages.delete',        (payload) => eventRouter.emit('messages.delete',        { sock, store, payload }));
   sock.ev.on('messages.reaction',      (payload) => eventRouter.emit('messages.reaction',      { sock, store, payload }));
   sock.ev.on('message-receipt.update', (payload) => eventRouter.emit('message-receipt.update', { sock, store, payload }));
   sock.ev.on('newsletter.upsert', (newsletters) => eventRouter.emit('newsletter.upsert', { sock, newsletters }));
-  sock.ev.on('newsletter.update', (updates) => eventRouter.emit('newsletters.update', { sock, updates }));
-  
+  sock.ev.on('newsletter.update', (updates) => eventRouter.emit('newsletter.update', { sock, updates }));
+  sock.ev.on('blocklist.set',            (u) => eventRouter.emit('blocklist.set',            { sock, u }));
+  sock.ev.on('blocklist.update',         (u) => eventRouter.emit('blocklist.update',         { sock, u }));
+  sock.ev.on('chats.upsert',             (u) => eventRouter.emit('chats.upsert',             { sock, store, u }));
+  sock.ev.on('chats.update',             (u) => eventRouter.emit('chats.update',             { sock, store, u }));
+  sock.ev.on('chats.delete',             (u) => eventRouter.emit('chats.delete',             { sock, store, u }));
+  sock.ev.on('labels.association',       (u) => eventRouter.emit('labels.association',       { sock, u }));
+  sock.ev.on('labels.edit',              (u) => eventRouter.emit('labels.edit',              { sock, u }));
+  sock.ev.on('lid-mapping.update',       (u) => eventRouter.emit('lid-mapping.update',       { sock, u }));
+  sock.ev.on('message-capping.update',   (u) => eventRouter.emit('message-capping.update',   { sock, u }));
+  sock.ev.on('messaging-history.status', (u) => eventRouter.emit('messaging-history.status', { sock, store, u }));
+  sock.ev.on('newsletter-settings.update', (u) => eventRouter.emit('newsletter-settings.update', { sock, u }));
+  sock.ev.on('newsletter.reaction',      (u) => eventRouter.emit('newsletter.reaction',      { sock, u }));
+  sock.ev.on('newsletter.view',          (u) => eventRouter.emit('newsletter.view',          { sock, u }));
+  sock.ev.on('presence.update',          (u) => eventRouter.emit('presence.update',          { sock, u }));
+
   sock.ev.on('messages.upsert', (payload) => {
     if (!payload?.messages?.length) return;
     metrics.incReceived(payload.messages.length);

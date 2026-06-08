@@ -8,18 +8,19 @@
 const express = require('express');
 const path    = require('node:path');
 const fs      = require('node:fs');
+const { spawnSync } = require('node:child_process');
 
 const { config } = require('../lib/configLoader');
-const metrics = require('../services/metrics');
+const metrics    = require('../services/metrics');
 
-const logger  = require('../core/logger').child({ mod: 'dashboard' });
+const logger = require('../core/logger').child({ mod: 'dashboard' });
 
 const PKG = (() => {
   try { return require(path.join(__dirname, '..', '..', 'package.json')); }
   catch { return { version: 'unknown' }; }
 })();
 
-const HTML = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+const REACT_DIR = path.join(__dirname, 'react');
 
 function basicAuth(username, password) {
   const expected = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
@@ -29,6 +30,53 @@ function basicAuth(username, password) {
     res.set('WWW-Authenticate', 'Basic realm="EchoFox Dashboard", charset="UTF-8"');
     res.status(401).type('text/plain').send('Authentication required');
   };
+}
+
+/**
+ * Build the React dashboard if its output is missing.
+ *   Triggered once at boot inside startDashboard().
+ *   Safe to call multiple times — idempotent if dist already exists.
+ *   Returns true if the dashboard is ready to serve.
+ */
+function ensureReactBuilt() {
+  const indexHtml = path.join(REACT_DIR, 'index.html');
+  if (fs.existsSync(indexHtml)) return true;
+
+  logger.warn({ path: REACT_DIR },
+    'React dashboard build missing — attempting build-on-boot. ' +
+    'Run `npm run build:dashboard` ahead of time to skip this step.');
+  try {
+    const script = path.join(__dirname, '..', '..', 'scripts', 'build-dashboard.js');
+    const result = spawnSync(process.execPath, [script], {
+      stdio: 'inherit',
+      shell: false,
+    });
+    if (result.status === 0 && fs.existsSync(indexHtml)) {
+      logger.info('React dashboard built successfully');
+      return true;
+    }
+    logger.error({ status: result.status },
+      'build-on-boot failed — dashboard will return a maintenance page');
+    return false;
+  } catch (err) {
+    logger.error({ err: err.message },
+      'build-on-boot threw — dashboard will return a maintenance page');
+    return false;
+  }
+}
+
+function maintenancePage(reason) {
+  return `<!DOCTYPE html>
+<html><head><title>EchoFox Dashboard</title>
+<style>body{font-family:-apple-system,sans-serif;background:#020617;color:#f1f5f9;padding:3rem;line-height:1.6}
+h1{color:#f97316}code{background:#1e293b;padding:.15rem .4rem;border-radius:.25rem}</style>
+</head><body>
+<h1>🦊 Dashboard build missing</h1>
+<p>The React dashboard hasn't been built yet on this machine.</p>
+<p>From the repo root, run:</p>
+<pre><code>npm run build:dashboard</code></pre>
+<p>Then refresh this page. Detail: ${reason || 'unknown'}</p>
+</body></html>`;
 }
 
 function startDashboard(port, store, config) {
@@ -42,25 +90,27 @@ function startDashboard(port, store, config) {
   }
 
   app.use(express.json({ limit: '64kb' }));
-   // ─── Serve React Dashboard 
-  const reactPath = path.join(__dirname, 'react');
-  app.use('/dashboard', express.static(reactPath));
 
-  // SPA fallback for React Router
-  app.get('/dashboard/*', (_req, res) => {
-    res.sendFile(path.join(reactPath, 'index.html'));
-  });
+  // Build-on-boot guard (one-shot). If it fails we still mount API routes
+  // and serve a maintenance page for / and /dashboard.
+  const reactReady = ensureReactBuilt();
 
-    // ─── Old Static Dashboard (root)
-  app.get('/', (_req, res) => {
-    res.type('html').send(
-      HTML
-        .replace('__BOT_NAME__',  String(config.bot.name).replace(/</g, '&lt;'))
-        .replace('__VERSION__',   PKG.version)
-        .replace('__BACKEND__',   `${config.storeDB.type}/${config.auth.method}`),
-    );
-  });
+  // ─── Root redirect: / → /dashboard/ ──────────────────────────────────
+  app.get('/', (_req, res) => res.redirect(301, '/dashboard/'));
 
+  // ─── React app static + SPA fallback ─────────────────────────────────
+  if (reactReady) {
+    app.use('/dashboard', express.static(REACT_DIR, { index: 'index.html' }));
+    app.get('/dashboard/*', (_req, res) => {
+      res.sendFile(path.join(REACT_DIR, 'index.html'));
+    });
+  } else {
+    app.get(['/dashboard', '/dashboard/*'], (_req, res) => {
+      res.status(503).type('html').send(maintenancePage('React build missing'));
+    });
+  }
+
+  // ─── API: health / stats / version ───────────────────────────────────
   app.get('/api/health', (_req, res) => {
     res.json({
       ok:      true,
@@ -79,6 +129,7 @@ function startDashboard(port, store, config) {
     catch (e) { next(e); }
   });
 
+  // ─── API: groups ─────────────────────────────────────────────────────
   app.get('/api/groups', async (_req, res, next) => {
     try {
       const rows = typeof store.listGroups === 'function'
@@ -171,7 +222,8 @@ function startDashboard(port, store, config) {
   });
 
   app.listen(port, () => {
-    logger.info({ port, auth: !!config.dashboard.username }, 'dashboard listening');
+    logger.info({ port, auth: !!config.dashboard.username, react: reactReady },
+      'dashboard listening');
   });
 }
 

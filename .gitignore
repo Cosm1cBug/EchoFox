@@ -10,6 +10,9 @@ src/config.js
 .env.*
 !.env.example
 
+# Dashboard build output (regenerated via npm run build:dashboard)
+src/dashboard/react/
+
 # ─── Runtime data (regenerable, but local) ────────────────────────────────
 src/@session/
 src/store/runtime/

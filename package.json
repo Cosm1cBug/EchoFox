@@ -18,7 +18,8 @@
     "test": "node --test src/**/*.test.js src/commands/__tests__/*.test.js",
     "test:contract": "node --test src/commands/__tests__/contract.test.js",
     "prepare": "husky || true",
-    "build:dashboard": "cd dashboard && npm run build && mkdir -p ../src/dashboard/react && cp -r dist/* ../src/dashboard/react/"
+    "build:dashboard": "node scripts/build-dashboard.js",
+    "typecheck:dashboard": "cd dashboard && npx tsc -b --noEmit"
   },
   "engines": {
     "node": ">=20.0.0"

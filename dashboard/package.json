@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:copy": "vite build && mkdir -p ../src/dashboard/react && cp -r dist/* ../src/dashboard/react/",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
     "react": "^18.3.1",

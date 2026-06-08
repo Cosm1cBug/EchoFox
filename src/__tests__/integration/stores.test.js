@@ -140,3 +140,100 @@ test('sqlite store: listGroups + countGroups + countUniqueUsers', async () => {
     assert.equal(store.countUniqueUsers(), 3);
   } finally { cleanup(); }
 });
+
+
+test('sqlite store: subscribers — add/isSubscriber/remove round-trip', async () => {
+  const { store, cleanup } = newStore();
+  try {
+    const JID = '111@s.whatsapp.net';
+    assert.equal(await store.isSubscriber('alienvault', JID), false);
+    await store.addSubscriber('alienvault', JID);
+    assert.equal(await store.isSubscriber('alienvault', JID), true);
+
+    // Idempotency
+    await store.addSubscriber('alienvault', JID);
+    const subs1 = await store.getSubscribers('alienvault');
+    assert.equal(subs1.length, 1, 'addSubscriber is idempotent');
+
+    await store.removeSubscriber('alienvault', JID);
+    assert.equal(await store.isSubscriber('alienvault', JID), false);
+  } finally { cleanup(); }
+});
+
+test('sqlite store: subscribers — meta round-trip with topics', async () => {
+  const { store, cleanup } = newStore();
+  try {
+    const JID = '222@s.whatsapp.net';
+    await store.addSubscriber('thehackersnews', JID, { topics: ['malware', 'ransomware'] });
+    const meta = await store.getSubscriberMeta('thehackersnews', JID);
+    assert.deepEqual(meta, { topics: ['malware', 'ransomware'] });
+
+    await store.updateSubscriberMeta('thehackersnews', JID, { topics: ['cloud-security'] });
+    const updated = await store.getSubscriberMeta('thehackersnews', JID);
+    assert.deepEqual(updated, { topics: ['cloud-security'] });
+
+    const subs = await store.getSubscribers('thehackersnews');
+    assert.equal(subs.length, 1);
+    assert.deepEqual(subs[0].meta, { topics: ['cloud-security'] });
+    assert.equal(subs[0].jid, JID);
+  } finally { cleanup(); }
+});
+
+test('sqlite store: subscribers — services are isolated', async () => {
+  const { store, cleanup } = newStore();
+  try {
+    const JID = '333@s.whatsapp.net';
+    await store.addSubscriber('alienvault', JID);
+    assert.equal(await store.isSubscriber('alienvault', JID), true);
+    assert.equal(await store.isSubscriber('thehackersnews', JID), false,
+      'subscribing to one service does not subscribe to another');
+
+    const av = await store.getSubscribers('alienvault');
+    const thn = await store.getSubscribers('thehackersnews');
+    assert.equal(av.length, 1);
+    assert.equal(thn.length, 0);
+  } finally { cleanup(); }
+});
+
+test('sqlite store: subscribers — last_seen_pulse_ts persistence', async () => {
+  const { store, cleanup } = newStore();
+  try {
+    const JID = '444@s.whatsapp.net';
+    await store.addSubscriber('alienvault', JID);
+    const TS = 1700000000000;
+    await store.updateSubscriberTimestamp('alienvault', JID, TS);
+    const subs = await store.getSubscribers('alienvault');
+    assert.equal(subs[0].last_seen_pulse_ts, TS);
+  } finally { cleanup(); }
+});
+
+test('sqlite store: hasSentArticle / recordSentArticle dedupe', async () => {
+  const { store, cleanup } = newStore();
+  try {
+    const URL = 'https://thehackernews.com/2026/06/foo.html';
+    const JID = '555@s.whatsapp.net';
+    assert.equal(await store.hasSentArticle('thehackersnews', JID, URL), false);
+    await store.recordSentArticle('thehackersnews', JID, URL);
+    assert.equal(await store.hasSentArticle('thehackersnews', JID, URL), true);
+    await store.recordSentArticle('thehackersnews', JID, URL);
+    assert.equal(await store.hasSentArticle('thehackersnews', JID, URL), true);
+    const URL2 = 'https://thehackernews.com/2026/06/bar.html';
+    assert.equal(await store.hasSentArticle('thehackersnews', JID, URL2), false);
+  } finally { cleanup(); }
+});
+
+test('sqlite store: subscriber meta survives null → object → null transitions', async () => {
+  const { store, cleanup } = newStore();
+  try {
+    const JID = '666@s.whatsapp.net';
+    await store.addSubscriber('thehackersnews', JID);
+    assert.equal(await store.getSubscriberMeta('thehackersnews', JID), null);
+
+    await store.updateSubscriberMeta('thehackersnews', JID, { topics: ['ai'] });
+    assert.deepEqual(await store.getSubscriberMeta('thehackersnews', JID), { topics: ['ai'] });
+
+    await store.updateSubscriberMeta('thehackersnews', JID, null);
+    assert.equal(await store.getSubscriberMeta('thehackersnews', JID), null,
+      'null meta clears the field');
+  } finally { cleanup(); }
+});

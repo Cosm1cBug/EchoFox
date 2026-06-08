@@ -85,6 +85,10 @@ function makeMockMessage({ text, jid, sender, fromMe = false, msgId, ts } = {}) 
 /** Quick stub for a store (in-memory; supports the methods commands use). */
 function makeMockStore() {
   const _gauges = {}, _counters = {};
+  const _subs = new Map();        // `${service}|${jid}` → { last_seen_pulse_ts, meta }
+  const _sent = new Map();        // `${service}|${jid}|${articleUrl}` → true
+  const _key  = (service, jid) => `${service}|${jid}`;
+  const _sKey = (service, jid, url) => `${service}|${jid}|${url}`;
   return {
     async getMessage()             { return undefined; },
     async getGroupMetadata()        { return undefined; },
@@ -107,6 +111,42 @@ function makeMockStore() {
     updateMessageStatus()            {},
     updateMessageBody()              {},
     getDeletedInGroup()              { return []; },
+    async getSubscribers(service) {
+      const out = [];
+      for (const [k, v] of _subs) {
+        const [svc, jid] = k.split('|');
+        if (svc === service) out.push({ jid, last_seen_pulse_ts: v.last_seen_pulse_ts, meta: v.meta });
+      }
+      return out;
+    },
+    async addSubscriber(service, jid, meta) {
+      if (_subs.has(_key(service, jid))) return;
+      _subs.set(_key(service, jid), { last_seen_pulse_ts: null, meta: meta ?? null });
+    },
+    async removeSubscriber(service, jid) {
+      _subs.delete(_key(service, jid));
+    },
+    async updateSubscriberTimestamp(service, jid, ts) {
+      const v = _subs.get(_key(service, jid));
+      if (v) v.last_seen_pulse_ts = ts;
+    },
+    async isSubscriber(service, jid) {
+      return _subs.has(_key(service, jid));
+    },
+    async getSubscriberMeta(service, jid) {
+      const v = _subs.get(_key(service, jid));
+      return v ? v.meta : null;
+    },
+    async updateSubscriberMeta(service, jid, meta) {
+      const v = _subs.get(_key(service, jid));
+      if (v) v.meta = meta ?? null;
+    },
+    async hasSentArticle(service, jid, url) {
+      return _sent.has(_sKey(service, jid, url));
+    },
+    async recordSentArticle(service, jid, url) {
+      _sent.set(_sKey(service, jid, url), true);
+    },
     bind()                           {},
     close()                          {},
   };

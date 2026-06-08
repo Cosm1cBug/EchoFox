@@ -136,3 +136,143 @@ test('no prefix → no reply (just exits)', async () => {
   await handleMessage({ sock, m, commands, store, logger: sock.logger });
   assert.equal(sock.calls.sendMessage, 0);
 });
+
+
+// ─── v0.4.7: subscription command flow tests ─────────────────────────────
+const { setStore, __resetForTests } = require('../../store/instance');
+
+function setupSubscriptionTest() {
+  const sock  = makeMockSock();
+  const store = makeMockStore();
+  __resetForTests();
+  setStore(store);
+  return { sock, store };
+}
+
+function fakeM(_text, jid = '999@s.whatsapp.net') {
+  return {
+    isPrivate: true,
+    chat:      jid,
+    sender:    jid,
+    from:      jid,
+    key:       { remoteJid: jid, id: 'msg-' + Date.now() },
+    pushName:  'TestUser',
+  };
+}
+
+test('alienvault: subscribe → status → unsubscribe', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/alienvault');
+
+  await cmd.start(sock, fakeM('-status'), { text: '-status' });
+  assert.match(sock.lastSent.content.text, /NOT subscribed/i);
+
+  await cmd.start(sock, fakeM('on'), { text: 'on' });
+  assert.match(sock.lastSent.content.text, /Subscribed to AlienVault/i);
+  assert.equal(await store.isSubscriber('alienvault', '999@s.whatsapp.net'), true);
+
+  await cmd.start(sock, fakeM('-status'), { text: '-status' });
+  assert.match(sock.lastSent.content.text, /Subscribed: \*yes\*/);
+
+  await cmd.start(sock, fakeM('off'), { text: 'off' });
+  assert.match(sock.lastSent.content.text, /Unsubscribed/);
+  assert.equal(await store.isSubscriber('alienvault', '999@s.whatsapp.net'), false);
+});
+
+test('alienvault: re-subscribing is idempotent (friendly message + 1 row)', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/alienvault');
+
+  await cmd.start(sock, fakeM('on'), { text: 'on' });
+  const firstReply = sock.lastSent.content.text;
+
+  await cmd.start(sock, fakeM('on'), { text: 'on' });
+  assert.match(sock.lastSent.content.text, /already subscribed/i);
+  assert.notEqual(sock.lastSent.content.text, firstReply);
+
+  const subs = await store.getSubscribers('alienvault');
+  assert.equal(subs.length, 1);
+});
+
+test('alienvault: help verb shows usage panel', async () => {
+  const { sock } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/alienvault');
+
+  await cmd.start(sock, fakeM('help'), { text: 'help' });
+  assert.match(sock.lastSent.content.text, /AlienVault Pulse Subscription/i);
+  assert.match(sock.lastSent.content.text, /\.alienvault on/);
+  assert.match(sock.lastSent.content.text, /\.alienvault off/);
+  assert.match(sock.lastSent.content.text, /-status/);
+});
+
+test('alienvault: blocked in group chats', async () => {
+  const { sock } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/alienvault');
+
+  const groupM = { ...fakeM('on', '111@g.us'), isPrivate: false };
+  await cmd.start(sock, groupM, { text: 'on' });
+  assert.match(sock.lastSent.content.text, /Private Chats/i);
+});
+
+test('thehackersnews: subscribe with topics persists meta', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/thehackersnews');
+
+  await cmd.start(sock, fakeM('on malware ransomware'), { text: 'on malware ransomware' });
+  assert.match(sock.lastSent.content.text, /malware/);
+  assert.match(sock.lastSent.content.text, /ransomware/);
+
+  const meta = await store.getSubscriberMeta('thehackersnews', '999@s.whatsapp.net');
+  assert.deepEqual(meta, { topics: ['malware', 'ransomware'] });
+});
+
+test('thehackersnews: re-subscribing updates topic filter in place', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/thehackersnews');
+
+  await cmd.start(sock, fakeM('on malware'), { text: 'on malware' });
+  let meta = await store.getSubscriberMeta('thehackersnews', '999@s.whatsapp.net');
+  assert.deepEqual(meta, { topics: ['malware'] });
+
+  await cmd.start(sock, fakeM('on cloud-security ai'), { text: 'on cloud-security ai' });
+  assert.match(sock.lastSent.content.text, /Topic filter updated/i);
+  meta = await store.getSubscriberMeta('thehackersnews', '999@s.whatsapp.net');
+  assert.deepEqual(meta, { topics: ['cloud-security', 'ai'] });
+
+  const subs = await store.getSubscribers('thehackersnews');
+  assert.equal(subs.length, 1);
+});
+
+test('thehackersnews: status reflects current topic filter', async () => {
+  const { sock } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/thehackersnews');
+
+  await cmd.start(sock, fakeM('on malware'), { text: 'on malware' });
+  await cmd.start(sock, fakeM('-status'), { text: '-status' });
+  assert.match(sock.lastSent.content.text, /Subscribed: \*yes\*/);
+  assert.match(sock.lastSent.content.text, /malware/);
+});
+
+test('thehackersnews: status with no filter shows "(no filter — all articles)"', async () => {
+  const { sock } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/thehackersnews');
+
+  await cmd.start(sock, fakeM('on'), { text: 'on' });
+  await cmd.start(sock, fakeM('-status'), { text: '-status' });
+  assert.match(sock.lastSent.content.text, /no filter/i);
+});
+
+test('thehackersnews: topic parsing deduplicates + caps at 10', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/thehackersnews');
+
+  await cmd.start(sock, fakeM('on  Malware MALWARE malware ransomware'),
+    { text: 'on  Malware MALWARE malware ransomware' });
+  const meta = await store.getSubscriberMeta('thehackersnews', '999@s.whatsapp.net');
+  assert.deepEqual(meta, { topics: ['malware', 'ransomware'] });
+
+  await cmd.start(sock, fakeM('on a b c d e f g h i j k l m n o'),
+    { text: 'on a b c d e f g h i j k l m n o' });
+  const meta2 = await store.getSubscriberMeta('thehackersnews', '999@s.whatsapp.net');
+  assert.equal(meta2.topics.length, 10);
+});

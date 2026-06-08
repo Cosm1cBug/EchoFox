@@ -9,6 +9,6 @@ const logger = require('../core/logger');
 
 const log = logger.child({ mod: 'newsletter.upsert' });
 
-module.exports = async ({ sock, newsletters }) => {
+module.exports = async ({ sock, newsletter }) => {
   log.info({ newsletters }, 'newsletter.upsert received');
 };

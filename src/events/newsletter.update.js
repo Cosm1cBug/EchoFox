@@ -5,9 +5,9 @@
  */
 'use strict';
 
-const logger = require('../core/logger').child({ mod: 'newsletters.update' });
+const logger = require('../core/logger').child({ mod: 'newsletter.update' });
 
 module.exports = async ({ updates }) => {
   if (!Array.isArray(updates) || !updates.length) return;
-  logger.info({ count: updates.length, updates }, 'newsletters.update received');
+  logger.info({ count: updates.length, updates }, 'newsletter.update received');
 };

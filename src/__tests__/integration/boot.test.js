@@ -142,3 +142,91 @@ test('__testOverride: warns when NODE_ENV !== "test"', () => {
   }
   assert.match(captured, /__testOverride.*tests only.*production/i);
 });
+
+
+test('matchesTopics: empty topics → matches every article (incl. untagged)', () => {
+  const { matchesTopics } = require('../../services/thehackersnewsService');
+  assert.equal(matchesTopics({ categories: ['malware'] }, null), true);
+  assert.equal(matchesTopics({ categories: ['malware'] }, {}), true);
+  assert.equal(matchesTopics({ categories: ['malware'] }, { topics: [] }), true);
+  assert.equal(matchesTopics({ categories: [] }, null), true,
+    'untagged article + no filter = match');
+});
+
+test('matchesTopics: OR-match on any tag overlap (case-insensitive)', () => {
+  const { matchesTopics } = require('../../services/thehackersnewsService');
+  const meta = { topics: ['Malware', 'Ransomware'] };
+  assert.equal(matchesTopics({ categories: ['malware', 'apt'] }, meta), true);
+  assert.equal(matchesTopics({ categories: ['Ransomware'] }, meta), true);
+  assert.equal(matchesTopics({ categories: ['cloud-security'] }, meta), false);
+  assert.equal(matchesTopics({ categories: [] }, meta), false,
+    'untagged article + filter → no match');
+});
+
+test('event router: every worker emit has a registered handler', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const workerSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'core', 'worker.js'), 'utf8');
+  const routerSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'events', 'router.js'), 'utf8');
+
+  const emits = new Set();
+  for (const m of workerSrc.matchAll(/eventRouter\.emit\('([a-z.-]+)'/g)) emits.add(m[1]);
+  const handlers = new Set();
+  for (const m of routerSrc.matchAll(/bus\.on\('([a-z.-]+)'/g)) handlers.add(m[1]);
+
+  for (const e of emits) {
+    assert.ok(handlers.has(e),
+      `worker emits '${e}' but router.js has no bus.on() for it`);
+  }
+});
+
+test('event router: every router handler has a worker emit (no dead handlers)', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const workerSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'core', 'worker.js'), 'utf8');
+  const routerSrc = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'events', 'router.js'), 'utf8');
+
+  const emits = new Set();
+  for (const m of workerSrc.matchAll(/eventRouter\.emit\('([a-z.-]+)'/g)) emits.add(m[1]);
+  const handlers = new Set();
+  for (const m of routerSrc.matchAll(/bus\.on\('([a-z.-]+)'/g)) handlers.add(m[1]);
+
+  for (const h of handlers) {
+    assert.ok(emits.has(h),
+      `router.js has bus.on('${h}') but no worker.js emit — dead handler`);
+  }
+});
+
+test('event router: loads cleanly (no MODULE_NOT_FOUND from a missing handler file)', () => {
+  const router = require('../../events/router');
+  assert.equal(typeof router.handleMessage, 'function');
+  assert.equal(typeof router.emit, 'function');
+});
+
+test('event router: every required file exists on disk', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const eventsDir = path.join(__dirname, '..', '..', 'events');
+  const routerSrc = fs.readFileSync(path.join(eventsDir, 'router.js'), 'utf8');
+  const requires = [];
+  for (const m of routerSrc.matchAll(/require\('\.\/([a-zA-Z0-9._-]+)'\)/g)) {
+    requires.push(m[1]);
+  }
+  for (const r of requires) {
+    const candidates = [
+      path.join(eventsDir, r),
+      path.join(eventsDir, r + '.js'),
+    ];
+    const exists = candidates.some((c) => fs.existsSync(c));
+    assert.ok(exists, `router.js requires './${r}' but no matching file in src/events/`);
+  }
+});
+
+test('event router: handles unknown events without crashing', () => {
+  const router = require('../../events/router');
+  assert.doesNotThrow(() => router.emit('some.totally.unknown.event', { foo: 'bar' }));
+});

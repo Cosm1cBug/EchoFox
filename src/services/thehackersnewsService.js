@@ -70,7 +70,7 @@ function matchesTopics(article, meta) {
   if (!topics.length) return true;
   if (!article.categories?.length) return false;
   const wanted = new Set(topics.map((t) => String(t).trim().toLowerCase()).filter(Boolean));
-  return article.categories.some((c) => wanted.has(c));
+  return article.categories.some((c) => wanted.has(String(c).trim().toLowerCase()));
 }
 
 async function checkAndDeliver(sock) {

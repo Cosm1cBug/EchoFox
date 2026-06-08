@@ -18,6 +18,9 @@ type SubscriptionsResponse = Record<string, Subscriber[]>;
 const SERVICE_LABELS: Record<string, { name: string; emoji: string }> = {
   alienvault:     { name: "AlienVault",        emoji: "🛡️" },
   thehackersnews: { name: "The Hacker News",   emoji: "📰" },
+  rss:            { name: "RSS Feeds",         emoji: "📡" },
+  github:         { name: "GitHub",            emoji: "🐙" },
+  vtwatch:        { name: "VirusTotal Watch",  emoji: "🦠" },
 };
 
 function fmtTs(ts: number | null): string {

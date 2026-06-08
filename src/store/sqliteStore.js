@@ -83,26 +83,31 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       PRIMARY KEY (service, jid)
     );
 
-    CREATE TABLE IF NOT EXISTS thehackersnews_sent_articles (
+    CREATE TABLE IF NOT EXISTS service_sent_items (
       service TEXT NOT NULL,
       jid     TEXT NOT NULL,
-      article_url TEXT NOT NULL,
+      item_url TEXT NOT NULL,
       sent_at INTEGER NOT NULL,
-      PRIMARY KEY (service, jid, article_url)
+      PRIMARY KEY (service, jid, item_url)
     );
   `);
 
   applyMessagesMigration_sqlite(db);
 
-  // v0.4.7 — defensive in-place column add (idempotent). The migration
-  // runner does this too; we do it here so the store works even when
-  // migrations are disabled via storeDB.runMigrationsOnBoot=false.
   try {
     const _ssCols = db.prepare(`PRAGMA table_info(service_subscribers)`).all().map((c) => c.name);
     if (!_ssCols.includes('meta')) {
       db.exec(`ALTER TABLE service_subscribers ADD COLUMN meta TEXT`);
     }
   } catch (e) { logger.warn({ err: e }, 'service_subscribers.meta column ensure failed'); }
+
+  try {
+    const _tables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all().map((r) => r.name);
+    if (_tables.includes('thehackersnews_sent_articles') && !_tables.includes('service_sent_items')) {
+      db.exec(`ALTER TABLE thehackersnews_sent_articles RENAME TO service_sent_items`);
+      db.exec(`ALTER TABLE service_sent_items RENAME COLUMN article_url TO item_url`);
+    }
+  } catch (e) { logger.warn({ err: e }, 'service_sent_items rename guard failed'); }
 
   const stmts = {
     msgInsert: db.prepare(`INSERT OR REPLACE INTO messages (jid,id,from_me,participant,msg,ts) VALUES (@jid,@id,@fromMe,@participant,@msg,@ts)`),
@@ -136,8 +141,8 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     getSubscriberMeta: db.prepare(`SELECT meta FROM service_subscribers WHERE service = ? AND jid = ?`),
     updateSubscriberMeta: db.prepare(`UPDATE service_subscribers SET meta = ? WHERE service = ? AND jid = ?`),
 
-    hasSentArticle: db.prepare(`SELECT 1 FROM thehackersnews_sent_articles WHERE service = ? AND jid = ? AND article_url = ?`),
-    recordSentArticle: db.prepare(`INSERT OR IGNORE INTO thehackersnews_sent_articles (service, jid, article_url, sent_at) VALUES (?, ?, ?, ?)`),
+    hasSentItem: db.prepare(`SELECT 1 FROM service_sent_items WHERE service = ? AND jid = ? AND item_url = ?`),
+    recordSentItem: db.prepare(`INSERT OR IGNORE INTO service_sent_items (service, jid, item_url, sent_at) VALUES (?, ?, ?, ?)`),
 
     editInsert: db.prepare(`INSERT INTO message_edits (jid, message_id, editor, old_body, new_body, ts) VALUES (?, ?, ?, ?, ?, ?)`),
     editsByMsg: db.prepare(`SELECT editor, old_body, new_body, ts FROM message_edits WHERE jid = ? AND message_id = ? ORDER BY ts ASC`),
@@ -333,23 +338,18 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       } catch { return {}; }
     },
 
-    async hasSentArticle(service, jid, articleUrl) {
+    async hasSentItem(service, jid, itemUrl) {
+      try { return !!stmts.hasSentItem.get(service, jid, itemUrl); }
+      catch (e) { logger.warn({ err: e }, 'hasSentItem failed'); return false; }
+    },
+    async recordSentItem(service, jid, itemUrl) {
       try {
-        const row = stmts.hasSentArticle.get(service, jid, articleUrl);
-        return !!row;
-      } catch (e) {
-        logger.warn({ err: e }, 'hasSentArticle failed');
-        return false;
-      }
+        stmts.recordSentItem.run(service, jid, itemUrl, Math.floor(Date.now() / 1000));
+      } catch (e) { logger.warn({ err: e }, 'recordSentItem failed'); }
     },
 
-    async recordSentArticle(service, jid, articleUrl) {
-      try {
-        stmts.recordSentArticle.run(service, jid, articleUrl, Math.floor(Date.now() / 1000));
-      } catch (e) {
-        logger.warn({ err: e }, 'recordSentArticle failed');
-      }
-    },
+    async hasSentArticle(service, jid, articleUrl) { return this.hasSentItem(service, jid, articleUrl); },
+    async recordSentArticle(service, jid, articleUrl) { return this.recordSentItem(service, jid, articleUrl); },
 
     countGroups() { 
       try { 

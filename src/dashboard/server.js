@@ -9,7 +9,6 @@ const express = require('express');
 const path    = require('node:path');
 const fs      = require('node:fs');
 const { spawnSync } = require('node:child_process');
-
 const { config } = require('../lib/configLoader');
 const metrics    = require('../services/metrics');
 
@@ -215,10 +214,10 @@ function startDashboard(port, store, config) {
     } catch (e) { next(e); }
   });
 
-    // ── v0.4.7: Subscriptions audit view ───────────────────────────────
+    // ── Subscriptions audit view ───────────────────────────────
   app.get('/api/subscriptions', async (_req, res, next) => {
     try {
-      const services = ['alienvault', 'thehackersnews'];
+      const services = ['alienvault', 'thehackersnews', 'rss', 'github', 'vtwatch'];
       const out = {};
       for (const svc of services) {
         const subs = (typeof store.getSubscribers === 'function')
@@ -233,8 +232,6 @@ function startDashboard(port, store, config) {
       res.json(out);
     } catch (e) { next(e); }
   });
-
-  // ── Error handler ─────────────────────────────────────────────────────
 
   // ── Error handler ─────────────────────────────────────────────────────
   app.use((err, _req, res, _next) => {

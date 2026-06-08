@@ -87,12 +87,12 @@ function makeMongoStore(uri, logger, groupCache) {
     meta:               { type: mongoose.Schema.Types.Mixed, default: null },
   }).index({ service: 1, jid: 1 }, { unique: true }).index({ service: 1 }));
 
-  const SentArticle = conn.model('SentArticle', new mongoose.Schema({
-    service:     { type: String, required: true },
-    jid:         { type: String, required: true },
-    article_url: { type: String, required: true },
-    sent_at:     { type: Number, required: true },
-  }).index({ service: 1, jid: 1, article_url: 1 }, { unique: true }));
+  const SentItem = conn.model('SentItem', new mongoose.Schema({
+    service:  { type: String, required: true },
+    jid:      { type: String, required: true },
+    item_url: { type: String, required: true },
+    sent_at:  { type: Number, required: true },
+  }).index({ service: 1, jid: 1, item_url: 1 }, { unique: true }));
 
   const batchCfg = config.processing?.messageBatch || {};
   const messageBatcher = makeBatcher({
@@ -399,7 +399,7 @@ function makeMongoStore(uri, logger, groupCache) {
           { $set: { last_seen_pulse_ts: ts } });
       } catch (e) { logger.warn({ err: e }, 'updateSubscriberTimestamp failed'); }
     },
-        async isSubscriber(service, jid) {
+    async isSubscriber(service, jid) {
       try {
         const doc = await ServiceSubscriber.findOne({ service, jid }, { _id: 1 }).lean();
         return !!doc;
@@ -419,25 +419,28 @@ function makeMongoStore(uri, logger, groupCache) {
           { $set: { meta: meta == null ? null : meta } });
       } catch (e) { logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed'); }
     },
-    async hasSentArticle(service, jid, articleUrl) {
+    async hasSentItem(service, jid, itemUrl) {
       try {
-        const doc = await SentArticle.findOne(
-          { service, jid, article_url: articleUrl },
+        const doc = await SentItem.findOne(
+          { service, jid, item_url: itemUrl },
           { _id: 1 }).lean();
         return !!doc;
       } catch { return false; }
     },
-    async recordSentArticle(service, jid, articleUrl) {
+    async recordSentItem(service, jid, itemUrl) {
       try {
-        await SentArticle.updateOne(
-          { service, jid, article_url: articleUrl },
+        await SentItem.updateOne(
+          { service, jid, item_url: itemUrl },
           { $setOnInsert: {
-              service, jid, article_url: articleUrl,
+              service, jid, item_url: itemUrl,
               sent_at: Math.floor(Date.now() / 1000),
           } },
           { upsert: true });
-      } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentArticle failed'); }
+      } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentItem failed'); }
     },
+
+    async hasSentArticle(service, jid, articleUrl) { return this.hasSentItem(service, jid, articleUrl); },
+    async recordSentArticle(service, jid, articleUrl) { return this.recordSentItem(service, jid, articleUrl); },
 
     conn,
     async close() {

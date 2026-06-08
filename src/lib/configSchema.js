@@ -177,6 +177,18 @@ const schema = z.object({
     virustotal: z.object({ apiKey: z.string().default('') }).default({}),
     alienvault: z.object({ apiKey: z.string().default('') }).default({}),
     thehackersnews: z.object({ checkIntervalMin: z.number().min(5).default(60) }).default({ checkIntervalMin: 60 }),
+    github: z.object({
+      token:            z.string().default(''),    // optional; raises rate limit 60→5000/h
+      checkIntervalMin: z.number().min(5).default(60),
+    }).default({}),
+    rss: z.object({
+      checkIntervalMin:        z.number().min(5).default(30),
+      maxFeedsPerSubscriber:   z.number().min(1).max(50).default(20),
+      maxArticlesPerFeed:      z.number().min(1).max(20).default(5),
+    }).default({}),
+    vtwatch: z.object({
+      checkIntervalMin: z.number().min(15).default(360),  // free tier: ~4 req/min
+    }).default({}),
   }).default({}),
 
   sticker: z.object({

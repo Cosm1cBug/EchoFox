@@ -86,12 +86,12 @@ function makePostgresStore(url, logger, groupCache) {
     CREATE INDEX IF NOT EXISTS idx_service_subscribers_service
       ON service_subscribers (service);
 
-    CREATE TABLE IF NOT EXISTS thehackersnews_sent_articles (
-      service     TEXT NOT NULL,
-      jid         TEXT NOT NULL,
-      article_url TEXT NOT NULL,
-      sent_at     BIGINT NOT NULL,
-      PRIMARY KEY (service, jid, article_url)
+    CREATE TABLE IF NOT EXISTS service_sent_items (
+      service  TEXT NOT NULL,
+      jid      TEXT NOT NULL,
+      item_url TEXT NOT NULL,
+      sent_at  BIGINT NOT NULL,
+      PRIMARY KEY (service, jid, item_url)
     );
   `).then(() => applyMessagesMigration_postgres(pool))
     .catch((e) => logger.error({ err: e }, 'Postgres init failed'));
@@ -434,24 +434,27 @@ function makePostgresStore(url, logger, groupCache) {
           [meta == null ? null : meta, service, jid]);
       } catch (e) { logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed'); }
     },
-    async hasSentArticle(service, jid, articleUrl) {
+    async hasSentItem(service, jid, itemUrl) {
       try {
         const r = await pool.query(
-          `SELECT 1 FROM thehackersnews_sent_articles
-           WHERE service = $1 AND jid = $2 AND article_url = $3 LIMIT 1`,
-          [service, jid, articleUrl]);
+          `SELECT 1 FROM service_sent_items
+           WHERE service = $1 AND jid = $2 AND item_url = $3 LIMIT 1`,
+          [service, jid, itemUrl]);
         return r.rowCount > 0;
       } catch { return false; }
     },
-    async recordSentArticle(service, jid, articleUrl) {
+    async recordSentItem(service, jid, itemUrl) {
       try {
         await pool.query(
-          `INSERT INTO thehackersnews_sent_articles (service, jid, article_url, sent_at)
+          `INSERT INTO service_sent_items (service, jid, item_url, sent_at)
            VALUES ($1, $2, $3, $4)
-           ON CONFLICT (service, jid, article_url) DO NOTHING`,
-          [service, jid, articleUrl, Math.floor(Date.now() / 1000)]);
-      } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentArticle failed'); }
+           ON CONFLICT (service, jid, item_url) DO NOTHING`,
+          [service, jid, itemUrl, Math.floor(Date.now() / 1000)]);
+      } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentItem failed'); }
     },
+
+    async hasSentArticle(service, jid, articleUrl) { return this.hasSentItem(service, jid, articleUrl); },
+    async recordSentArticle(service, jid, articleUrl) { return this.recordSentItem(service, jid, articleUrl); },
 
     pool,
     async close() {

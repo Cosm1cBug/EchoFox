@@ -39,9 +39,9 @@ function _decodeSubscriberValue(jid, v) {
  *     chat-deleted:<jid>              String (ts of full-chat delete)
  *     msg-status:<jid>                HASH { messageId -> aggregate_status }
  *     subscribers:<service>           HASH { jid -> last_seen_pulse_ts | "" }
- *     sent-articles:<service>:<jid>   SET of article_url strings
+ *     sent-items:<service>:<jid>     SET of item_url strings
  *
- * Privacy (v0.4.4):
+ * Privacy:
  *   • config.privacy.storeMessageBodies = false → message body writes skipped
  *   • config.privacy.excludeFromStore[]        → those chats never persisted
  *   • config.privacy.messageBodyRetentionDays  → overrides default 7d TTL
@@ -348,17 +348,20 @@ function makeRedisStore(url, logger, groupCache) {
         await client.hset(key, jid, payload);
       } catch (e) { logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed'); }
     },
-    async hasSentArticle(service, jid, articleUrl) {
+    async hasSentItem(service, jid, itemUrl) {
       try {
-        const v = await client.sismember(`sent-articles:${service}:${jid}`, articleUrl);
+        const v = await client.sismember(`sent-items:${service}:${jid}`, itemUrl);
         return Number(v) === 1;
       } catch { return false; }
     },
-    async recordSentArticle(service, jid, articleUrl) {
+    async recordSentItem(service, jid, itemUrl) {
       try {
-        await client.sadd(`sent-articles:${service}:${jid}`, articleUrl);
-      } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentArticle failed'); }
+        await client.sadd(`sent-items:${service}:${jid}`, itemUrl);
+      } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentItem failed'); }
     },
+
+    async hasSentArticle(service, jid, articleUrl) { return this.hasSentItem(service, jid, articleUrl); },
+    async recordSentArticle(service, jid, articleUrl) { return this.recordSentItem(service, jid, articleUrl); },
 
     client,
     close() { client.quit() }

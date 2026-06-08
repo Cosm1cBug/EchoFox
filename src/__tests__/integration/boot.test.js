@@ -230,3 +230,40 @@ test('event router: handles unknown events without crashing', () => {
   const router = require('../../events/router');
   assert.doesNotThrow(() => router.emit('some.totally.unknown.event', { foo: 'bar' }));
 });
+
+
+test('rss service: matchesTopics OR-matches case-insensitively', () => {
+  const { matchesTopics } = require('../../services/genericRssService');
+  assert.equal(matchesTopics({ categories: ['Malware', 'apt'] }, ['malware']), true);
+  assert.equal(matchesTopics({ categories: ['cloud-security'] }, ['malware']), false);
+  assert.equal(matchesTopics({ categories: [] }, ['malware']), false);
+  assert.equal(matchesTopics({ categories: [] }, []), true,        'empty filter matches all');
+  assert.equal(matchesTopics({ categories: [] }, null), true,       'null filter matches all');
+  assert.equal(matchesTopics({ categories: ['x'] }, undefined), true, 'undefined filter matches all');
+});
+
+test('github service: formatRelease + formatAdvisory produce non-empty WhatsApp text', () => {
+  const { formatRelease, formatAdvisory } = require('../../services/githubService');
+  const rel = formatRelease('nodejs', 'node', {
+    tag: 'v22.0.0', name: 'v22.0.0', body: 'See changelog.', url: 'https://x', prerelease: false,
+  });
+  assert.match(rel, /Release/);
+  assert.match(rel, /v22\.0\.0/);
+  assert.match(rel, /https:\/\/x/);
+
+  const adv = formatAdvisory('nodejs', 'node', {
+    ghsa_id: 'GHSA-aaaa', cve_id: 'CVE-2026-0001', summary: 'Boom.', severity: 'critical',
+    url: 'https://y', published_at: '2026-01-01T00:00:00Z',
+  });
+  assert.match(adv, /Critical|CRITICAL/);
+  assert.match(adv, /GHSA-aaaa/);
+  assert.match(adv, /CVE-2026-0001/);
+});
+
+test('vtwatch service: formatAlert highlights direction', () => {
+  const { formatAlert } = require('../../services/vtWatchService');
+  const up   = formatAlert('hash', 'abc', { malicious: 0 }, { malicious: 3, suspicious: 0, harmless: 70, undetected: 7 });
+  const down = formatAlert('hash', 'abc', { malicious: 5 }, { malicious: 1, suspicious: 0, harmless: 70, undetected: 7 });
+  assert.match(up,   /increased/i);
+  assert.match(down, /decreased/i);
+});

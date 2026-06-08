@@ -43,10 +43,10 @@ const { startMemoryGuard } = require('../lib/memoryGuard');
 const alertEngine          = require('../services/alertEngine');
 const diagnostics          = require('../lib/diagnostics');
 const { checkAndDeliver: checkTheHackerNews } = require('../services/thehackersnewsService');
-const {
-  checkAndDeliver: checkAlienVault,
-  CHECK_INTERVAL: AV_INTERVAL_MIN,
-} = require('../services/alienvaultService');
+const { checkAndDeliver: checkAlienVault, CHECK_INTERVAL: AV_INTERVAL_MIN } = require('../services/alienvaultService');
+const { checkAndDeliver: checkRss,    CHECK_INTERVAL: RSS_INTERVAL_MIN } = require('../services/genericRssService');
+const { checkAndDeliver: checkGitHub, CHECK_INTERVAL: GH_INTERVAL_MIN  } = require('../services/githubService');
+const { checkAndDeliver: checkVtWatch,CHECK_INTERVAL: VTW_INTERVAL_MIN } = require('../services/vtWatchService');
 
 const log = logger.child({ mod: 'worker' });
 
@@ -115,6 +115,21 @@ setInterval(async () => {
     log.error({ err }, '[alienvault] Cron job failed');
   }
 }, (AV_INTERVAL_MIN || 60) * 60 * 1000).unref();
+
+setInterval(async () => {
+  try { await checkRss(sock); }
+  catch (err) { log.error({ err }, '[rss] Cron job failed'); }
+}, (RSS_INTERVAL_MIN || 30) * 60 * 1000).unref();
+
+setInterval(async () => {
+  try { await checkGitHub(sock); }
+  catch (err) { log.error({ err }, '[github] Cron job failed'); }
+}, (GH_INTERVAL_MIN || 60) * 60 * 1000).unref();
+
+setInterval(async () => {
+  try { await checkVtWatch(sock); }
+  catch (err) { log.error({ err }, '[vtwatch] Cron job failed'); }
+}, (VTW_INTERVAL_MIN || 360) * 60 * 1000).unref();
 
 async function start(retry = 0) {
   if (shuttingDown) return;

@@ -147,6 +147,12 @@ function makeMockStore() {
     async recordSentArticle(service, jid, url) {
       _sent.set(_sKey(service, jid, url), true);
     },
+    async hasSentItem(service, jid, itemUrl) {
+      return _sent.has(_sKey(service, jid, itemUrl));
+    },
+    async recordSentItem(service, jid, itemUrl) {
+      _sent.set(_sKey(service, jid, itemUrl), true);
+    },
     bind()                           {},
     close()                          {},
   };

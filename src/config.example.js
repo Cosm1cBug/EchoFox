@@ -91,7 +91,6 @@ module.exports = {
     shortReplyChars: 40,
     pauseAfterSend:  true,
     typingDelayMs:   { min: 800, max: 2500 },
-
     presenceOnConnect: 'available',
     warmupMode:        false,
     warmupDays:        14,
@@ -120,6 +119,18 @@ module.exports = {
     alienvault: { apiKey: '' },
     thehackersnews: { 
       checkIntervalMin: 60 
+    },
+    github: {
+      token: '',                      // optional GitHub PAT — raises rate limit 60→5000/h
+      checkIntervalMin: 60,
+    },
+    rss: {
+      checkIntervalMin: 30,
+      maxFeedsPerSubscriber: 20,      // cap to prevent abuse
+      maxArticlesPerFeed: 5,          // articles delivered per cycle per feed
+    },
+    vtwatch: {
+      checkIntervalMin: 360,          // 6h default — VirusTotal free tier is ~4 req/min
     },
   },
 

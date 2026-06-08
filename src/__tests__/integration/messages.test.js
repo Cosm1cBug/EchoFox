@@ -276,3 +276,106 @@ test('thehackersnews: topic parsing deduplicates + caps at 10', async () => {
   const meta2 = await store.getSubscriberMeta('thehackersnews', '999@s.whatsapp.net');
   assert.equal(meta2.topics.length, 10);
 });
+
+
+test('.rss: add → list → remove', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/rss');
+
+  await cmd.start(sock, fakeM('add https://example.com/feed.xml malware'),
+    { text: 'add https://example.com/feed.xml malware' });
+  assert.match(sock.lastSent.content.text, /Subscribed/);
+
+  await cmd.start(sock, fakeM('list'), { text: 'list' });
+  assert.match(sock.lastSent.content.text, /example\.com\/feed\.xml/);
+  assert.match(sock.lastSent.content.text, /malware/);
+
+  await cmd.start(sock, fakeM('remove https://example.com/feed.xml'),
+    { text: 'remove https://example.com/feed.xml' });
+  assert.match(sock.lastSent.content.text, /Removed last feed/);
+  assert.equal(await store.isSubscriber('rss', '999@s.whatsapp.net'), false);
+});
+
+test('.rss: re-adding same URL updates topic filter in place', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/rss');
+
+  await cmd.start(sock, fakeM('add https://x/feed malware'),
+    { text: 'add https://x/feed malware' });
+  await cmd.start(sock, fakeM('add https://x/feed cloud-security'),
+    { text: 'add https://x/feed cloud-security' });
+  const meta = await store.getSubscriberMeta('rss', '999@s.whatsapp.net');
+  assert.equal(meta.feeds.length, 1, 'no duplicate row');
+  assert.deepEqual(meta.feeds[0].topics, ['cloud-security']);
+});
+
+test('.rss: invalid URL rejected', async () => {
+  const { sock } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/rss');
+  await cmd.start(sock, fakeM('add not-a-url'), { text: 'add not-a-url' });
+  assert.match(sock.lastSent.content.text, /Usage/i);
+});
+
+test('.github: releases → list → remove', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/github');
+
+  await cmd.start(sock, fakeM('releases nodejs/node'),
+    { text: 'releases nodejs/node' });
+  assert.match(sock.lastSent.content.text, /Subscribed/);
+  assert.match(sock.lastSent.content.text, /nodejs\/node/);
+
+  await cmd.start(sock, fakeM('list'), { text: 'list' });
+  assert.match(sock.lastSent.content.text, /nodejs\/node/);
+  assert.match(sock.lastSent.content.text, /releases/);
+
+  await cmd.start(sock, fakeM('remove nodejs/node'),
+    { text: 'remove nodejs/node' });
+  assert.equal(await store.isSubscriber('github', '999@s.whatsapp.net'), false);
+});
+
+test('.github: watch sets kind to "both"; invalid repo rejected', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/github');
+
+  await cmd.start(sock, fakeM('watch nodejs/node'), { text: 'watch nodejs/node' });
+  const meta = await store.getSubscriberMeta('github', '999@s.whatsapp.net');
+  assert.equal(meta.repos[0].kind, 'both');
+
+  await cmd.start(sock, fakeM('watch invalid'), { text: 'watch invalid' });
+  assert.match(sock.lastSent.content.text, /Usage/i);
+});
+
+test('.vtwatch: add hash → list → remove', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/vtwatch');
+
+  await cmd.start(sock, fakeM('add hash:44d88612fea8a8f36de82e1278abb02f'),
+    { text: 'add hash:44d88612fea8a8f36de82e1278abb02f' });
+  assert.match(sock.lastSent.content.text, /Watching/);
+
+  await cmd.start(sock, fakeM('list'), { text: 'list' });
+  assert.match(sock.lastSent.content.text, /hash:44d88/);
+
+  await cmd.start(sock, fakeM('remove hash:44d88612fea8a8f36de82e1278abb02f'),
+    { text: 'remove hash:44d88612fea8a8f36de82e1278abb02f' });
+  assert.equal(await store.isSubscriber('vtwatch', '999@s.whatsapp.net'), false);
+});
+
+test('.vtwatch: adding the same target twice is idempotent', async () => {
+  const { sock, store } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/vtwatch');
+
+  await cmd.start(sock, fakeM('add ip:1.2.3.4'), { text: 'add ip:1.2.3.4' });
+  await cmd.start(sock, fakeM('add ip:1.2.3.4'), { text: 'add ip:1.2.3.4' });
+  assert.match(sock.lastSent.content.text, /Already watching/);
+  const meta = await store.getSubscriberMeta('vtwatch', '999@s.whatsapp.net');
+  assert.equal(meta.targets.length, 1);
+});
+
+test('.vtwatch: malformed type:id rejected', async () => {
+  const { sock } = setupSubscriptionTest();
+  const cmd = require('../../commands/general/vtwatch');
+  await cmd.start(sock, fakeM('add notavalidthing'), { text: 'add notavalidthing' });
+  assert.match(sock.lastSent.content.text, /Usage/i);
+});

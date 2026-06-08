@@ -14,8 +14,9 @@ import { Groups } from "./pages/Groups";
 import { Metrics } from "./pages/Metrics";
 import { Diagnostics } from "./pages/Diagnostics";
 import { Alerts } from "./pages/Alerts";
+import { Subscriptions } from "./pages/Subscriptions";
 
-const TABS = ["Overview", "Groups", "Metrics", "Diagnostics", "Alerts"] as const;
+const TABS = ["Overview", "Groups", "Metrics", "Diagnostics", "Alerts", "Subscriptions"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function App() {
@@ -63,6 +64,7 @@ export default function App() {
           {activeTab === "Metrics" && <Metrics />}
           {activeTab === "Diagnostics" && <Diagnostics />}
           {activeTab === "Alerts" && <Alerts />}
+          {activeTab === "Subscriptions" && <Subscriptions />}
         </div>
       </div>
     </div>

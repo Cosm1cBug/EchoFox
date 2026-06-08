@@ -28,3 +28,4 @@ export const getStats = () => fetchJson("/api/stats");
 export const getGroups = () => fetchJson("/api/groups");
 export const getDiagnostics = () => fetchJson("/api/diagnostics");
 export const getAlerts = () => fetchJson("/api/alerts");
+export const getSubscriptions = () => fetchJson("/api/subscriptions");

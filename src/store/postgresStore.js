@@ -77,8 +77,12 @@ function makePostgresStore(url, logger, groupCache) {
       service TEXT NOT NULL,
       jid     TEXT NOT NULL,
       last_seen_pulse_ts BIGINT,
+      meta    JSONB,
       PRIMARY KEY (service, jid)
     );
+
+    ALTER TABLE service_subscribers ADD COLUMN IF NOT EXISTS meta JSONB;
+
     CREATE INDEX IF NOT EXISTS idx_service_subscribers_service
       ON service_subscribers (service);
 
@@ -369,26 +373,26 @@ function makePostgresStore(url, logger, groupCache) {
       } catch (e) { logger.warn({err:e}, 'updateMessageStatus failed'); }
     },
 
-    // ── Subscribers + sent-article tracker (v0.4.6) ─────────────────────
     async getSubscribers(service) {
       try {
         const r = await pool.query(
-          'SELECT jid, last_seen_pulse_ts FROM service_subscribers WHERE service = $1',
+          'SELECT jid, last_seen_pulse_ts, meta FROM service_subscribers WHERE service = $1',
           [service]);
         return r.rows.map((row) => ({
           jid: row.jid,
           last_seen_pulse_ts: row.last_seen_pulse_ts == null
             ? null : Number(row.last_seen_pulse_ts),
+          meta: row.meta || null,
         }));
       } catch (e) { logger.warn({ err: e, service }, 'getSubscribers failed'); return []; }
     },
-    async addSubscriber(service, jid) {
+    async addSubscriber(service, jid, meta) {
       try {
         await pool.query(
-          `INSERT INTO service_subscribers (service, jid, last_seen_pulse_ts)
-           VALUES ($1, $2, NULL)
+          `INSERT INTO service_subscribers (service, jid, last_seen_pulse_ts, meta)
+           VALUES ($1, $2, NULL, $3)
            ON CONFLICT (service, jid) DO NOTHING`,
-          [service, jid]);
+          [service, jid, meta == null ? null : meta]);
       } catch (e) { logger.warn({ err: e, service, jid }, 'addSubscriber failed'); }
     },
     async removeSubscriber(service, jid) {
@@ -405,6 +409,30 @@ function makePostgresStore(url, logger, groupCache) {
            WHERE service = $2 AND jid = $3`,
           [ts, service, jid]);
       } catch (e) { logger.warn({ err: e }, 'updateSubscriberTimestamp failed'); }
+    },
+        async isSubscriber(service, jid) {
+      try {
+        const r = await pool.query(
+          'SELECT 1 FROM service_subscribers WHERE service = $1 AND jid = $2 LIMIT 1',
+          [service, jid]);
+        return r.rowCount > 0;
+      } catch { return false; }
+    },
+    async getSubscriberMeta(service, jid) {
+      try {
+        const r = await pool.query(
+          'SELECT meta FROM service_subscribers WHERE service = $1 AND jid = $2',
+          [service, jid]);
+        if (r.rowCount === 0) return null;
+        return r.rows[0].meta || null;
+      } catch { return null; }
+    },
+    async updateSubscriberMeta(service, jid, meta) {
+      try {
+        await pool.query(
+          'UPDATE service_subscribers SET meta = $1 WHERE service = $2 AND jid = $3',
+          [meta == null ? null : meta, service, jid]);
+      } catch (e) { logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed'); }
     },
     async hasSentArticle(service, jid, articleUrl) {
       try {

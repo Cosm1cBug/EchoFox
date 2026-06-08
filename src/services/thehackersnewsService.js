@@ -26,11 +26,22 @@ async function fetchLatestArticles(limit = 5) {
 
     const articles = Array.isArray(items) ? items : [items];
 
-    return articles.slice(0, limit).map(item => ({
-      title: item.title,
-      link: item.link,
-      pubDate: item.pubDate,
-    }));
+    return articles.slice(0, limit).map((item) => {
+      // <category> can appear 0..N times in an RSS <item>; xml2js with
+      // explicitArray:false collapses single-element occurrences to a
+      // string and multi-element to an array. Normalise both.
+      let categories = [];
+      if (Array.isArray(item.category)) categories = item.category;
+      else if (typeof item.category === 'string') categories = [item.category];
+      categories = categories.map((c) => String(c).trim().toLowerCase()).filter(Boolean);
+
+      return {
+        title: item.title,
+        link: item.link,
+        pubDate: item.pubDate,
+        categories,
+      };
+    });
   } catch (error) {
     logger.error({ err: error.message }, 'Failed to fetch articles');
     return [];
@@ -48,6 +59,20 @@ async function sendArticle(sock, jid, article) {
   }
 }
 
+/**
+ * Return true if the article should be delivered to this subscriber.
+ *   • If subscriber.meta.topics is empty / missing → match everything
+ *   • Otherwise → OR-match: any article category in subscriber topics
+ *   Topic comparison is case-insensitive.
+ */
+function matchesTopics(article, meta) {
+  const topics = (meta && Array.isArray(meta.topics)) ? meta.topics : [];
+  if (!topics.length) return true;
+  if (!article.categories?.length) return false;
+  const wanted = new Set(topics.map((t) => String(t).trim().toLowerCase()).filter(Boolean));
+  return article.categories.some((c) => wanted.has(c));
+}
+
 async function checkAndDeliver(sock) {
   try {
     const store = getStore();
@@ -58,9 +83,10 @@ async function checkAndDeliver(sock) {
     if (!articles.length) return;
 
     for (const subscriber of subscribers) {
-      const { jid } = subscriber;
+      const { jid, meta } = subscriber;
 
       for (const article of articles) {
+        if (!matchesTopics(article, meta)) continue;
         const alreadySent = await store.hasSentArticle('thehackersnews', jid, article.link);
         if (alreadySent) continue;
 
@@ -73,7 +99,7 @@ async function checkAndDeliver(sock) {
   }
 }
 
-module.exports = { checkAndDeliver, CHECK_INTERVAL, fetchLatestArticles };
+module.exports = { checkAndDeliver, CHECK_INTERVAL, fetchLatestArticles, matchesTopics };
 
 /*
 

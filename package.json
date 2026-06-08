@@ -1,6 +1,6 @@
 {
   "name": "echofox",
-  "version": "0.4.6-beta",
+  "version": "0.4.7-beta",
   "description": "A production-grade WhatsApp bot built on Baileys 7.x — typed, observable, scalable.",
   "main": "src/core/bootstrap.js",
   "scripts": {

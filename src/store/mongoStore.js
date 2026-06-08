@@ -84,8 +84,8 @@ function makeMongoStore(uri, logger, groupCache) {
     service:            { type: String, required: true },
     jid:                { type: String, required: true },
     last_seen_pulse_ts: { type: Number, default: null },
-  }).index({ service: 1, jid: 1 }, { unique: true })
-    .index({ service: 1 }));
+    meta:               { type: mongoose.Schema.Types.Mixed, default: null },
+  }).index({ service: 1, jid: 1 }, { unique: true }).index({ service: 1 }));
 
   const SentArticle = conn.model('SentArticle', new mongoose.Schema({
     service:     { type: String, required: true },
@@ -372,14 +372,18 @@ function makeMongoStore(uri, logger, groupCache) {
         return docs.map((d) => ({
           jid: d.jid,
           last_seen_pulse_ts: d.last_seen_pulse_ts == null ? null : Number(d.last_seen_pulse_ts),
+          meta: d.meta || null,
         }));
       } catch (e) { logger.warn({ err: e, service }, 'getSubscribers failed'); return []; }
     },
-    async addSubscriber(service, jid) {
+    async addSubscriber(service, jid, meta) {
       try {
         await ServiceSubscriber.updateOne(
           { service, jid },
-          { $setOnInsert: { service, jid, last_seen_pulse_ts: null } },
+          { $setOnInsert: {
+              service, jid, last_seen_pulse_ts: null,
+              meta: meta == null ? null : meta,
+          } },
           { upsert: true });
       } catch (e) { logger.warn({ err: e, service, jid }, 'addSubscriber failed'); }
     },
@@ -394,6 +398,26 @@ function makeMongoStore(uri, logger, groupCache) {
           { service, jid },
           { $set: { last_seen_pulse_ts: ts } });
       } catch (e) { logger.warn({ err: e }, 'updateSubscriberTimestamp failed'); }
+    },
+        async isSubscriber(service, jid) {
+      try {
+        const doc = await ServiceSubscriber.findOne({ service, jid }, { _id: 1 }).lean();
+        return !!doc;
+      } catch { return false; }
+    },
+    async getSubscriberMeta(service, jid) {
+      try {
+        const doc = await ServiceSubscriber.findOne({ service, jid }, { meta: 1 }).lean();
+        if (!doc) return null;
+        return doc.meta || null;
+      } catch { return null; }
+    },
+    async updateSubscriberMeta(service, jid, meta) {
+      try {
+        await ServiceSubscriber.updateOne(
+          { service, jid },
+          { $set: { meta: meta == null ? null : meta } });
+      } catch (e) { logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed'); }
     },
     async hasSentArticle(service, jid, articleUrl) {
       try {

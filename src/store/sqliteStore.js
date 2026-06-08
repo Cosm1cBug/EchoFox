@@ -5,6 +5,11 @@
  */
 'use strict';
 
+function _parseMeta(raw) {
+  if (raw == null || raw === '') return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
 const Database = require('better-sqlite3');
 const path     = require('node:path');
 const { existsSync, mkdirSync } = require('node:fs');
@@ -74,6 +79,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       service TEXT NOT NULL,
       jid     TEXT NOT NULL,
       last_seen_pulse_ts INTEGER,
+      meta    TEXT,
       PRIMARY KEY (service, jid)
     );
 
@@ -87,6 +93,16 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
   `);
 
   applyMessagesMigration_sqlite(db);
+
+  // v0.4.7 — defensive in-place column add (idempotent). The migration
+  // runner does this too; we do it here so the store works even when
+  // migrations are disabled via storeDB.runMigrationsOnBoot=false.
+  try {
+    const _ssCols = db.prepare(`PRAGMA table_info(service_subscribers)`).all().map((c) => c.name);
+    if (!_ssCols.includes('meta')) {
+      db.exec(`ALTER TABLE service_subscribers ADD COLUMN meta TEXT`);
+    }
+  } catch (e) { logger.warn({ err: e }, 'service_subscribers.meta column ensure failed'); }
 
   const stmts = {
     msgInsert: db.prepare(`INSERT OR REPLACE INTO messages (jid,id,from_me,participant,msg,ts) VALUES (@jid,@id,@fromMe,@participant,@msg,@ts)`),
@@ -112,10 +128,13 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     partCurrent: db.prepare(`SELECT participant, MAX(ts) AS last_ts, (SELECT action FROM group_participants_events e2 WHERE e2.group_jid = e.group_jid AND e2.participant = e.participant ORDER BY ts DESC LIMIT 1) AS last_action FROM group_participants_events e WHERE group_jid = ? GROUP BY participant`),
     uniqueUsersCount: db.prepare(`SELECT COUNT(DISTINCT participant) AS n FROM group_participants_events`),
 
-    getSubscribers: db.prepare(`SELECT jid, last_seen_pulse_ts FROM service_subscribers WHERE service = ?`),
-    addSubscriber: db.prepare(`INSERT OR IGNORE INTO service_subscribers (service, jid, last_seen_pulse_ts) VALUES (?, ?, NULL)`),
+    getSubscribers: db.prepare(`SELECT jid, last_seen_pulse_ts, meta FROM service_subscribers WHERE service = ?`),
+    addSubscriber: db.prepare(`INSERT OR IGNORE INTO service_subscribers (service, jid, last_seen_pulse_ts, meta) VALUES (?, ?, NULL, ?)`),
     removeSubscriber: db.prepare(`DELETE FROM service_subscribers WHERE service = ? AND jid = ?`),
     updateSubscriberTs: db.prepare(`UPDATE service_subscribers SET last_seen_pulse_ts = ? WHERE service = ? AND jid = ?`),
+    isSubscriber: db.prepare(`SELECT 1 FROM service_subscribers WHERE service = ? AND jid = ? LIMIT 1`),
+    getSubscriberMeta: db.prepare(`SELECT meta FROM service_subscribers WHERE service = ? AND jid = ?`),
+    updateSubscriberMeta: db.prepare(`UPDATE service_subscribers SET meta = ? WHERE service = ? AND jid = ?`),
 
     hasSentArticle: db.prepare(`SELECT 1 FROM thehackersnews_sent_articles WHERE service = ? AND jid = ? AND article_url = ?`),
     recordSentArticle: db.prepare(`INSERT OR IGNORE INTO thehackersnews_sent_articles (service, jid, article_url, sent_at) VALUES (?, ?, ?, ?)`),
@@ -471,18 +490,43 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       catch (e) { logger.warn({err:e}, 'msgUpdateStatus failed'); }
     },
 
-    // Subscriber methods (v0.4.6)
     async getSubscribers(service) {
-      try { return stmts.getSubscribers.all(service); } catch { return []; }
+      try {
+        return stmts.getSubscribers.all(service).map((row) => ({
+          jid: row.jid,
+          last_seen_pulse_ts: row.last_seen_pulse_ts == null ? null : Number(row.last_seen_pulse_ts),
+          meta: _parseMeta(row.meta),
+        }));
+      } catch { return []; }
     },
-    async addSubscriber(service, jid) {
-      try { stmts.addSubscriber.run(service, jid); } catch(e){}
+    async addSubscriber(service, jid, meta) {
+      try {
+        stmts.addSubscriber.run(service, jid, meta == null ? null : JSON.stringify(meta));
+      } catch (e) { logger.warn({ err: e, service, jid }, 'addSubscriber failed'); }
     },
     async removeSubscriber(service, jid) {
-      try { stmts.removeSubscriber.run(service, jid); } catch(e){}
+      try { stmts.removeSubscriber.run(service, jid); }
+      catch (e) { logger.warn({ err: e, service, jid }, 'removeSubscriber failed'); }
     },
     async updateSubscriberTimestamp(service, jid, ts) {
-      try { stmts.updateSubscriberTs.run(ts, service, jid); } catch(e){}
+      try { stmts.updateSubscriberTs.run(ts, service, jid); }
+      catch (e) { logger.warn({ err: e }, 'updateSubscriberTimestamp failed'); }
+    },
+    async isSubscriber(service, jid) {
+      try { return !!stmts.isSubscriber.get(service, jid); }
+      catch { return false; }
+    },
+    async getSubscriberMeta(service, jid) {
+      try {
+        const row = stmts.getSubscriberMeta.get(service, jid);
+        if (!row) return null;
+        return _parseMeta(row.meta);
+      } catch { return null; }
+    },
+    async updateSubscriberMeta(service, jid, meta) {
+      try {
+        stmts.updateSubscriberMeta.run(meta == null ? null : JSON.stringify(meta), service, jid);
+      } catch (e) { logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed'); }
     },
 
     close() { db.close(); },

@@ -5,6 +5,22 @@
  */
 'use strict';
 
+function _decodeSubscriberValue(jid, v) {
+  if (v == null || v === '') return { jid, last_seen_pulse_ts: null, meta: null };
+  if (v.startsWith('{')) {
+    try {
+      const env = JSON.parse(v);
+      return {
+        jid,
+        last_seen_pulse_ts: env.ts == null ? null : Number(env.ts),
+        meta: env.meta || null,
+      };
+    } catch { /* fall through */ }
+  }
+  const n = Number(v);
+  return { jid, last_seen_pulse_ts: Number.isFinite(n) ? n : null, meta: null };
+}
+
 /**
  * Redis store.
  *
@@ -286,15 +302,13 @@ function makeRedisStore(url, logger, groupCache) {
     async getSubscribers(service) {
       try {
         const h = await client.hgetall(`subscribers:${service}`);
-        return Object.entries(h).map(([jid, v]) => ({
-          jid,
-          last_seen_pulse_ts: v === '' || v == null ? null : Number(v),
-        }));
+        return Object.entries(h).map(([jid, v]) => _decodeSubscriberValue(jid, v));
       } catch (e) { logger.warn({ err: e, service }, 'getSubscribers failed'); return []; }
     },
-    async addSubscriber(service, jid) {
+    async addSubscriber(service, jid, meta) {
       try {
-        await client.hsetnx(`subscribers:${service}`, jid, '');
+        const payload = JSON.stringify({ ts: null, meta: meta == null ? null : meta });
+        await client.hsetnx(`subscribers:${service}`, jid, payload);
       } catch (e) { logger.warn({ err: e, service, jid }, 'addSubscriber failed'); }
     },
     async removeSubscriber(service, jid) {
@@ -304,8 +318,35 @@ function makeRedisStore(url, logger, groupCache) {
     },
     async updateSubscriberTimestamp(service, jid, ts) {
       try {
-        await client.hset(`subscribers:${service}`, jid, String(ts));
+        const key = `subscribers:${service}`;
+        const existing = await client.hget(key, jid);
+        const decoded = existing ? _decodeSubscriberValue(jid, existing) : { meta: null };
+        const payload = JSON.stringify({ ts: ts == null ? null : Number(ts), meta: decoded.meta });
+        await client.hset(key, jid, payload);
       } catch (e) { logger.warn({ err: e }, 'updateSubscriberTimestamp failed'); }
+    },
+        async isSubscriber(service, jid) {
+      try {
+        const exists = await client.hexists(`subscribers:${service}`, jid);
+        return !!exists;
+      } catch { return false; }
+    },
+    async getSubscriberMeta(service, jid) {
+      try {
+        const v = await client.hget(`subscribers:${service}`, jid);
+        if (v == null) return null;
+        return _decodeSubscriberValue(jid, v).meta;
+      } catch { return null; }
+    },
+    async updateSubscriberMeta(service, jid, meta) {
+      try {
+        const key = `subscribers:${service}`;
+        const existing = await client.hget(key, jid);
+        if (existing == null) return;
+        const decoded = _decodeSubscriberValue(jid, existing);
+        const payload = JSON.stringify({ ts: decoded.last_seen_pulse_ts, meta: meta == null ? null : meta });
+        await client.hset(key, jid, payload);
+      } catch (e) { logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed'); }
     },
     async hasSentArticle(service, jid, articleUrl) {
       try {

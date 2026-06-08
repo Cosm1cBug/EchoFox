@@ -16,8 +16,8 @@ const metrics    = require('../services/metrics');
 const logger = require('../core/logger').child({ mod: 'dashboard' });
 
 const PKG = (() => {
-  try { return require(path.join(__dirname, '..', '..', 'package.json')); }
-  catch { return { version: 'unknown' }; }
+  try { return require(path.join(__dirname, '..', '..', 'package.json')) }
+  catch { return { version: 'unknown' } }
 })();
 
 const REACT_DIR = path.join(__dirname, 'react');
@@ -159,7 +159,7 @@ function startDashboard(port, store, config) {
     } catch (e) { next(e); }
   });
 
-  // ── NEW v0.4.3: per-message timeline endpoints ─────────────────────
+  // ── Per-message timeline endpoints ─────────────────────
   app.get('/api/messages/:jid/:id/edits', async (req, res, next) => {
     try {
       const edits = await store.getMessageEdits?.(req.params.jid, req.params.id) || [];
@@ -189,7 +189,7 @@ function startDashboard(port, store, config) {
     } catch (e) { next(e); }
   });
 
-  // ── v0.4.5: diagnostics + alerts ───────────────────────────────────
+  // ── Diagnostics + alerts ───────────────────────────────────
   app.get('/api/diagnostics', async (_req, res, next) => {
     try {
       const { runDiagnostics, getRuntimeContext } = require('../lib/diagnostics');
@@ -214,6 +214,27 @@ function startDashboard(port, store, config) {
       res.json(engine.getRate(req.params.cmd));
     } catch (e) { next(e); }
   });
+
+    // ── v0.4.7: Subscriptions audit view ───────────────────────────────
+  app.get('/api/subscriptions', async (_req, res, next) => {
+    try {
+      const services = ['alienvault', 'thehackersnews'];
+      const out = {};
+      for (const svc of services) {
+        const subs = (typeof store.getSubscribers === 'function')
+          ? await store.getSubscribers(svc)
+          : [];
+        out[svc] = subs.map((s) => ({
+          jid: s.jid,
+          last_seen_pulse_ts: s.last_seen_pulse_ts,
+          meta: s.meta || null,
+        }));
+      }
+      res.json(out);
+    } catch (e) { next(e); }
+  });
+
+  // ── Error handler ─────────────────────────────────────────────────────
 
   // ── Error handler ─────────────────────────────────────────────────────
   app.use((err, _req, res, _next) => {

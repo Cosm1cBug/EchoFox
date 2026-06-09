@@ -9,6 +9,9 @@ const logger = require('../core/logger');
 
 const log = logger.child({ mod: 'newsletter.upsert' });
 
-module.exports = async ({ sock, newsletter }) => {
-  log.info({ newsletters }, 'newsletter.upsert received');
+module.exports = async ({ u }) => {
+  if (!u) return;
+  // Baileys emits one or more newsletter objects; payload can be array OR single
+  const newsletters = Array.isArray(u) ? u : [u];
+  log.info({ count: newsletters.length, newsletters }, 'newsletter.upsert received');
 };

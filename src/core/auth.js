@@ -26,10 +26,13 @@ const {
   initAuthCreds,
   BufferJSON,
   proto,
+  makeCacheableSignalKeyStore,
 } = require('@whiskeysockets/baileys');
+
 const fs   = require('node:fs');
 const path = require('node:path');
 
+const log = require('./logger').child({ mod: 'auth' });
 // ─── helpers ─────────────────────────────────────────────────────────────
 function serialise(value)   { return JSON.stringify(value, BufferJSON.replacer); }
 function deserialise(value) { return value == null ? null : JSON.parse(value, BufferJSON.reviver); }

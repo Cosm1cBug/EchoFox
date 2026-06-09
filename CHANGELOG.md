@@ -14,6 +14,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.2] — 2026-06-09
+
+> **Hotfix release.** Addresses 4 latent crash bugs surfaced by deeper
+> audit + lint analysis. No functional or API changes; safe drop-in
+> upgrade from v1.0.1.
+
+### Fixed — crash bugs
+
+- **Dashboard server crashed at boot** — v1.0.1's manual patch of
+  `src/dashboard/server.js` left both the corrected rate-limiter block
+  AND the broken original side-by-side, causing
+  `SyntaxError: Identifier 'dashboardLimiter' has already been declared`
+  on every startup with `dashboard.enabled: true`. Orphan block removed.
+- **`auth.js` crashed for Redis/SQLite/Postgres auth backends** —
+  `makeCacheableSignalKeyStore` was referenced in 3 places but never
+  imported from `@whiskeysockets/baileys`. `log` was referenced but
+  never declared at module level. Default `MULTIFILE` auth was unaffected
+  (didn't hit these code paths). Now correctly imported + module-level
+  logger added.
+- **Worker crashed on Baileys reconnection** — `MAX_RECONNECT_ATTEMPTS`
+  was referenced in the reconnect-loop logic but never declared.
+  `ReferenceError` on first reconnect attempt after a disconnect.
+  Now declared as a `const` (10 attempts) at the appropriate scope.
+- **`newsletter.upsert.js` crashed on every newsletter event** — two
+  bugs in 2 lines: handler destructured `{ sock, newsletter }` but the
+  router emits `{ sock, u }`, and the log call referenced an undeclared
+  `newsletters` variable. Now correctly handles both single-newsletter
+  and array payloads.
+
+### Test coverage
+
+- All 90/90 tests still pass (36 contract + 19 boot + 24 messages + 11 stores).
+- ESLint errors dropped from 10 → 1 (only `mediafire.js` sparse-array
+  warning remains; pre-existing, non-crashing, flagged for v1.1.0).
+
+### Backward compatibility
+
+Fully backward compatible with v1.0.1:
+- No config schema changes
+- No store interface changes
+- No `/api/*` route changes
+- No command behaviour changes
+
+### Operational notes
+
+- Just `git pull && npm install && npm start`. No lock-file regeneration
+  needed since no `package.json` deps changed.
+- **If you were on v1.0.1 with `dashboard.enabled: true`** — your bot
+  was crashing at boot. This release fixes that.
+- **If you were using Redis/SQLite/Postgres auth on v1.0.0–v1.0.1** —
+  you were getting a crash at auth setup. This release fixes that.
+- **If you ever experienced a Baileys disconnect** (which is normal) —
+  the worker was crashing on retry. This release fixes that.
+
+---
+
 ## [1.0.1] — 2026-06-09
 
 > **Hotfix release.** Addresses 3 issues introduced or surfaced in

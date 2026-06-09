@@ -205,8 +205,8 @@ async function start(retry = 0) {
 
   await lifecycle.startLoginFlow(sock);
 
+  const MAX_RECONNECT_ATTEMPTS = 10;
   let reconnectAttempts = 0;
-  const maxReconnectAttempts = 10;
 
   sock.ev.on('connection.update', async (u) => {
     const { connection, lastDisconnect, qr } = u;

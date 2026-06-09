@@ -93,13 +93,6 @@ function startDashboard(port, store, config) {
   app.use('/api',       dashboardLimiter);
   app.use('/dashboard', dashboardLimiter);
 
-  const dashboardLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
-
   if (config.dashboard.username) {
     app.use(basicAuth(config.dashboard.username, config.dashboard.password));
   } else {
@@ -107,7 +100,6 @@ function startDashboard(port, store, config) {
   }
 
   app.use(express.json({ limit: '64kb' }));
-  app.use('/dashboard', dashboardLimiter);
 
   // Build-on-boot guard (one-shot). If it fails we still mount API routes
   // and serve a maintenance page for / and /dashboard.

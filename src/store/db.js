@@ -11,7 +11,8 @@
  *   async getMessage(key)                  → proto.IMessage | undefined
  *   async getGroupMetadata(jid)            → GroupMetadata | undefined
  *   async saveGroupMetadata(jid, meta)     → void
- *
+ *   async hasContact(jid)                  → boolean
+ * 
  *   async recordParticipantEvent(group, participant, action, actor, ts?)
  *   async getParticipantHistory(group, limit=500) → [{participant, action, actor, ts}]
  *   async getCurrentParticipants(group)    → [{participant, last_action, last_ts}]

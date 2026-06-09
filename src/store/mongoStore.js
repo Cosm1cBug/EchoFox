@@ -112,6 +112,16 @@ function makeMongoStore(uri, logger, groupCache) {
   });
 
   return {
+    async hasContact(jid) {
+      try {
+        const count = await this.db.collection('contacts').countDocuments({ jid }, { limit: 1 });
+        return count > 0;
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'hasContact failed');
+        return false;
+      }
+    },
+    
     async getMessage(key) {
       const doc = await Message.findOne({ jid: key.remoteJid, id: key.id });
       return doc ? proto.Message.decode(doc.msg) : undefined;

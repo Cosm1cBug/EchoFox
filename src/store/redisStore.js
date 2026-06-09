@@ -68,6 +68,16 @@ function makeRedisStore(url, logger, groupCache) {
   client.on('error', (e) => logger.error({ err: e }, 'redis client error'));
 
   return {
+    async hasContact(jid) {
+      try {
+        const exists = await this.client.exists(`${this.prefix}contact:${jid}`);
+        return exists === 1;
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'hasContact failed');
+        return false;
+      }
+    },
+    
     async getMessage(key) {
       const buf = await client.getBuffer(`msg:${key.remoteJid}:${key.id}`);
       return buf ? proto.Message.decode(buf) : undefined;

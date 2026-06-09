@@ -97,6 +97,19 @@ function makePostgresStore(url, logger, groupCache) {
     .catch((e) => logger.error({ err: e }, 'Postgres init failed'));
 
   return {
+    async hasContact(jid) {
+      try {
+        const res = await this.pool.query(
+          'SELECT 1 FROM contacts WHERE jid = $1 LIMIT 1',
+          [jid]
+        );
+        return res.rowCount > 0;
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'hasContact failed');
+        return false;
+      }
+    },
+    
     async getMessage(key) {
       const r = await pool.query(
         'SELECT msg FROM messages WHERE jid = $1 AND id = $2',

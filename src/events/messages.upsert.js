@@ -164,18 +164,15 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
 
   const ctx = enrich(m, sock);
 
-  // ─── Privacy: block messages from unknown senders (private chats only) ──
+  // Privacy: block unknown senders in private chats
   if (config.privacy?.blockUnknownSenders && ctx.isPrivate) {
     const isAdmin = (config.admins || []).includes(ctx.sender);
     if (!isAdmin) {
-      try {
-        const known = await store.db?.prepare?.('SELECT 1 FROM contacts WHERE jid = ? LIMIT 1')
-          ?.get?.(ctx.sender);
-        if (!known) {
-          logger.debug?.({ sender: ctx.sender }, 'privacy: blocked unknown sender');
-          return;
-        }
-      } catch {}
+      const known = await store.hasContact?.(ctx.sender);
+      if (!known) {
+        logger.debug?.({ sender: ctx.sender }, 'privacy: blocked unknown sender');
+        return;
+      }
     }
   }
 
@@ -227,30 +224,33 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
   if (!config.bot.public && !isAdminUser) return;
   if (cmd.group && !ctx.isGroup) return ctx.reply('👥 Group-only command.');
 
-  // ── Lazy group metadata fetch ──────────────────────────────────────
+  // Lazy group metadata fetch
   let metadata = null;
   if (ctx.isGroup && cmd.needsMetadata) {
     metadata = await store.getGroupMetadata(ctx.chat).catch(() => null)
             || await sock.groupMetadata(ctx.chat).catch(() => null);
   }
 
-  // ── Delegate to runner (timeout, cooldown, crash handling, metrics) ─
+  // Delegate to command runner
   await runCommand({
-    sock, cmd, m, ctx,
+    sock,
+    cmd,
+    m,
+    ctx,
     handlerArgs: {
-      name:      config.bot.name,
+      name: config.bot.name,
       ctx,
       metadata,
-      pushName:  ctx.pushName,
+      pushName: ctx.pushName,
       isPrivate: ctx.isPrivate,
-      isGroup:   ctx.isGroup,
-      isAdmin:   isAdminUser,
-      body:      ctx.body,
-      arg:       args.map((a) => a.toLowerCase()),
+      isGroup: ctx.isGroup,
+      isAdmin: isAdminUser,
+      body: ctx.body,
+      arg: args.map((a) => a.toLowerCase()),
       args,
-      text:      args.join(' '),
-      prefix:    matched,
-      command:   cmd.name,
+      text: args.join(' '),
+      prefix: matched,
+      command: cmd.name,
       commands,
       config,
       logger,

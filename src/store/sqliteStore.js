@@ -116,7 +116,8 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
 
     chatUpsert: db.prepare(`INSERT INTO chats (jid,name,unread,ts) VALUES (?,?,?,?) ON CONFLICT(jid) DO UPDATE SET name=excluded.name, unread=excluded.unread, ts=excluded.ts`),
     contactUpsert: db.prepare(`INSERT INTO contacts (jid,name,notify,img_url) VALUES (?,?,?,?) ON CONFLICT(jid) DO UPDATE SET name=COALESCE(excluded.name,name), notify=COALESCE(excluded.notify,notify), img_url=COALESCE(excluded.img_url,img_url)`),
-
+    contactExists: db.prepare(`SELECT 1 FROM contacts WHERE jid = ? LIMIT 1`),
+    
     groupUpsert: db.prepare(`INSERT OR REPLACE INTO groups (jid,subject,creation,meta) VALUES (?,?,?,?)`),
     groupGet:   db.prepare(`SELECT meta FROM groups WHERE jid = ?`),
     groupCount: db.prepare(`SELECT COUNT(*) AS n FROM groups`),
@@ -197,6 +198,16 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
 
   return {
     db,
+
+    async hasContact(jid) {
+      try {
+        const row = stmts.contactExists?.get(jid);
+        return !!row;
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'hasContact failed');
+        return false;
+      }
+    },
 
     async getMessage(key) {
       const k = `${key.remoteJid}|${key.id}`;

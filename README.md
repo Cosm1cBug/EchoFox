@@ -7,7 +7,7 @@
 [![Baileys 7.0.0-rc13](https://img.shields.io/badge/baileys-7.0.0--rc13-orange)](https://www.npmjs.com/package/@whiskeysockets/baileys)
 [![Docker Hub](https://img.shields.io/badge/docker-cosm1cbug%2Fechofox-blue?logo=docker)](https://hub.docker.com/r/cosm1cbug/echofox)
 [![GHCR](https://img.shields.io/badge/ghcr-Cosm1cBug%2Fechofox-181717?logo=github)](https://github.com/Cosm1cBug/EchoFox/pkgs/container/echofox)
-
+[![Deploy Documentation](https://github.com/Cosm1cBug/EchoFox/actions/workflows/docs.yml/badge.svg)](https://github.com/Cosm1cBug/EchoFox/actions/workflows/docs.yml)
 > ⚠️ **Please read [DISCLAIMER.md](./DISCLAIMER.md) before using.** Running an unofficial WhatsApp client may violate WhatsApp's Terms of Service and can result in your number being banned. Use a number you can afford to lose.
 
 ---

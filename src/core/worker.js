@@ -178,27 +178,23 @@ async function start(retry = 0) {
       creds: state.creds,
       keys:  makeCacheableSignalKeyStore(state.keys, logger.child({ mod: 'signal' })),
     },
-
     markOnlineOnConnect:            false,
     syncFullHistory:                !!config.features.syncHistory,
     generateHighQualityLinkPreview: true,
     fireInitQueries:                true,
     enableAutoSessionRecreation:    true,
     enableRecentMessageCache:       true,
-
     connectTimeoutMs:      30_000,
     defaultQueryTimeoutMs: 60_000,
     keepAliveIntervalMs:   25_000,
     retryRequestDelayMs:   350,
     maxMsgRetryCount:      5,
     qrTimeout:             45_000,
-
     msgRetryCounterCache:   caches.msgRetryCounterCache,
     userDevicesCache:       caches.userDevicesCache,
     callOfferCache:         caches.callOfferCache,
     placeholderResendCache: caches.placeholderResendCache,
     mediaCache:             caches.mediaCache,
-
     getMessage:          (key) => store.getMessage(key),
     cachedGroupMetadata: (jid) => store.getGroupMetadata(jid),
     shouldIgnoreJid:     (jid) => jid?.endsWith('@newsletter') || (jid === 'status@broadcast' && !config.features.readStatus),
@@ -313,6 +309,8 @@ async function start(retry = 0) {
   });
 
   sock.ev.on('messaging-history.set', (payload) => eventRouter.emit('messaging-history.set', { sock, store, payload }));
+  sock.ev.on('messaging-history.status', (u) => eventRouter.emit('messaging-history.status', { sock, store, u }));
+
   sock.ev.on('contacts.update', (updates) => eventRouter.emit('contacts.update', { sock, updates }));
   sock.ev.on('group-participants.update', (u) => eventRouter.emit('group-participants.update', { sock, store, u }));
   sock.ev.on('contacts.upsert', (u) => eventRouter.emit('contacts.upsert', { sock, u }));
@@ -333,7 +331,7 @@ async function start(retry = 0) {
   sock.ev.on('labels.edit',              (u) => eventRouter.emit('labels.edit',              { sock, u }));
   sock.ev.on('lid-mapping.update',       (u) => eventRouter.emit('lid-mapping.update',       { sock, u }));
   sock.ev.on('message-capping.update',   (u) => eventRouter.emit('message-capping.update',   { sock, u }));
-  sock.ev.on('messaging-history.status', (u) => eventRouter.emit('messaging-history.status', { sock, store, u }));
+
   sock.ev.on('newsletter-settings.update', (u) => eventRouter.emit('newsletter-settings.update', { sock, u }));
   sock.ev.on('newsletter.reaction',      (u) => eventRouter.emit('newsletter.reaction',      { sock, u }));
   sock.ev.on('newsletter.view',          (u) => eventRouter.emit('newsletter.view',          { sock, u }));
@@ -341,25 +339,27 @@ async function start(retry = 0) {
 
   sock.ev.on('messages.upsert', (payload) => {
     if (!payload?.messages?.length) return;
+    
     metrics.incReceived(payload.messages.length);
 
-    if (payload.type && payload.type !== 'notify') {
-      log.debug({ type: payload.type, count: payload.messages.length }, 'Skipping command-routing for non-notify payload.');
-      return;
-    }
+    const isHistory = payload.type === 'append' || payload.type === 'prepend';
+    const isRealTime = payload.type === 'notify';
+
     for (const m of payload.messages) {
       const jid = m?.key?.remoteJid;
       if (!jid) continue;
-
+      // Skip status broadcasts if disabled
+      if (jid === 'status@broadcast' && !config.features.readStatus) continue;
+      // Skip very old messages only if full history sync is disabled
       const ts = Number(m.messageTimestamp) || 0;
-      if (ts && ts < BOT_BOOT_TS - HISTORY_GRACE_SEC) {
-        log.debug({ jid, ts, bootTs: BOT_BOOT_TS }, 'Skipping stale message (older than boot)');
+      if (!config.features.syncFullHistory && ts && ts < BOT_BOOT_TS - HISTORY_GRACE_SEC) {
+        log.debug({ jid, ts }, 'Skipping stale message');
         continue;
       }
 
-      queueFor(jid).add(() =>
+      queueFor(jid).add(() => 
         eventRouter.handleMessage({ sock, m, commands, store, logger: log })
-          .catch((e) => log.error({ err: e, jid }, 'message handler crashed')),
+          .catch((e) => log.error({ err: e, jid }, 'message handler crashed'))
       ).catch(() => {});
     }
   });

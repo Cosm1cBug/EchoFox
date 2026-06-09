@@ -19,6 +19,7 @@
  * from replying to messages older than its start time.
  */
 const logger = require('../core/logger');
+
 const log = logger.child({ mod: 'messaging-history.set' });
 
 module.exports = async ({ sock, store, payload }) => {
@@ -32,19 +33,33 @@ module.exports = async ({ sock, store, payload }) => {
     contacts: contacts.length,
     messages: messages.length,
     isLatest,
-  }, 'messaging-history.set received');
+  }, 'History Sync Received');
 
-  try {
-    if (chats.length && typeof sock?.ev?.emit === 'function') {
-
-      sock.ev.emit('chats.upsert', chats);
+  // Store chats metadata
+  if (chats && Array.isArray(chats)) {
+    for (const chat of chats) {
+      try {
+        await store.saveChat?.(chat); // You may need to implement this
+      } catch (err) {
+        log.debug({ err, jid: chat.id }, 'Failed to save chat during history sync');
+      }
     }
-  } catch (e) { log.warn({ err: e }, 'chats persistence failed'); }
+  }
 
-  try {
-    if (contacts.length && typeof sock?.ev?.emit === 'function') {
-      sock.ev.emit('contacts.upsert', contacts);
+  // Store contacts
+  if (contacts && Array.isArray(contacts)) {
+    for (const contact of contacts) {
+      try {
+        await store.saveContact?.(contact);
+      } catch (err) {
+        log.debug({ err, jid: contact.id }, 'Failed to save contact during history sync');
+      }
     }
-  } catch (e) { log.warn({ err: e }, 'contacts persistence failed'); }
+  }
+
+  // Optional: Log only (recommended)
+  if (messages && messages.length > 0) {
+    log.info(`Received ${messages.length} historical messages. They will be processed via messages.upsert.`);
+  }
 
 };

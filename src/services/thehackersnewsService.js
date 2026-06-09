@@ -6,6 +6,7 @@
 'use strict';
 
 const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../lib/network');
 const xml2js = require('xml2js');
 const config = require('../lib/configLoader').config;
 const { getStore } = require('../store/instance');
@@ -16,7 +17,11 @@ const CHECK_INTERVAL = config.apis?.thehackersnews?.checkIntervalMin || 60;
 
 async function fetchLatestArticles(limit = 5) {
   try {
-    const { data } = await axios.get(THEHACKERSNEWS_RSS, { timeout: 15000 });
+    const { data } = await axiosWithBreaker('thehackersnews', {
+      method:  'GET',
+      url:     THEHACKERSNEWS_RSS,
+      timeout: 15000,
+    });
 
     const parser = new xml2js.Parser({ explicitArray: false });
     const result = await parser.parseStringPromise(data);
@@ -42,8 +47,12 @@ async function fetchLatestArticles(limit = 5) {
         categories,
       };
     });
-  } catch (error) {
-    logger.error({ err: error.message }, 'Failed to fetch articles');
+  } catch (err) {
+    if (isOpenBreakerError(err)) {
+      logger.warn('thehackersnews breaker open — skipping this cycle');
+      return [];
+    }
+    logger.warn({ err: err.message }, 'fetchLatestArticles failed');
     return [];
   }
 }

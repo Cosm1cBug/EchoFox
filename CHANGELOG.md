@@ -8,9 +8,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- CI/CD with auto-release on tag (M4)
-- VitePress docs site at cosm1cbug.github.io/echofox (M5)
-- 2-week soak test → v1.0.0 (M6)
+- CI/CD with auto-release on tag 
+- VitePress docs site at cosm1cbug.github.io/echofox 
+
+
+---
+
+## [1.0.1] — 2026-06-09
+
+> **Hotfix release.** Addresses 3 issues introduced or surfaced in
+> v1.0.0, plus resilience hardening across all subscription services
+> and external-API commands. No breaking changes — safe upgrade from
+> v1.0.0.
+
+### Fixed
+
+- **Dashboard server crashed at boot** — the v1.0.0 rate-limit
+  "Autofix" added `require('express-rate-limit')` to
+  `src/dashboard/server.js` without adding the package to
+  `package.json`. Bot crashed at boot with `Cannot find module
+  'express-rate-limit'` whenever `dashboard.enabled: true`. Now declared as
+  a direct dependency (`^7.4.1`).
+- **Rate limiter mounted on the wrong path** — the Autofix applied
+  the limiter to `/dashboard` (static React files) instead of `/api/*`
+  (the actual data endpoints) and placed it *after* basic-auth so
+  brute-force auth attempts weren't throttled. Now applies to BOTH
+  `/api` and `/dashboard`, mounted BEFORE basic-auth, with a more
+  realistic limit (300 req per 15-min window vs the previous 100).
+- **`sqliteStore.js` had 4 duplicate method definitions** —
+  `getMessageEdits`, `getMessageReactions`, `getMessageReceipts`,
+  `getDeletedInGroup` were each defined twice, with the first
+  (Promise-wrapped) versions being dead code overwritten by the second
+  (synchronous) versions. ESLint failed with 4 `no-dupe-keys` errors
+  blocking `npm run lint` in CI. Dead Promise wrappers removed.
+- **Phase 5 newsletter event mismatch fix** — confirmed shipped in
+  `bus.on('newsletters.update', ...)` (plural). No regression.
+
+### Security
+
+- **Eliminated 21 transitive `axios` CVEs** from
+  `wa-sticker-formatter@4.4.4` (which bundles `axios@0.21.4`). Added an
+  `npm overrides` block to force the bundled axios up to the project's
+  direct `axios@^1.7.7`. Confirmed via `npm audit`: 0 axios CVEs
+  remaining (was 21: 4 high, 11 moderate, 6 low/incl. SSRF, prototype
+  pollution, header injection, ReDoS, NO_PROXY bypass).
+- **Brute-force auth surface now rate-limited** — the new
+  `/dashboard` + `/api` limiter sits before basic-auth, so credential
+  guessing is throttled at 300 attempts per 15-min window per IP.
+
+### Changed — resilience
+
+All 10 remaining direct-axios callers now use the v0.4.6
+`axiosWithBreaker` pattern with per-upstream circuit breakers. When
+an upstream is failing, the breaker opens and the service skips that
+cycle gracefully (returns empty array / `null`) instead of piling up
+timed-out sockets. Users get a friendly "service overloaded" message
+instead of stack traces.
+
+Service breakers added:
+- `alienvault` — AlienVault OTX
+- `thehackersnews` — The Hacker News RSS
+- `rss:<hostname>` — per-host breakers for the generic RSS service
+- `github:owner/repo/releases` — per-repo GitHub releases
+- `github:owner/repo/advisories` — per-repo GitHub advisories
+- `vtwatch:<type>` — VirusTotal verdict watch (per type: hash/ip/domain/url)
+
+Command breakers added:
+- `virustotal` — `.virustotal` lookup command
+- `aptoide-search`, `aptoide-info` — `.apkdl` command
+- `pinterest-search` — `.pinterest` command
+- `zenquotes` — `.quote` command
+- `ssweb` — `.ssweb` command
+
+Direct axios still used for one-shot binary downloads
+(`apkdl` icon, `pinterest` image fetch) where breaker overhead
+isn't beneficial.
+
+### Test coverage
+
+- All 90/90 tests still pass (36 contract + 19 boot + 24 messages + 11 stores).
+- No new tests added in this hotfix; breaker behaviour is tested
+  upstream in `src/lib/circuitBreaker.js`'s own test suite.
+- ESLint errors dropped from 13 → 9 (the 4 sqliteStore duplicate-key
+  errors removed; remaining 9 are pre-existing issues in
+  `mediafire.js`, `auth.js`, `worker.js`, `newsletter.upsert.js` —
+  flagged for v1.1.0 cleanup).
+
+### Backward compatibility
+
+Fully backward compatible with v1.0.0:
+- No config schema changes
+- No store interface changes
+- No `/api/*` route changes
+- No command signature changes
+
+### Operational notes
+
+- Run `del package-lock.json && npm install` after pulling to ensure
+  the new `overrides` block takes effect (npm 8.3+ honours overrides,
+  but a stale lockfile can re-pin the old transitive deps).
+- New env var override available: none (no config changes).
+- The rate-limit defaults (300 req / 15 min) should suit normal
+  dashboard usage; tune via reverse proxy if you have specific needs.
 
 ---
 

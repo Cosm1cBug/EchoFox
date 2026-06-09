@@ -21,7 +21,7 @@
  *   command uses).
  */
 
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../lib/network');
 const { config } = require('../lib/configLoader');
 const { getStore } = require('../store/instance');
 const logger = require('../core/logger').child({ mod: 'vtwatch-service' });
@@ -49,10 +49,12 @@ async function fetchStats(type, id) {
   const seg = PATH[type];
   if (!seg) return null;
   try {
-    const { data } = await axios.get(
-      `https://www.virustotal.com/api/v3/${seg}/${encodeURIComponent(vtId(type, id))}`,
-      { headers: { 'x-apikey': apiKey }, timeout: 15000 },
-    );
+    const { data } = await axiosWithBreaker(`vtwatch:${type}`, {
+      method:  'GET',
+      url:     `https://www.virustotal.com/api/v3/${seg}/${encodeURIComponent(vtId(type, id))}`,
+      headers: { 'x-apikey': apiKey },
+      timeout: 15000,
+    });
     const stats = data?.data?.attributes?.last_analysis_stats || {};
     return {
       malicious:  Number(stats.malicious  || 0),
@@ -61,9 +63,11 @@ async function fetchStats(type, id) {
       undetected: Number(stats.undetected || 0),
     };
   } catch (err) {
-    if (err.response?.status !== 404) {
-      logger.warn({ err: err.message, type, id }, 'fetchStats failed');
+    if (isOpenBreakerError(err)) {
+      logger.warn({ type, id }, 'vtwatch breaker open — skipping');
+      return null;
     }
+    logger.warn({ type, id, err: err.message }, 'vtwatch fetchVerdict failed');
     return null;
   }
 }

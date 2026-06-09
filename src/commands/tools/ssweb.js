@@ -12,7 +12,7 @@
  * (api.vreden.my.id, no key required). Falls back gracefully on errors.
  */
 
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 const URL_RE = /^https?:\/\/[^\s]+$/i;
 
@@ -34,10 +34,18 @@ module.exports = {
     let buf;
     try {
       const api = `https://api.vreden.my.id/api/ssweb?url=${encodeURIComponent(url)}&type=desktop`;
-      const res = await axios.get(api, { responseType: 'arraybuffer', timeout: 40_000 });
+      const res = await axiosWithBreaker('ssweb', {
+        method:       'GET',
+        url:          api,
+        responseType: 'arraybuffer',
+        timeout:      40_000,
+      });
       buf = Buffer.from(res.data);
       if (!buf.length) throw new Error('empty response');
     } catch (err) {
+      if (isOpenBreakerError(err)) {
+        throw new Error('⏱️ Screenshot service is currently overloaded. Try again in ~1 minute.');
+      }
       throw new Error(`Screenshot service failed: ${err.message}`);
     }
 

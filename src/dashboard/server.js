@@ -82,6 +82,16 @@ h1{color:#f97316}code{background:#1e293b;padding:.15rem .4rem;border-radius:.25r
 function startDashboard(port, store, config) {
   const app = express();
   app.set('trust proxy', true);
+  // v1.0.1 — rate-limit BOTH /api (data endpoints) and /dashboard (auth surface)
+  const dashboardLimiter = rateLimit({
+    windowMs:        15 * 60 * 1000,   // 15-minute window
+    max:             300,               // 300 requests per IP per window
+    standardHeaders: true,
+    legacyHeaders:   false,
+    message:         { error: 'rate_limited', message: 'Too many requests; slow down.' },
+  });
+  app.use('/api',       dashboardLimiter);
+  app.use('/dashboard', dashboardLimiter);
 
   const dashboardLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,

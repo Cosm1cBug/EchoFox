@@ -21,7 +21,7 @@
  *   config.network.* if you need to.
  */
 
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../lib/network');
 const xml2js = require('xml2js');
 const { config } = require('../lib/configLoader');
 const { getStore } = require('../store/instance');
@@ -43,30 +43,35 @@ function normaliseCategories(item) {
 }
 
 async function fetchFeed(url) {
-  try {
-    const { data } = await axios.get(url, {
-      timeout: 15000,
-      responseType: 'text',
-      headers: { 'User-Agent': 'EchoFox/0.4 (RSS subscription)' },
-    });
-    const result = await parser.parseStringPromise(data);
-    // RSS 2.0
-    let items = result?.rss?.channel?.item;
-    // Atom
-    if (!items) items = result?.feed?.entry;
-    if (!items) return [];
-    const arr = Array.isArray(items) ? items : [items];
-    return arr.slice(0, MAX_ARTICLES).map((item) => ({
-      title: item.title?._ || item.title || '(untitled)',
-      link:  typeof item.link === 'string' ? item.link
-           : (item.link?.$?.href || item.link?.[0]?.$?.href || item.guid?._ || item.guid || ''),
-      pubDate: item.pubDate || item.published || item.updated || null,
-      categories: normaliseCategories(item),
-    })).filter((a) => a.link);
-  } catch (err) {
-    logger.warn({ err: err.message, url }, 'fetchFeed failed');
-    return [];
-  }
+    try {
+        const { data } = await axiosWithBreaker(`rss:${new URL(url).hostname}`, {
+            method:       'GET',
+            url,
+            timeout:      15000,
+            responseType: 'text',
+            headers:      { 'User-Agent': 'EchoFox/1.0 (RSS subscription)' },
+        });
+        const result = await parser.parseStringPromise(data);
+        // RSS 2.0
+        let items = result?.rss?.channel?.item;
+        // Atom
+        if (!items) items = result?.feed?.entry;
+        if (!items) return [];
+        const arr = Array.isArray(items) ? items : [items];
+        return arr.slice(0, MAX_ARTICLES).map((item) => ({
+            title: item.title?._ || item.title || '(untitled)',
+            link:  typeof item.link === 'string' ? item.link : (item.link?.$?.href || item.link?.[0]?.$?.href || item.guid?._ || item.guid || ''),
+            pubDate: item.pubDate || item.published || item.updated || null,
+            categories: normaliseCategories(item),
+        })).filter((a) => a.link);
+        } catch (err) {
+            if (isOpenBreakerError(err)) {
+            logger.warn({ url }, 'rss breaker open — skipping this cycle');
+            return [];
+        }
+        logger.warn({ url, err: err.message }, 'rss fetch failed');
+        return [];
+    }
 }
 
 function matchesTopics(article, topics) {

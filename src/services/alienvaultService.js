@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../lib/network');
 const { config } = require('../lib/configLoader');
 const { getStore } = require('../store/instance');
 const logger = require('../core/logger').child({ mod: 'alienvault-service' });
@@ -21,13 +21,20 @@ async function fetchNewPulses(lastTs) {
       return [];
     }
 
-    const { data } = await axios.get(ALIENVAULT_API, {
+    const { data } = await axiosWithBreaker('alienvault', {
+      method:  'GET',
+      url:     ALIENVAULT_API,
       headers: { 'X-OTX-API-KEY': apiKey },
       params:  { modified_since: lastTs ? new Date(lastTs).toISOString() : undefined },
       timeout: 15000,
     });
+
     return data?.results || [];
   } catch (err) {
+    if (isOpenBreakerError(err)) {
+      logger.warn('alienvault breaker open — skipping this cycle');
+      return [];
+    }
     logger.error({ err: err.message }, 'fetchNewPulses failed');
     return [];
   }

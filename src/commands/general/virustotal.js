@@ -15,7 +15,7 @@
  *     so you can grep production for raw responses.
  */
 
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 const crypto = require('node:crypto');
 
 const RE_IPV4 = /^(?:\d{1,3}\.){3}\d{1,3}$/;
@@ -59,10 +59,12 @@ module.exports = {
 
     let data;
     try {
-      const r = await axios.get(url, {
+      const r = await axiosWithBreaker('virustotal', {
+        method:  'GET',
+        url,
         timeout: 12_000,
         headers: {
-          accept: 'application/json',
+          accept:     'application/json',
           'x-apikey': config.apis.virustotal.apiKey,
         },
         validateStatus: (s) => s < 500,
@@ -75,7 +77,10 @@ module.exports = {
       if (r.status >= 400) throw new Error(`HTTP ${r.status}`);
       data = r.data;
     } catch (err) {
-      throw new Error(`VirusTotal lookup failed: ${err.message}`);
+      if (isOpenBreakerError(err)) {
+        throw new Error('⏱️ VirusTotal is currently overloaded. Try again in ~1 minute.');
+      }
+      throw new Error(`VirusTotal request failed: ${err.message}`);
     }
 
     const a    = data?.data?.attributes || {};

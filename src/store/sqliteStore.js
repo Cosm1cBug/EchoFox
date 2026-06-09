@@ -260,61 +260,6 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       });
     },
 
-    getDeletedInGroup(jid, limit = 100) {
-      return new Promise((resolve) => {
-        setImmediate(() => {
-          try {
-            const result = stmts.deletedInGroup.all(jid, limit);
-            resolve(result);
-          } catch (e) {
-            logger.warn({ err: e }, 'deletedInGroup failed');
-            resolve([]);
-          }
-        });
-      });
-    },
-
-    getMessageEdits(jid, messageId) {
-      return new Promise((resolve) => {
-        setImmediate(() => {
-          try {
-            const result = stmts.editsByMsg.all(jid, messageId);
-            resolve(result);
-          } catch (e) {
-            logger.warn({ err: e }, 'editsByMsg failed');
-            resolve([]);
-          }
-        });
-      });
-    },
-
-    getMessageReactions(jid, messageId) {
-      return new Promise((resolve) => {
-        setImmediate(() => {
-          try {
-            const result = stmts.reactionsByMsg.all(jid, messageId);
-            resolve(result);
-          } catch (e) {
-            logger.warn({ err: e }, 'reactionsByMsg failed');
-            resolve([]);
-          }
-        });
-      });
-    },
-
-    getMessageReceipts(jid, messageId) {
-      return new Promise((resolve) => {
-        setImmediate(() => {
-          try {
-            const result = stmts.receiptsByMsg.all(jid, messageId);
-            resolve(result);
-          } catch (e) {
-            logger.warn({ err: e }, 'receiptsByMsg failed');
-            resolve([]);
-          }
-        });
-      });
-    },
     recordStat(key, inc = 1) {
       try { stmts.statUpsert.run(key, inc); }
       catch (e) { logger.warn({ err: e, key }, 'recordStat failed'); }

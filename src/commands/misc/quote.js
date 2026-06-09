@@ -15,7 +15,7 @@
  *   language detector with a hardcoded API key — leak risk + wrong name.
  */
 
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 module.exports = {
   name: 'quote',
@@ -26,11 +26,18 @@ module.exports = {
 
   async start(sock, m, { ctx }) {
     try {
-      const { data } = await axios.get('https://zenquotes.io/api/random', { timeout: 8000 });
+      const { data } = await axiosWithBreaker('zenquotes', {
+        method:  'GET',
+        url:     'https://zenquotes.io/api/random',
+        timeout: 8000,
+      });
       const q = Array.isArray(data) ? data[0] : data;
       if (!q?.q || !q?.a) throw new Error('upstream returned no quote');
       await ctx.reply(`💬 _"${q.q}"_\n\n— *${q.a}*`);
     } catch (err) {
+      if (isOpenBreakerError(err)) {
+        throw new Error('⏱️ Quote service is currently overloaded. Try again in ~1 minute.');
+      }
       throw new Error(`Could not fetch quote: ${err.message}`);
     }
   },

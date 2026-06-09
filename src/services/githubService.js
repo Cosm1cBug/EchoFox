@@ -21,7 +21,7 @@
  *     - advisory:  https://github.com/{owner}/{repo}/security/advisories/{ghsa_id}
  */
 
-const axios = require('axios');
+const { axiosWithBreaker, isOpenBreakerError } = require('../lib/network');
 const { config } = require('../lib/configLoader');
 const { getStore } = require('../store/instance');
 const logger = require('../core/logger').child({ mod: 'github-service' });
@@ -43,10 +43,13 @@ function ghHeaders() {
 
 async function fetchReleases(owner, repo) {
   try {
-    const { data } = await axios.get(
-      `${BASE}/repos/${owner}/${repo}/releases`,
-      { headers: ghHeaders(), params: { per_page: 10 }, timeout: 15000 },
-    );
+    const { data } = await axiosWithBreaker(`github:${owner}/${repo}/releases`, {
+      method:  'GET',
+      url:     `${BASE}/repos/${owner}/${repo}/releases`,
+      headers: ghHeaders(),
+      params:  { per_page: 10 },
+      timeout: 15000,
+    });
     return (data || []).map((r) => ({
       tag:     r.tag_name,
       name:    r.name || r.tag_name,
@@ -56,17 +59,24 @@ async function fetchReleases(owner, repo) {
       prerelease:   !!r.prerelease,
     }));
   } catch (err) {
-    logger.warn({ err: err.message, owner, repo }, 'fetchReleases failed');
+    if (isOpenBreakerError(err)) {
+      logger.warn({ owner, repo }, 'github breaker open — skipping releases');
+      return [];
+    }
+    logger.warn({ owner, repo, err: err.message }, 'github fetchReleases failed');
     return [];
-  }
+}
 }
 
 async function fetchAdvisories(owner, repo) {
   try {
-    const { data } = await axios.get(
-      `${BASE}/repos/${owner}/${repo}/security-advisories`,
-      { headers: ghHeaders(), params: { per_page: 10 }, timeout: 15000 },
-    );
+    const { data } = await axiosWithBreaker(`github:${owner}/${repo}/advisories`, {
+      method:  'GET',
+      url:     `${BASE}/repos/${owner}/${repo}/security-advisories`,
+      headers: ghHeaders(),
+      params:  { per_page: 10 },
+      timeout: 15000,
+    });
     return (data || []).map((a) => ({
       ghsa_id:  a.ghsa_id,
       cve_id:   a.cve_id,
@@ -76,10 +86,11 @@ async function fetchAdvisories(owner, repo) {
       published_at: a.published_at,
     }));
   } catch (err) {
-    // 404 here usually means "no advisories" or "private repo" — not worth warn
-    if (err.response?.status !== 404) {
-      logger.warn({ err: err.message, owner, repo }, 'fetchAdvisories failed');
+    if (isOpenBreakerError(err)) {
+      logger.warn({ owner, repo }, 'github breaker open — skipping advisories');
+      return [];
     }
+    logger.warn({ owner, repo, err: err.message }, 'github fetchAdvisories failed');
     return [];
   }
 }

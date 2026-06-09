@@ -19,7 +19,7 @@
  */
 
 const axios = require('axios');
-
+const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 const APTOIDE_URL = 'https://ws75.aptoide.com/api/7/apps/search';
 const APP_INFO    = 'https://ws75.aptoide.com/api/7/app/get';
 
@@ -39,13 +39,18 @@ module.exports = {
 
     let hits;
     try {
-      const r = await axios.get(APTOIDE_URL, {
-        params: { query: q, limit: 5 },
+      const r = await axiosWithBreaker('aptoide-search', {
+        method:  'GET',
+        url:     APTOIDE_URL,
+        params:  { query: q, limit: 5 },
         timeout: 10_000,
-        headers: { 'User-Agent': 'EchoFox/0.4' },
+        headers: { 'User-Agent': 'EchoFox/1.0' },
       });
       hits = r.data?.datasets?.search?.data?.list || [];
     } catch (err) {
+      if (isOpenBreakerError(err)) {
+        throw new Error('⏱️ Aptoide is currently overloaded. Try again in ~1 minute.');
+      }
       throw new Error(`Aptoide search failed: ${err.message}`);
     }
 
@@ -58,8 +63,10 @@ module.exports = {
     const top = hits[0];
     let details = top;
     try {
-      const r = await axios.get(APP_INFO, {
-        params: { app_id: top.id },
+      const r = await axiosWithBreaker('aptoide-info', {
+        method:  'GET',
+        url:     APP_INFO,
+        params:  { app_id: top.id },
         timeout: 10_000,
       });
       details = r.data?.nodes?.meta?.data || top;

@@ -29,10 +29,19 @@ export default defineConfig({
         ]
       },
       {
+        text: 'Features',
+        collapsed: false,
+        items: [
+          { text: 'Subscriptions', link: '/guide/subscriptions' },
+          { text: 'Dashboard',     link: '/guide/dashboard' },
+          { text: 'Soak Testing',  link: '/guide/soak-testing' }
+        ]
+      },
+      {
         text: 'Configuration',
         collapsed: false,
         items: [
-          { text: 'Overview', link: '/config' },
+          { text: 'Overview',     link: '/config' },
           { text: 'Bot Settings', link: '/config/bot' },
           { text: 'Store & Auth', link: '/config/store-auth' }
         ]
@@ -41,18 +50,19 @@ export default defineConfig({
         text: 'Architecture',
         collapsed: true,
         items: [
-          { text: 'Overview', link: '/architecture' },
+          { text: 'Overview',     link: '/architecture' },
           { text: 'CI/CD Pipeline', link: '/ci-cd' }
         ]
       },
       {
-        text: 'Commands',
+        text: 'Reference',
         collapsed: true,
         items: [
-          { text: 'Command System', link: '/commands' }
+          { text: 'Command Catalogue', link: '/commands' },
+          { text: 'Changelog',         link: '/changelog' }
         ]
       }
-    ],
+    ]
 
     socialLinks: [
       { icon: 'github', link: 'https://github.com/Cosm1cBug/EchoFox' }

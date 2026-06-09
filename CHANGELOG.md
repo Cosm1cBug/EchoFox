@@ -14,6 +14,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.0] — 2026-06-09
+
+> **First stable release.** Drops the `-beta` suffix after the v0.4.x
+> production-hardening cycle. SemVer commitments are now in effect —
+> all public APIs in this release are considered stable.
+
+### Public API surface (now stable under SemVer)
+
+- **Store interface** (`src/store/db.js` contract) — `getSubscribers`,
+  `addSubscriber`, `removeSubscriber`, `isSubscriber`,
+  `getSubscriberMeta`, `updateSubscriberMeta`,
+  `updateSubscriberTimestamp`, `hasSentItem`, `recordSentItem`
+  (+ legacy aliases `hasSentArticle`/`recordSentArticle`).
+  Implemented by all 4 backends with identical semantics.
+- **Network helpers** — `network.axiosWithBreaker(name, axiosCfg, breakerOpts?)`
+  and `network.isOpenBreakerError(err)`.
+- **Config loader** — `__testOverride(obj)`, `__resetForTests()`,
+  `__getCurrent()` are test-only and clearly marked.
+- **Subscription command shape** — every subscription command supports
+  `on|add` / `off|remove` / `-status`|`status`|`list` / `help`.
+- **Event router contract** — `worker.emit('event.name', payload)` is the
+  only way events reach handlers; payload shape is per-event-handler.
+- **Dashboard `/api/*` routes** — every route returns JSON; auth via
+  HTTP Basic; errors return `{ error, message }`.
+
+Breaking changes after v1.0.0 will require a v2.0.0 release.
+
+### Added — v1.0.0 (M6 + final polish)
+
+- **Soak-test toolkit** in `scripts/`:
+  - `heap-snapshot.js` — one-shot v8 heap snapshot to disk
+  - `heap-diff.js` — class-level retention growth between two snapshots
+  - `soak.js` — synthetic load harness (configurable duration / rate / snapshot cadence)
+- **Runtime leak detector** in `src/lib/leakDetector.js` — rolling 24h
+  heap-sample window, alerts on monotonic growth above a configurable
+  threshold (default 30%). Wired into worker boot. Configured via
+  `config.runtime.leakDetection.{enabled,sampleIntervalMs,windowSize,growthThresholdPercent}`.
+- **Dashboard polish** — new `HealthPill` component (live health-dot,
+  version display, alert count) and `SoakStatus` tile (heap trend +
+  leak-suspected indicator). Header restyled.
+- **VitePress docs expansion**:
+  - new pages: Subscriptions guide, Dashboard guide, Soak Testing guide,
+    Bot Settings reference, Store & Auth reference, Changelog
+  - sidebar reorganised: Getting Started, Features, Configuration,
+    Architecture, Reference
+
+### Fixed — v1.0.0
+
+- **Event router newsletter handler** was registered on `bus.on('newsletter.update')`
+  but `worker.js` emits `'newsletters.update'` (Baileys 7.x canonical
+  name). Phase 5's commit message claimed this fix but the actual edit
+  was dropped — the symmetry test caught it during Phase 7 validation.
+  Now correctly registered on the plural key.
+
+### Highlights from the v0.4.x cycle (rolled up)
+
+- v0.4.6: `axiosWithBreaker` wired into 5 commands; batched message
+  writes for Postgres + Mongo; migration auto-run for all 4 backends;
+  `configLoader.__testOverride`; Func.js slimmed; sqliteStore migration-runner
+  bugfix; v0.4.6 launch.
+- v0.4.7 (this beta cycle):
+  - Phase 1: boot fix + groups.update dedupe + newsletters event wiring
+  - Phase 2: React dashboard buildable + integrated (was: project couldn't even build)
+  - Phase 3: subscription UX (status verb, topic filter, admin dashboard view)
+  - Phase 4: event-routing cleanup — 26↔26 symmetry, no dead handlers, no silent drops
+  - Phase 5: test coverage uplift — 54 → 76 tests (+22)
+  - Phase 6: 3 new subscription sources (RSS, GitHub, VirusTotal-watch);
+            table rename `thehackersnews_sent_articles` → `service_sent_items`
+            via migration 002, with backward-compat method aliases
+
+### Test coverage
+
+- **All 76 tests pass** across 4 suites: contract (33), boot (16),
+  messages (16), stores (11).
+- Event-router symmetry tests guard against future regressions of the
+  emit/handler mismatch class.
+
+### Backward compatibility
+
+- Old store methods `hasSentArticle` / `recordSentArticle` remain as
+  aliases to the new `hasSentItem` / `recordSentItem` on all 4 backends.
+- Old static dashboard at `/` redirects to `/dashboard/` (no broken bookmarks).
+- Existing subscribers without `meta` are read as `meta: null`.
+
+### Operational notes
+
+- Migrations run automatically on boot by default. To run manually:
+  `npm run migrate`.
+- Dashboard rebuilds automatically on boot if `src/dashboard/react/`
+  is missing.
+- Leak detector is enabled by default — no action needed.
+
+---
+
 ## [0.4.1-beta] — 2026-05-29
 
 > **Reconciliation release.** Fixes 2 boot-time crashes, re-installs the M1

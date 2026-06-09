@@ -211,6 +211,13 @@ const schema = z.object({
       dir:        z.string().default('./logs'),
       prefix:     z.string().default('echofox'),
     }).default({}),
+        // v1.0.0 — leak detector (rolling-window heap growth analysis)
+    leakDetection: z.object({
+      enabled:                z.boolean().default(true),
+      sampleIntervalMs:       z.coerce.number().int().min(60_000).max(3_600_000).default(600_000),
+      windowSize:             z.coerce.number().int().min(4).max(1440).default(144),
+      growthThresholdPercent: z.coerce.number().min(5).max(500).default(30),
+    }).default({}),
   }).default({}),
 
   store: z.object({

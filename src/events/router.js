@@ -55,7 +55,7 @@ bus.on('messages.delete',           (p) => Promise.resolve(onMessagesDelete(p)).
 bus.on('messages.reaction',         (p) => Promise.resolve(onMessageReaction(p)).catch(() => {}));
 bus.on('message-receipt.update',    (p) => Promise.resolve(onMessageReceipt(p)).catch(() => {}));
 bus.on('newsletter.upsert',         (p) => Promise.resolve(onNewsletterUpsert(p)).catch(() => {}));
-bus.on('newsletter.update',         (p) => Promise.resolve(onNewsletterUpdate(p)).catch(() => {}));
+bus.on('newsletters.update',        (p) => Promise.resolve(onNewsletterUpdate(p)).catch(() => {}));
 bus.on('newsletter.reaction',       (p) => Promise.resolve(onNewsletterReaction(p)).catch(() => {}));
 bus.on('newsletter.view',           (p) => Promise.resolve(onNewsletterView(p)).catch(() => {}));
 bus.on('newsletter-settings.update',(p) => Promise.resolve(onNewsletterSettingsUpdate(p)).catch(() => {}));

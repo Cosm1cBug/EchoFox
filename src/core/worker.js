@@ -40,6 +40,7 @@ const { wrapSocketSend } = require('../middleware/sendQueue');
 const { wrapWithPresence } = require('../middleware/presence');
 const { getWsAgent, applyExtraCAsToProcess } = require('../lib/network');
 const { startMemoryGuard } = require('../lib/memoryGuard');
+const leakDetector       = require('../lib/leakDetector');
 const alertEngine          = require('../services/alertEngine');
 const diagnostics          = require('../lib/diagnostics');
 const { checkAndDeliver: checkTheHackerNews } = require('../services/thehackersnewsService');
@@ -150,6 +151,7 @@ async function start(retry = 0) {
       failureRateThreshold: config.alerts.failureRateThreshold,
     });
     startMemoryGuard({ config });
+    leakDetector.start();
   }
   
   if (!commands) {
@@ -320,8 +322,8 @@ async function start(retry = 0) {
   sock.ev.on('messages.delete',        (payload) => eventRouter.emit('messages.delete',        { sock, store, payload }));
   sock.ev.on('messages.reaction',      (payload) => eventRouter.emit('messages.reaction',      { sock, store, payload }));
   sock.ev.on('message-receipt.update', (payload) => eventRouter.emit('message-receipt.update', { sock, store, payload }));
-  sock.ev.on('newsletter.upsert', (newsletter) => eventRouter.emit('newsletter.upsert', { sock, newsletter }));
-  sock.ev.on('newsletters.update', (updates) => eventRouter.emit('newsletters.update', { sock, updates }));
+  sock.ev.on('newsletter.upsert',        (u) => eventRouter.emit('newsletter.upsert', { sock, u }));
+  sock.ev.on('newsletters.update',       (u) => eventRouter.emit('newsletters.update', { sock, u }));
   sock.ev.on('blocklist.set',            (u) => eventRouter.emit('blocklist.set',            { sock, u }));
   sock.ev.on('blocklist.update',         (u) => eventRouter.emit('blocklist.update',         { sock, u }));
   sock.ev.on('chats.upsert',             (u) => eventRouter.emit('chats.upsert',             { sock, store, u }));

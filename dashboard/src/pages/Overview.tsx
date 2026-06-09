@@ -9,6 +9,7 @@ import { getStats } from "../lib/api";
 import { TopCommandsChart } from "../components/Chart/TopCommandsChart";
 import { MessageTrendChart } from "../components/Chart/MessageTrendChart";
 import { RecentActivity } from "../components/RecentActivity";
+import { SoakStatus } from "../components/SoakStatus";
 import { Loading, ErrorMessage } from "../components/LoadingError";
 
 export function Overview() {
@@ -68,6 +69,7 @@ export function Overview() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <SoakStatus />
         <TopCommandsChart data={topCommands} />
         <MessageTrendChart data={messageTrend} />
       </div>

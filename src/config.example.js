@@ -6,7 +6,7 @@
 'use strict';
 
 /**
- * EchoFox configuration template.
+ * EchoFox configuration template (v1.0.0).
  *
  *   1. Copy this file:   cp src/config.example.js src/config.js
  *   2. Edit src/config.js with your values (it's gitignored — safe).
@@ -17,10 +17,11 @@
  *             ECHOFOX_STOREDB_TYPE=POSTGRES
  *             ECHOFOX_DASHBOARD_ENABLED=true
  *
- * Sections marked `enabled: false` are scaffolded — the schema and
- * runtime wiring is partially in place; flip to `true` and supply the
- * fields once you're ready. See README.md "Configuration reference"
- * for the full per-field documentation.
+ * Every field below is consumed by at least one runtime path.
+ * Optional/future sections (i18n, webhooks, ai, telegram, schedules,
+ * groupSettings, store, metrics) are still defined in configSchema.js
+ * with sensible defaults — add them to your config.js only if/when
+ * the corresponding feature ships.
  */
 module.exports = {
 
@@ -66,7 +67,7 @@ module.exports = {
   },
 
   dashboard: {
-    enabled:  false,
+    enabled:  false,                      // basic-auth React dashboard at /dashboard/
     port:     3001,
     username: 'admin',
     password: 'change-me-please',
@@ -81,7 +82,7 @@ module.exports = {
       maxBatch:      100,
       maxWaitMs:     250,
       maxBufferSize: 5000,
-  },
+    },
   },
 
   // ═══ Anti-ban (human-like presence + ban-mitigation) ══════════════════
@@ -95,8 +96,6 @@ module.exports = {
     warmupMode:        false,
     warmupDays:        14,
     warmupMultiplier:  3,
-    maxGroupsPerDay:   0,
-    maxNewContactsPerHour: 0,
   },
 
   admins: [
@@ -114,24 +113,10 @@ module.exports = {
   },
 
   apis: {
-    omdb:       { apiKey: '', url: 'https://www.omdbapi.com/' },
-    virustotal: { apiKey: '' },
-    alienvault: { apiKey: '' },
-    thehackersnews: { 
-      checkIntervalMin: 60 
-    },
-    github: {
-      token: '',                      // optional GitHub PAT — raises rate limit 60→5000/h
-      checkIntervalMin: 60,
-    },
-    rss: {
-      checkIntervalMin: 30,
-      maxFeedsPerSubscriber: 20,      // cap to prevent abuse
-      maxArticlesPerFeed: 5,          // articles delivered per cycle per feed
-    },
-    vtwatch: {
-      checkIntervalMin: 360,          // 6h default — VirusTotal free tier is ~4 req/min
-    },
+    omdb:           { apiKey: '', url: 'https://www.omdbapi.com/' },
+    virustotal:     { apiKey: '' },
+    alienvault:     { apiKey: '' },
+    thehackersnews: { checkIntervalMin: 60 },
   },
 
   sticker: {
@@ -139,13 +124,12 @@ module.exports = {
     packAuthor: 'COSM1CBUG',
   },
 
+  // ═══ Runtime ═══════════════════════════════════════════════════════════
+
   runtime: {
-    logLevel:    'info',                  // trace|debug|info|warn|error|fatal
-    port:        3000,                    // /healthz + /metrics
-    healthPath:  '/healthz',
-    metricsPath: '/metrics',
+    logLevel:        'info',              // trace|debug|info|warn|error|fatal
     maxHeapPercent:  90,                  // restart worker above this heap %
-    autoRestart:     true,                // false = only alert, no exit
+    autoRestart:     false,                // false = only alert, no exit
     checkIntervalMs: 30000,
     gracePeriodMs:   5000,                // delay before restart (drains in-flight)
     logFile: {
@@ -153,15 +137,17 @@ module.exports = {
       dir:     './logs',
       prefix:  'echofox',                 // → ./logs/echofox-YYYY-MM-DD.log
     },
+
+    // v1.0.0 — leak detector. Set enabled:false to disable.
+    leakDetection: {
+      enabled: true,
+      sampleIntervalMs: 600000,           // 10 minutes
+      windowSize: 144,                    // 24h at 10min/sample
+      growthThresholdPercent: 30,         // trigger if last-half MIN exceeds first-half MAX by N%
+    },
   },
 
-  store: {
-    instanceId: 'EchoFox',
-    storePath:  './src/store/',
-    runtimeDir: './src/store/runtime/',
-  },
-
-  // ═══ Production sections (v0.4.4) ═════════════════════════════════════
+  // ═══ Networking ════════════════════════════════════════════════════════
 
   network: {
     httpProxy:    '',
@@ -170,8 +156,10 @@ module.exports = {
     noProxy:      [],
     fetchTimeoutMs:  30000,
     extraCaCertPath: '',
-    userAgent: 'EchoFox/0.4 (+https://github.com/Cosm1cBug/EchoFox)',
+    userAgent: 'EchoFox/1.0 (+https://github.com/Cosm1cBug/EchoFox)',
   },
+
+  // ═══ Operations ════════════════════════════════════════════════════════
 
   backup: {
     enabled:     false,
@@ -182,39 +170,6 @@ module.exports = {
     encryptionPassphrase: '',
   },
 
-  metrics: {
-    enabled:           true,
-    prometheusEnabled: false,
-    prometheusPort:    9100,
-    retentionDays:     90,
-  },
-
-  webhooks: {
-    enabled: false,
-    endpoints: [
-      // { url: 'https://hooks.example.com/echofox',
-      //   events: ['command.success', 'participant.kick'],
-      //   secret: 'shared-hmac', headers: {} },
-    ],
-    retries:   3,
-    timeoutMs: 5000,
-  },
-
-  i18n: {
-    defaultLocale:    'en',
-    enabledLocales:   ['en'],
-    perGroupLocale:   {},
-    fallbackToDefault: true,
-  },
-
-  groupSettings: {
-    // '120111@g.us': { public: false, prefix: '!', disabledCommands: ['eval'] },
-  },
-
-  schedules: [
-    // { name: 'daily-stats', cron: '0 9 * * *', command: 'stats', target: '', enabled: true },
-  ],
-
   privacy: {
     storeMessageBodies:       true,
     messageBodyRetentionDays: 0,
@@ -224,39 +179,12 @@ module.exports = {
     minimiseLogs:             false,
   },
 
-  ai: {
-    enabled:         false,
-    defaultProvider: 'openai',
-    model:           'gpt-4o-mini',
-    maxTokens:       500,
-    costCapPerDayUsd: 5,
-    providers: {
-      openai:    { apiKey: '', baseUrl: '' },
-      gemini:    { apiKey: '', baseUrl: '' },
-      anthropic: { apiKey: '', baseUrl: '' },
-      local:     { baseUrl: 'http://localhost:11434' },
-    },
-  },
-
-  // ─── A5 — per-command failure-rate alerts ─────────────────────────────
+  // ─── per-command failure-rate alerts ──────────────────────────────────
   alerts: {
     enabled:              true,
     windowMinutes:        60,             // rolling window
     minInvocations:       10,             // need at least N runs to alert
     failureRateThreshold: 0.30,           // alert if ≥30% fail in window
     notifyChannel:        '',             // empty = use channels.errLogs
-  },
-
-  // ─── #11 Telegram bridge ──────────────────────────────────────────────
-  telegram: {
-    enabled:      false,
-    botToken:     '',
-    botUsername:  '',
-    userId:       '',
-    apiId:        '',
-    apiHash:      '',
-    channelId:    '',
-    groupId:      '',
-    bridgedChats: {},
   },
 };

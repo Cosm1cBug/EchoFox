@@ -6,6 +6,7 @@
 'use strict';
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const path    = require('node:path');
 const fs      = require('node:fs');
 const { spawnSync } = require('node:child_process');
@@ -82,6 +83,13 @@ function startDashboard(port, store, config) {
   const app = express();
   app.set('trust proxy', true);
 
+  const dashboardLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
   if (config.dashboard.username) {
     app.use(basicAuth(config.dashboard.username, config.dashboard.password));
   } else {
@@ -89,6 +97,7 @@ function startDashboard(port, store, config) {
   }
 
   app.use(express.json({ limit: '64kb' }));
+  app.use('/dashboard', dashboardLimiter);
 
   // Build-on-boot guard (one-shot). If it fails we still mount API routes
   // and serve a maintenance page for / and /dashboard.

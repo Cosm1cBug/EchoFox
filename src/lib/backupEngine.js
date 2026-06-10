@@ -197,6 +197,7 @@ function startBackupEngine(config) {
   }
 
   let cron;
+  // node-cron v4 — schedule() + validate()
   try { cron = require('node-cron'); }
   catch (e) {
     logger.warn('node-cron not installed — running one-time backup at boot only');

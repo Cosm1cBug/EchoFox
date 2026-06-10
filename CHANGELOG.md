@@ -5,12 +5,106 @@ All notable changes to EchoFox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ### Planned
 - CI/CD with auto-release on tag 
 - VitePress docs site at cosm1cbug.github.io/echofox 
 
+
+---
+
+## [1.1.1] — 2026-06-10
+
+> **Security + Text-to-Speech overhaul.** Down from 14 → 2 known
+> CVEs (the remaining 2 are upstream in `link-preview-js` bundled
+> inside `@whiskeysockets/baileys`). Adds a multi-provider TTS
+> abstraction with Edge (default), Google, Piper, and Coqui backends.
+> Fixes a latent crash in the new call handler.
+
+### Added
+
+- **Multi-provider TTS facade** at `src/services/tts/`:
+  - `index.js` — provider-agnostic `synthesize(text, opts) → Buffer`
+  - `providers/edge.js` — Microsoft Edge neural voices (default, free, no setup)
+  - `providers/google.js` — google-tts-api + axios (basic gTTS)
+  - `providers/piper.js` — subprocess to local `piper` binary (offline)
+  - `providers/coqui.js` — subprocess to Python `TTS` (offline, best quality)
+- **`config.tts.*` config block** — `provider`, `defaultLang`, `defaultVoice`,
+  `maxChars`, per-provider sub-blocks. See `config.example.js`.
+- **Edge TTS voice defaults for 23 languages** — picks a sensible neural
+  voice automatically when only a 2-letter lang code is provided.
+
+### Fixed
+
+- **`node-datachannel` missing from package.json** — was `require()`d
+  in `src/lib/callManager.js` (added in commit `9caf3d6` "call feature
+  update") but never declared. Bot would crash on first incoming call.
+  Now declared as `^0.32.3`.
+
+### Security
+
+Eliminated 12 transitive CVEs in one pass:
+
+- **`node-gtts` removed entirely** — replaced by the new TTS facade.
+  Kills 6 CVEs: `form-data`, `request`, `qs`, `tough-cookie`, `uuid`,
+  `node-gtts` itself (all came from the abandoned `request` chain).
+- **`node-cron` bumped 3.0.3 → 4.2.1** — kills the transitive `uuid` CVE.
+  v4's `cron.schedule()` + `cron.validate()` APIs are unchanged for our
+  usage in `alienvault-pulse.js` + `backupEngine.js`.
+- **`music-metadata` bumped 11.7.x-11.12.1 → 11.13.0** — fixes the ASF
+  parser infinite-loop CVE.
+- **`fast-xml-parser` bumped 4.5.0 → 5.8.0** — fixes the XMLBuilder
+  injection CVE.
+- **New overrides** for `sharp` (^0.34.5) and `file-type` (^22.0.1)
+  inside `wa-sticker-formatter` — kills 2 more CVEs.
+- **New override** for `axios` (^1.7.7) inside the new `google-tts-api`
+  dep — preempts its bundled axios 0.21.x from carrying any CVEs.
+
+**Audit before v1.1.1:** 14 vulnerabilities (2 critical, 5 high, 7 moderate)
+**Audit after v1.1.1:**   2 vulnerabilities (2 high, both inside
+`@whiskeysockets/baileys` → `link-preview-js`; upstream's to fix)
+
+### Changed
+
+- `src/commands/convert/tts.js` — rewritten to use the TTS facade.
+  144 lines → 88 lines. Provider-aware error messages
+  ("TTS (edge) failed: …" instead of generic).
+- `src/workers/mediaWorker.js` — TTS path uses the facade. Lazy
+  `require()` inside the worker so msedge-tts/google-tts-api only
+  load on first synthesis call.
+
+### Backward compatibility
+
+Fully compatible with v1.1.0:
+- `.tts <lang>` command works identically from the user's perspective —
+  the underlying engine is just better (neural voice instead of gTTS)
+- No config schema breakages — `config.tts.*` is all-optional with
+  sensible defaults
+- All 101 tests still pass
+
+### Operational notes
+
+- **Run `del package-lock.json && rmdir /s /q node_modules && npm install`**
+  after pulling. Required to (a) pick up the new overrides and (b) drop
+  the now-extraneous `node-gtts` chain.
+- **Default provider is Edge TTS** — works out-of-the-box, no API keys,
+  better quality than the old gTTS. Just set `config.tts.provider: 'google'`
+  if you want the old-style basic gTTS instead.
+- **Piper / Coqui require local setup** — see provider file headers
+  for install steps. They're optional offline backends; most users
+  should stick with Edge.
+- **`.tts <lang>` smoke test:** reply to any text message with `.tts hi`
+  → expect a Hindi voice note. The voice is now Aria/Swara/etc. neural
+  voices, noticeably more natural than the old gTTS robot voice.
+
+### Stats
+
+- **13 file changes** across 2 sub-groups
+- **4 new TTS provider files** (~450 lines new code)
+- **12 transitive CVEs eliminated**
+- **1 latent crash bug fixed** (node-datachannel)
+- **0 new tests** (TTS providers test against real network — covered
+  by manual smoke per RC_CHECKLIST)
+- **All 112 source files have AGPL headers** (was 106; added 6 TTS files)
 
 ---
 

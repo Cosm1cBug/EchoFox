@@ -96,7 +96,6 @@ function opToimg({ buf }) {
 // op: tts  (multi-chunk synth + ffmpeg merge)
 // ──────────────────────────────────────────────────────────────────────
 async function opTts({ chunks, lang, format }) {
-  const gtts   = require('node-gtts');
   const ffmpeg = require('fluent-ffmpeg');
   const tmpDir = path.join(os.tmpdir(), 'echofox-tts-w');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
@@ -106,12 +105,10 @@ async function opTts({ chunks, lang, format }) {
 
   const synth = (text, lang, out) => new Promise((resolve, reject) => {
     try {
-      const stream = gtts(lang).stream(text);
-      const file = fs.createWriteStream(out);
-      stream.pipe(file);
-      file.on('finish', () => resolve(out));
-      file.on('error', reject);
-      stream.on('error', reject);
+      const tts = require('../services/tts');
+      tts.synthesize(text, { lang })
+        .then((buf) => { fs.writeFileSync(out, buf); resolve(out); })
+        .catch(reject);
     } catch (e) { reject(e); }
   });
   const merge = (inputs, out) => new Promise((resolve, reject) => {

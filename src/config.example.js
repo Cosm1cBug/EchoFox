@@ -187,4 +187,22 @@ module.exports = {
     failureRateThreshold: 0.30,           // alert if ≥30% fail in window
     notifyChannel:        '',             // empty = use channels.errLogs
   },
+
+  // ─── Text-to-Speech provider ──────────────────────────────
+  tts: {
+    provider:     'edge',                       // 'edge' | 'google' | 'piper' | 'coqui'
+    defaultLang:  'en',
+    defaultVoice: 'en-US-AriaNeural',           // see Edge voice list
+    maxChars:     8000,
+
+    edge: {
+      outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
+    },
+
+    google: {},  // no config required
+
+    // Optional offline providers — require local binaries + models:
+    // piper: { binPath: 'piper', modelPath: '~/.local/share/piper/en_US-amy-medium.onnx' },
+    // coqui: { pythonBin: 'python3', model: 'tts_models/en/ljspeech/tacotron2-DDC' },
+  },
 };

@@ -11,20 +11,19 @@
  * Reply to a text message with `.tts` to get a voice audio reply.
  * Optional ISO 639-1 code (`.tts fr`) translates the text first.
  *
- * Re-audited from M3 against the new ctx-only contract.
+ * v1.1.1: Uses the multi-provider TTS facade (src/services/tts/).
+ * Default provider is Edge TTS (msedge-tts) — high-quality neural
+ * voices, free, no setup. Switch via config.tts.provider.
  */
 
 const fs   = require('node:fs');
 const path = require('node:path');
 const os   = require('node:os');
-const gtts = require('node-gtts');
 const translate = require('google-translate-api-x');
-const ffmpeg = require('fluent-ffmpeg');
+const tts = require('../../services/tts');
+const { config } = require('../../lib/configLoader');
 
 const DEFAULT_LANG = 'en';
-const TEMP_TTL_MS  = 24 * 60 * 60 * 1000;
-const MAX_CHARS    = 4000;
-
 const SUPPORTED_LANGS = new Set([
   'af','ar','bn','bs','ca','cs','cy','da','de','el','en','eo','es','et','fi','fr',
   'gu','hi','hr','hu','hy','id','is','it','ja','jw','km','kn','ko','la','lv','mk',
@@ -32,51 +31,13 @@ const SUPPORTED_LANGS = new Set([
   'sw','ta','te','th','tl','tr','uk','ur','vi','zh','zh-cn','zh-tw',
 ]);
 
-function chunkText(text) {
-  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
-  const chunks = [];
-  let buf = '';
-  for (const s of sentences) {
-    if ((buf + s).length > MAX_CHARS) {
-      if (buf) chunks.push(buf.trim());
-      buf = s;
-    } else { buf += s; }
-  }
-  if (buf.trim()) chunks.push(buf.trim());
-  return chunks;
-}
-
-function synthesizeChunk(text, lang, outPath) {
-  return new Promise((resolve, reject) => {
-    try {
-      const stream = gtts(lang).stream(text);
-      const file = fs.createWriteStream(outPath);
-      stream.pipe(file);
-      file.on('finish', () => resolve(outPath));
-      file.on('error',  reject);
-      stream.on('error', reject);
-    } catch (e) { reject(e); }
-  });
-}
-
-function mergeMp3s(inputs, output) {
-  return new Promise((resolve, reject) => {
-    const cmd = ffmpeg();
-    inputs.forEach((f) => cmd.input(f));
-    cmd
-      .on('end',  () => resolve(output))
-      .on('error', reject)
-      .mergeToFile(output, path.dirname(output));
-  });
-}
-
 module.exports = {
   name: 'tts',
   alias: ['text2speech', 'speak'],
   desc: 'Convert quoted text to speech. Optional 2-letter language code translates first.',
   category: 'convert',
   cooldown: 5,
-  timeout: 90,
+  timeout: 120,
 
   async start(sock, m, { ctx, args }) {
     const text = (ctx.quoted?.text || '').trim();
@@ -84,10 +45,9 @@ module.exports = {
       return ctx.reply('↩️ Reply to a *text* message with `.tts` to get an audio reply.');
     }
 
-    // v0.4.5: cap text length (gTTS API limits + memory protection)
-    const MAX_CHARS_HARD = 8000;
-    if (text.length > MAX_CHARS_HARD) {
-      return ctx.reply(`🚫 Text too long (${text.length} chars). Max is ${MAX_CHARS_HARD}.`);
+    const maxChars = config.tts?.maxChars ?? 8000;
+    if (text.length > maxChars) {
+      return ctx.reply(`🚫 Text too long (${text.length} chars). Max is ${maxChars}.`);
     }
 
     let lang = (args[0] || DEFAULT_LANG).toLowerCase();
@@ -108,38 +68,28 @@ module.exports = {
 
     await ctx.react('🎤');
 
-    const tmpDir = path.join(os.tmpdir(), 'echofox-tts');
-    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-
-    const ts = Date.now();
-    const chunks = chunkText(speakText);
-    const parts  = [];
-
     try {
-      for (let i = 0; i < chunks.length; i++) {
-        const p = path.join(tmpDir, `tts-${ts}-${i}.mp3`);
-        await synthesizeChunk(chunks[i], lang, p);
-        parts.push(p);
-      }
-
-      let final = parts[0];
-      if (parts.length > 1) {
-        final = path.join(tmpDir, `tts-${ts}-final.mp3`);
-        await mergeMp3s(parts, final);
-        parts.forEach((p) => fs.promises.unlink(p).catch(() => {}));
-      }
+      const audio = await tts.synthesize(speakText, { lang });
+      const tmpDir = path.join(os.tmpdir(), 'echofox-tts');
+      if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+      const outPath = path.join(tmpDir, `tts-${Date.now()}.mp3`);
+      fs.writeFileSync(outPath, audio);
 
       await sock.sendMessage(ctx.from, {
-        audio: { url: final },
+        audio: { url: outPath },
         mimetype: 'audio/mpeg',
-        ptt: true,
+        ptt: true,                                  // send as voice note
       }, { quoted: m });
 
+      // Cleanup async
+      setTimeout(() => { try { fs.rmSync(outPath, { force: true }); } catch {} }, 60_000).unref();
+
       await ctx.react('✅');
-      setTimeout(() => fs.promises.unlink(final).catch(() => {}), TEMP_TTL_MS);
     } catch (err) {
-      parts.forEach((p) => fs.promises.unlink(p).catch(() => {}));
-      throw err;
+      ctx.logger?.error?.({ err, provider: config.tts?.provider }, 'tts: synthesis failed');
+      await ctx.react('❌');
+      const provider = config.tts?.provider || 'edge';
+      throw new Error(`TTS (${provider}) failed: ${err.message}`);
     }
   },
 };

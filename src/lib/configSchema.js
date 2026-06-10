@@ -310,6 +310,27 @@ const schema = z.object({
     }).default({}),
   }).default({}),
 
+  // Text-to-Speech provider abstraction
+  tts: z.object({
+    provider:     z.enum(['edge', 'google', 'piper', 'coqui']).default('edge'),
+    defaultLang:  z.string().length(2).default('en'),
+    defaultVoice: z.string().default('en-US-AriaNeural'),
+    maxChars:     z.coerce.number().int().min(100).max(16000).default(8000),
+
+    edge: z.object({
+      outputFormat: z.string().default('audio-24khz-48kbitrate-mono-mp3'),
+    }).default({}),
+    google: z.object({}).default({}),
+    piper: z.object({
+      binPath:   z.string().default('piper'),
+      modelPath: z.string().default(''),
+    }).default({}),
+    coqui: z.object({
+      pythonBin: z.string().default('python3'),
+      model:     z.string().default('tts_models/en/ljspeech/tacotron2-DDC'),
+    }).default({}),
+  }).default({}),
+
   telegram: z.object({
     enabled:      z.boolean().default(false),
     botToken:     z.string().default(''),

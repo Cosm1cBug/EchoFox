@@ -8,15 +8,31 @@ import { useState } from "react";
 import { Header } from "./components/Header";
 import { Login } from "./components/Login";
 import { setAuth, clearAuth } from "./lib/api";
-
 import { Overview } from "./pages/Overview";
 import { Groups } from "./pages/Groups";
 import { Metrics } from "./pages/Metrics";
 import { Diagnostics } from "./pages/Diagnostics";
 import { Alerts } from "./pages/Alerts";
 import { Subscriptions } from "./pages/Subscriptions";
+import { Blocklist } from "./pages/Blocklist";
+import { Contacts } from "./pages/Contacts";
+import { Presence } from "./pages/Presence";
+import { Labels } from "./pages/Labels";
+import { Newsletters } from "./pages/Newsletters";
 
-const TABS = ["Overview", "Groups", "Metrics", "Diagnostics", "Alerts", "Subscriptions"] as const;
+const TABS = [
+  "Overview",
+  "Groups",
+  "Contacts",
+  "Presence",
+  "Newsletters",
+  "Subscriptions",
+  "Labels",
+  "Blocklist",
+  "Metrics",
+  "Diagnostics",
+  "Alerts",
+] as const;
 type Tab = (typeof TABS)[number];
 
 export default function App() {
@@ -61,10 +77,15 @@ export default function App() {
         <div className="mt-8">
           {activeTab === "Overview" && <Overview />}
           {activeTab === "Groups" && <Groups />}
+          {activeTab === "Contacts" && <Contacts />}
+          {activeTab === "Presence" && <Presence />}
+          {activeTab === "Newsletters" && <Newsletters />}
+          {activeTab === "Subscriptions" && <Subscriptions />}
+          {activeTab === "Labels" && <Labels />}
+          {activeTab === "Blocklist" && <Blocklist />}
           {activeTab === "Metrics" && <Metrics />}
           {activeTab === "Diagnostics" && <Diagnostics />}
           {activeTab === "Alerts" && <Alerts />}
-          {activeTab === "Subscriptions" && <Subscriptions />}
         </div>
       </div>
     </div>

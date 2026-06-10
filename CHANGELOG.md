@@ -12,6 +12,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.2] — 2026-06-10
+
+> **Dashboard tabs for v1.1.0 data.** Five new React tabs surface all
+> the v1.1.0 extended-event data (blocklist, contacts, presence,
+> labels, newsletters) in the dashboard. Plus a quality-of-life fix
+> for 3 pre-existing TypeScript strict errors blocking
+> `npm run typecheck:dashboard` since v1.0.0.
+
+### Added
+
+- **5 new dashboard tabs**:
+  - **Blocklist** (`/api/blocklist`) — table of blocked JIDs with
+    block timestamps, auto-refresh every 30 s
+  - **Contacts** (`/api/contacts`) — paginated table (50 per page)
+    with client-side filter, surfaces v1.1.0 extended `status` +
+    `verifiedName` columns
+  - **Presence** (`/api/presence`) — top 50 recently-active users with
+    state icons (typing/recording/online/offline/paused), state-count
+    summary chips, relative timestamps refreshing every 5 s,
+    auto-refetch every 10 s
+  - **Labels** (`/api/labels`) — WA Business labels with color
+    swatches, master/detail view showing chat + message associations
+  - **Newsletters** (`/api/newsletters`) — list with subscriber counts
+    (formatted as `1.5k`/`1.2M`) and verification badges,
+    master/detail view with per-message view counts and per-user
+    settings
+- **17 new TypeScript API client functions** in `dashboard/src/lib/api.ts`
+  covering every v1.1.0 `/api/*` route (blocklist, contacts × 2,
+  chats × 2, presence × 3, labels × 3, newsletters × 4, lid-mapping)
+- **Dashboard tab navigation reorganized** — new order surfaces
+  high-value tabs first: Overview, Groups, Contacts, Presence,
+  Newsletters, Subscriptions, Labels, Blocklist, then Metrics,
+  Diagnostics, Alerts.
+
+### Fixed
+
+- **3 pre-existing TypeScript strict errors** blocking
+  `npx tsc -b --noEmit` since v1.0.0 (Vite tolerated them):
+  - `dashboard/src/pages/Alerts.tsx:18` — `getAlerts()` response
+    typed as `unknown`; now cast as `any` for the `.active` access
+  - `dashboard/src/pages/Groups.tsx:18` — `setGroups` passed
+    directly to `.then()` had a `Dispatch<SetStateAction>` type
+    mismatch; now wrapped in a typed arrow
+  - `dashboard/src/pages/Overview.tsx:77` — `recentActivities`
+    literal typed as plain `string[]` instead of the
+    `"message" | "command" | "alert"` union expected by
+    `ActivityItem`; now explicitly typed
+
+### Backward compatibility
+
+Fully compatible with v1.1.1:
+
+- No backend changes (zero new code in `src/`)
+- All v1.1.x API routes unchanged
+- No new dependencies (no `package-lock.json` regeneration needed)
+- All 101 backend tests still pass
+- Dashboard builds in ~4.5 s (same as v1.1.1)
+
+### Operational notes
+
+- Run `npm run build:dashboard` after pulling (or just `npm start` —
+  the build-on-boot guard auto-runs `vite build` if `src/dashboard/react/`
+  is missing).
+- TypeScript strict check now passes — `cd dashboard && npx tsc -b --noEmit`
+  is clean. CI gates on TypeScript can now be enabled.
+
+### Stats
+
+- **10 file changes** (5 new tabs + api.ts + App.tsx + 3 TS fixes +
+  version bump)
+- **5 new tabs** (dashboard now has 11 tabs total, was 6)
+- **17 new API client functions**
+- **3 pre-existing TS errors eliminated**
+- **0 backend changes**
+- **101 / 101 backend tests still pass**
+- **TypeScript strict: 0 errors** (was 3)
+
+---
+
 ## [1.1.1] — 2026-06-10
 
 > **Security + Text-to-Speech overhaul.** Down from 14 → 2 known

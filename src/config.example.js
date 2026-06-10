@@ -25,7 +25,7 @@
  */
 module.exports = {
 
-  // ═══ Core ═════════════════════════════════════════════════════════════
+  // ─── Core ──────────────────────────────────
 
   bot: {
     name:         'EchoFox',
@@ -85,7 +85,7 @@ module.exports = {
     },
   },
 
-  // ═══ Anti-ban (human-like presence + ban-mitigation) ══════════════════
+  // ─── Anti-ban (human-like presence + ban-mitigation) ────────────
 
   antiBan: {
     typingIndicator: true,
@@ -124,7 +124,7 @@ module.exports = {
     packAuthor: 'COSM1CBUG',
   },
 
-  // ═══ Runtime ═══════════════════════════════════════════════════════════
+  // ─── Runtime ──────────────────────────────────
 
   runtime: {
     logLevel:        'info',              // trace|debug|info|warn|error|fatal
@@ -138,7 +138,7 @@ module.exports = {
       prefix:  'echofox',                 // → ./logs/echofox-YYYY-MM-DD.log
     },
 
-    // v1.0.0 — leak detector. Set enabled:false to disable.
+    // leak detector. Set enabled:false to disable.
     leakDetection: {
       enabled: true,
       sampleIntervalMs: 600000,           // 10 minutes
@@ -147,7 +147,7 @@ module.exports = {
     },
   },
 
-  // ═══ Networking ════════════════════════════════════════════════════════
+  // ─── Networking ──────────────────────────────────
 
   network: {
     httpProxy:    '',
@@ -159,7 +159,7 @@ module.exports = {
     userAgent: 'EchoFox/1.0 (+https://github.com/Cosm1cBug/EchoFox)',
   },
 
-  // ═══ Operations ════════════════════════════════════════════════════════
+  // ─── Operations ──────────────────────────────────
 
   backup: {
     enabled:     false,

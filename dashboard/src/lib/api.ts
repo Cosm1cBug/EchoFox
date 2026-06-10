@@ -29,3 +29,47 @@ export const getGroups = () => fetchJson("/api/groups");
 export const getDiagnostics = () => fetchJson("/api/diagnostics");
 export const getAlerts = () => fetchJson("/api/alerts");
 export const getSubscriptions = () => fetchJson("/api/subscriptions");
+
+export const getBlocklist = () => fetchJson("/api/blocklist");
+
+export const getContacts = (limit = 100, offset = 0) =>
+  fetchJson(`/api/contacts?limit=${limit}&offset=${offset}`);
+
+export const getContact = (jid: string) =>
+  fetchJson(`/api/contacts/${encodeURIComponent(jid)}`);
+
+export const getChats = () => fetchJson("/api/chats");
+
+export const getChat = (jid: string) =>
+  fetchJson(`/api/chats/${encodeURIComponent(jid)}`);
+
+export const getRecentPresence = (limit = 50) =>
+  fetchJson(`/api/presence?limit=${limit}`);
+
+export const getPresence = (jid: string) =>
+  fetchJson(`/api/presence/${encodeURIComponent(jid)}`);
+
+export const getChatPresence = (jid: string) =>
+  fetchJson(`/api/chats/${encodeURIComponent(jid)}/presence`);
+
+export const getLabels = () => fetchJson("/api/labels");
+
+export const getLabelAssociations = (id: string) =>
+  fetchJson(`/api/labels/${encodeURIComponent(id)}/associations`);
+
+export const getChatLabels = (jid: string) =>
+  fetchJson(`/api/chats/${encodeURIComponent(jid)}/labels`);
+
+export const getNewsletters = () => fetchJson("/api/newsletters");
+
+export const getNewsletter = (id: string) =>
+  fetchJson(`/api/newsletters/${encodeURIComponent(id)}`);
+
+export const getNewsletterViews = (id: string, limit = 100) =>
+  fetchJson(`/api/newsletters/${encodeURIComponent(id)}/views?limit=${limit}`);
+
+export const getNewsletterReactions = (id: string, msgId: string) =>
+  fetchJson(`/api/newsletters/${encodeURIComponent(id)}/${encodeURIComponent(msgId)}/reactions`);
+
+export const getLidMapping = (lid: string) =>
+  fetchJson(`/api/lid-mapping/${encodeURIComponent(lid)}`);

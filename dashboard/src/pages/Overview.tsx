@@ -56,7 +56,7 @@ export function Overview() {
     { time: "23:59", sent: 210, received: 310 },
   ];
 
-  const recentActivities = [
+  const recentActivities: { type: "message" | "command" | "alert"; description: string; time: string }[] = [
     { type: "message", description: "New message received in EchoFox Community", time: "2m ago" },
     { type: "command", description: "Command .song executed", time: "5m ago" },
     { type: "alert", description: "High failure rate on .mediafire", time: "12m ago" },

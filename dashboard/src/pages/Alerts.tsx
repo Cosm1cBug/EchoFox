@@ -15,7 +15,7 @@ export function Alerts() {
 
   useEffect(() => {
     getAlerts()
-      .then((res) => setAlerts(res.active || []))
+      .then((res: any) => setAlerts(res.active || []))
       .catch(() => setError("Failed to load alerts."))
       .finally(() => setLoading(false));
   }, []);

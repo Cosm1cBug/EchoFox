@@ -15,7 +15,7 @@ export function Groups() {
 
   useEffect(() => {
     getGroups()
-      .then(setGroups)
+      .then((g) => setGroups(g as any[]))
       .catch(() => setError("Failed to load groups."))
       .finally(() => setLoading(false));
   }, []);

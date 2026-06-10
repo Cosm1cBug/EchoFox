@@ -14,6 +14,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] — 2026-06-09
+
+> **Full WhatsApp event automation.** All 16 previously-stub event
+> handlers now persist real data into proper backing tables, exposed via
+> 16 new `/api/*` routes for the dashboard + AI tool-calling. This
+> release is the data foundation for v1.2.0's AI chatbot.
+
+### Added
+
+- **All 16 stub event handlers now persist**:
+  - `blocklist.set` / `blocklist.update` — full + incremental
+  - `chats.upsert` / `chats.update` / `chats.delete` — extended
+    fields (pinned, muted, archived, deleted_at)
+  - `contacts.upsert` — extended fields (status, verifiedName)
+  - `presence.update` — per-user, per-chat presence + last-seen
+  - `labels.edit` / `labels.association` — WA Business labels CRUD
+    with soft-delete + chat/message associations
+  - `newsletter.upsert` / `newsletters.update` — metadata
+  - `newsletter.reaction` / `newsletter.view` — engagement counters
+  - `newsletter-settings.update` — per-newsletter user settings (JSON)
+  - `lid-mapping.update` — LID ↔ JID bidirectional (Baileys 7.x)
+  - `message-capping.update` — per-chat storage limit
+- **Migration 004** (`extended_events`) for all 4 backends — creates 9
+  new tables + adds 6 columns to existing tables. Idempotent + auto-runs
+  on boot.
+- **22 new store methods × 4 backends** (88 implementations total) with
+  full feature parity across SQLite, Postgres, MongoDB, Redis.
+- **16 new `/api/*` routes**:
+  - `/api/blocklist` — blocklist
+  - `/api/contacts` (paginated) + `/api/contacts/:jid`
+  - `/api/chats` + `/api/chats/:jid`
+  - `/api/presence` (recent) + `/api/presence/:jid` + `/api/chats/:jid/presence`
+  - `/api/labels` + `/api/labels/:id/associations` + `/api/chats/:jid/labels`
+  - `/api/newsletters` + `/api/newsletters/:id` + `/api/newsletters/:id/views` + `/api/newsletters/:id/:msgId/reactions`
+  - `/api/lid-mapping/:lid`
+- **11 new tests** in `stores-v110.test.js` covering all new store
+  methods. Total test count: **101 / 101 passing** (was 90).
+
+### Fixed
+
+- **Critical Redis-backend regression from v1.0.1+** — Group A/B added
+  `K + ':...'` patterns to `redisStore.js` but the `K` namespace
+  constant was never declared. Redis users would get `ReferenceError:
+  K is not defined` on every blocklist/presence/contacts write. Now
+  declared as `const K = 'echofox'` at the top of `makeRedisStore()`.
+- **`newsletter.update` destructure mismatch** (carry-over from
+  v1.0.2) — handler destructured `{ updates }` but the worker emits
+  `{ sock, u }`. Now correctly handles both array + single-object
+  payloads.
+- **`scripts/add-license-headers.js` checks React build output** —
+  was finding "missing headers" in the bundled minified JS at
+  `src/dashboard/react/`. Now correctly excludes that dir.
+
+### Changed
+
+- All 4 store backends now expose the same v1.1.0 method surface —
+  drop-in backend swap (SQLite ↔ Postgres ↔ MongoDB ↔ Redis) still
+  works for the full v1.1.0 feature set.
+- `store.bind(sock.ev)` and the new handlers cooperate: bind handles
+  baseline fields (name, unread, ts), new handlers handle extended
+  fields (pinned, muted, archived, status, verifiedName). COALESCE
+  semantics in the upsert SQL means neither path wipes the other's data.
+
+### Backward compatibility
+
+Fully compatible with v1.0.x:
+- No config schema changes
+- No existing store interface changes (new methods ADDED, none changed)
+- No `/api/*` route signatures changed (only new routes ADDED)
+- No command behaviour changes
+- Migration 004 is non-destructive and idempotent
+- New columns on existing tables use `IF NOT EXISTS` / safe-ALTER
+
+### Operational notes
+
+- Migration runs automatically on boot. To run manually: `npm run migrate`.
+- **Redis users especially benefit** — v1.0.1's silent regression
+  is now fixed.
+- No new dependencies, no `package-lock.json` regeneration required.
+
+### Stats
+
+- 30 file changes across 6 sub-groups
+- 22 new store methods × 4 backends = 88 method implementations
+- 9 new tables (+ 6 new columns on existing tables)
+- 16 new `/api/*` routes
+- 11 new tests (101 / 101 total)
+- 0 new lint errors, 0 new CVEs
+
+---
+
 ## [1.0.2] — 2026-06-09
 
 > **Hotfix release.** Addresses 4 latent crash bugs surfaced by deeper
@@ -350,7 +441,3 @@ Breaking changes after v1.0.0 will require a v2.0.0 release.
 - `recordStat`/`getStats` API on all stores
 
 ---
-
-[Unreleased]: https://github.com/Cosm1cBug/EchoFox/compare/v0.4.1-beta...HEAD
-[0.4.1-beta]: https://github.com/Cosm1cBug/EchoFox/compare/v0.4.0-beta...v0.4.1-beta
-[0.4.0-beta]: https://github.com/Cosm1cBug/EchoFox/releases/tag/v0.4.0-beta

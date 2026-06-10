@@ -192,6 +192,377 @@ function makeMongoStore(uri, logger, groupCache) {
       } catch { return []; }
     },
 
+    // labels ─────────────────────────────────────────
+    async upsertLabel(labelId, name, color) {
+      try {
+        if (!labelId || !name) return;
+        await conn.collection('labels').updateOne(
+          { label_id: labelId },
+          {
+            $set: { name, color: color ?? null, deleted: 0, updated_at: Date.now() },
+            $setOnInsert: { label_id: labelId },
+          },
+          { upsert: true },
+        );
+      } catch (e) { logger.warn({ err: e, labelId }, 'upsertLabel failed'); }
+    },
+    async deleteLabel(labelId) {
+      try {
+        await conn.collection('labels').updateOne(
+          { label_id: labelId },
+          { $set: { deleted: 1, updated_at: Date.now() } },
+        );
+      } catch (e) { logger.warn({ err: e, labelId }, 'deleteLabel failed'); }
+    },
+    async getLabel(labelId) {
+      try { return await conn.collection('labels').findOne({ label_id: labelId }, { projection: { _id: 0 } }); }
+      catch (e) { logger.warn({ err: e, labelId }, 'getLabel failed'); return null; }
+    },
+    async listLabels() {
+      try {
+        return await conn.collection('labels')
+          .find({ deleted: { $in: [0, false, null] } }, { projection: { _id: 0 } })
+          .sort({ name: 1 })
+          .toArray();
+      } catch (e) { logger.warn({ err: e }, 'listLabels failed'); return []; }
+    },
+    async associateLabel(labelId, targetType, targetJid, targetMsgId = null) {
+      try {
+        await conn.collection('label_associations').updateOne(
+          { label_id: labelId, target_type: targetType, target_jid: targetJid, target_msg_id: targetMsgId || '' },
+          { $setOnInsert: { associated_at: Date.now() } },
+          { upsert: true },
+        );
+      } catch (e) { logger.warn({ err: e, labelId, targetJid }, 'associateLabel failed'); }
+    },
+    async disassociateLabel(labelId, targetType, targetJid, targetMsgId = null) {
+      try {
+        await conn.collection('label_associations').deleteOne(
+          { label_id: labelId, target_type: targetType, target_jid: targetJid, target_msg_id: targetMsgId || '' },
+        );
+      } catch (e) { logger.warn({ err: e, labelId, targetJid }, 'disassociateLabel failed'); }
+    },
+    async getLabelAssociations(labelId) {
+      try {
+        return await conn.collection('label_associations')
+          .find({ label_id: labelId }, { projection: { _id: 0 } })
+          .toArray();
+      } catch (e) { logger.warn({ err: e, labelId }, 'getLabelAssociations failed'); return []; }
+    },
+    async getLabelsForTarget(targetJid) {
+      try {
+        const assocs = await conn.collection('label_associations')
+          .find({ target_jid: targetJid }, { projection: { _id: 0, label_id: 1 } })
+          .toArray();
+        if (!assocs.length) return [];
+        const labelIds = assocs.map((a) => a.label_id);
+        return await conn.collection('labels')
+          .find({ label_id: { $in: labelIds }, deleted: { $in: [0, false, null] } }, { projection: { _id: 0, label_id: 1, name: 1, color: 1 } })
+          .toArray();
+      } catch (e) { logger.warn({ err: e, targetJid }, 'getLabelsForTarget failed'); return []; }
+    },
+
+    // newsletters ────────────────────────────────────
+    async upsertNewsletter(newsletterId, meta = {}) {
+      try {
+        if (!newsletterId) return;
+        const ts = Date.now();
+        const m = meta || {};
+        const update = { updated_at: ts };
+        if (m.name != null)         update.name = m.name;
+        if (m.description != null)  update.description = m.description;
+        if (m.picture_url ?? m.pictureUrl) update.picture_url = m.picture_url ?? m.pictureUrl;
+        if (m.verification != null) update.verification = m.verification;
+        if (m.subscribers != null)  update.subscribers = m.subscribers;
+        if (m.raw != null)          update.meta = m.raw;
+        await conn.collection('newsletters').updateOne(
+          { newsletter_id: newsletterId },
+          { $set: update, $setOnInsert: { newsletter_id: newsletterId, created_at: m.created_at ?? ts } },
+          { upsert: true },
+        );
+      } catch (e) { logger.warn({ err: e, newsletterId }, 'upsertNewsletter failed'); }
+    },
+    async updateNewsletter(newsletterId, partial = {}) {
+      return this.upsertNewsletter(newsletterId, partial);
+    },
+    async getNewsletter(newsletterId) {
+      try {
+        return await conn.collection('newsletters').findOne({ newsletter_id: newsletterId }, { projection: { _id: 0 } });
+      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletter failed'); return null; }
+    },
+    async listNewsletters() {
+      try {
+        return await conn.collection('newsletters')
+          .find({}, { projection: { _id: 0, meta: 0 } })
+          .sort({ updated_at: -1 })
+          .toArray();
+      } catch (e) { logger.warn({ err: e }, 'listNewsletters failed'); return []; }
+    },
+    async incrementNewsletterView(newsletterId, messageId) {
+      try {
+        await conn.collection('newsletter_views').updateOne(
+          { newsletter_id: newsletterId, message_id: messageId },
+          { $inc: { view_count: 1 }, $set: { updated_at: Date.now() } },
+          { upsert: true },
+        );
+      } catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'incrementNewsletterView failed'); }
+    },
+    async getNewsletterViews(newsletterId, messageId, limit = 100) {
+      try {
+        const q = messageId
+          ? { newsletter_id: newsletterId, message_id: messageId }
+          : { newsletter_id: newsletterId };
+        return await conn.collection('newsletter_views')
+          .find(q, { projection: { _id: 0, message_id: 1, view_count: 1, updated_at: 1 } })
+          .sort({ updated_at: -1 })
+          .limit(limit)
+          .toArray();
+      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletterViews failed'); return []; }
+    },
+    async recordNewsletterReaction(newsletterId, messageId, emoji, count = 1) {
+      try {
+        await conn.collection('newsletter_reactions').insertOne({
+          newsletter_id: newsletterId,
+          message_id: messageId,
+          emoji: emoji || null,
+          count: count || 1,
+          recorded_at: Date.now(),
+        });
+      } catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'recordNewsletterReaction failed'); }
+    },
+    async getNewsletterReactions(newsletterId, messageId) {
+      try {
+        return await conn.collection('newsletter_reactions').aggregate([
+          { $match: { newsletter_id: newsletterId, message_id: messageId } },
+          { $group: { _id: '$emoji', total: { $sum: '$count' }, last_seen: { $max: '$recorded_at' } } },
+          { $project: { _id: 0, emoji: '$_id', total: 1, last_seen: 1 } },
+          { $sort: { total: -1 } },
+        ]).toArray();
+      } catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'getNewsletterReactions failed'); return []; }
+    },
+    async updateNewsletterSettings(newsletterId, settings = {}) {
+      try {
+        await conn.collection('newsletter_settings').updateOne(
+          { newsletter_id: newsletterId },
+          { $set: { settings_json: settings || {}, updated_at: Date.now() }, $setOnInsert: { newsletter_id: newsletterId } },
+          { upsert: true },
+        );
+      } catch (e) { logger.warn({ err: e, newsletterId }, 'updateNewsletterSettings failed'); }
+    },
+    async getNewsletterSettings(newsletterId) {
+      try {
+        const r = await conn.collection('newsletter_settings').findOne(
+          { newsletter_id: newsletterId },
+          { projection: { _id: 0, settings_json: 1, updated_at: 1 } },
+        );
+        return r ? { settings: r.settings_json || {}, updated_at: r.updated_at } : null;
+      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletterSettings failed'); return null; }
+    },
+
+    // lid-mapping ────────────────────────────────────
+    async setLidMapping(lid, jid) {
+      try {
+        if (!lid || !jid) return;
+        await conn.collection('lid_mapping').updateOne(
+          { lid },
+          { $set: { jid, updated_at: Date.now() }, $setOnInsert: { lid } },
+          { upsert: true },
+        );
+      } catch (e) { logger.warn({ err: e, lid, jid }, 'setLidMapping failed'); }
+    },
+    async getLidMapping(lid) {
+      try {
+        const r = await conn.collection('lid_mapping').findOne({ lid }, { projection: { _id: 0, jid: 1 } });
+        return r?.jid || null;
+      } catch (e) { logger.warn({ err: e, lid }, 'getLidMapping failed'); return null; }
+    },
+    async getReverseLidMapping(jid) {
+      try {
+        const r = await conn.collection('lid_mapping').findOne({ jid }, { projection: { _id: 0, lid: 1 } });
+        return r?.lid || null;
+      } catch (e) { logger.warn({ err: e, jid }, 'getReverseLidMapping failed'); return null; }
+    },
+
+    // message-capping ────────────────────────────────
+    async setMessageCap(jid, capValue) {
+      try {
+        if (!jid || capValue == null) return;
+        await conn.collection('message_capping').updateOne(
+          { jid },
+          { $set: { cap_value: Number(capValue), updated_at: Date.now() }, $setOnInsert: { jid } },
+          { upsert: true },
+        );
+      } catch (e) { logger.warn({ err: e, jid }, 'setMessageCap failed'); }
+    },
+    async getMessageCap(jid) {
+      try {
+        const r = await conn.collection('message_capping').findOne({ jid }, { projection: { _id: 0, cap_value: 1, updated_at: 1 } });
+        return r || null;
+      } catch (e) { logger.warn({ err: e, jid }, 'getMessageCap failed'); return null; }
+    },
+
+    // blocklist ───────────────────────────────────────────────
+    async setBlocklist(jids) {
+      try {
+        if (!Array.isArray(jids)) return;
+        const coll = conn.collection('blocklist');
+        await coll.deleteMany({});
+        if (jids.length) {
+          const ts = Date.now();
+          await coll.insertMany(
+            jids.filter(Boolean).map((jid) => ({ jid, added_at: ts })),
+            { ordered: false },
+          ).catch(() => {});
+        }
+      } catch (e) { logger.warn({ err: e }, 'setBlocklist failed'); }
+    },
+    async addToBlocklist(jid) {
+      try {
+        await conn.collection('blocklist').updateOne(
+          { jid },
+          { $setOnInsert: { jid, added_at: Date.now() } },
+          { upsert: true },
+        );
+      } catch (e) { logger.warn({ err: e, jid }, 'addToBlocklist failed'); }
+    },
+    async removeFromBlocklist(jid) {
+      try { await conn.collection('blocklist').deleteOne({ jid }); }
+      catch (e) { logger.warn({ err: e, jid }, 'removeFromBlocklist failed'); }
+    },
+    async getBlocklist() {
+      try {
+        return await conn.collection('blocklist')
+          .find({}, { projection: { _id: 0, jid: 1, added_at: 1 } })
+          .sort({ added_at: -1 })
+          .toArray();
+      } catch (e) { logger.warn({ err: e }, 'getBlocklist failed'); return []; }
+    },
+    async isBlocked(jid) {
+      try { return !!(await conn.collection('blocklist').findOne({ jid })); }
+      catch (e) { logger.warn({ err: e, jid }, 'isBlocked failed'); return false; }
+    },
+
+    // presence ────────────────────────────────────────────────
+    async recordPresence(jid, state, lastSeenTs, chatJid) {
+      try {
+        const update = {
+          last_state: state || null,
+          chat_jid: chatJid || null,
+          updated_at: Date.now(),
+        };
+        if (lastSeenTs != null) update.last_seen_ts = lastSeenTs;
+        await conn.collection('presence').updateOne(
+          { jid },
+          { $set: update, $setOnInsert: { jid } },
+          { upsert: true },
+        );
+      } catch (e) { logger.warn({ err: e, jid }, 'recordPresence failed'); }
+    },
+    async getPresence(jid) {
+      try {
+        return await conn.collection('presence').findOne({ jid }, { projection: { _id: 0 } });
+      } catch (e) { logger.warn({ err: e, jid }, 'getPresence failed'); return null; }
+    },
+    async getPresenceInChat(chatJid) {
+      try {
+        return await conn.collection('presence')
+          .find({ chat_jid: chatJid }, { projection: { _id: 0 } })
+          .sort({ updated_at: -1 })
+          .toArray();
+      } catch (e) { logger.warn({ err: e }, 'getPresenceInChat failed'); return []; }
+    },
+    async getRecentPresence(limit = 50) {
+      try {
+        return await conn.collection('presence')
+          .find({}, { projection: { _id: 0 } })
+          .sort({ updated_at: -1 })
+          .limit(limit)
+          .toArray();
+      } catch (e) { logger.warn({ err: e }, 'getRecentPresence failed'); return []; }
+    },
+
+    // chat state ──────────────────────────────────────────────
+    async updateChat(jid, partial) {
+      try {
+        if (!jid) return;
+        const update = {};
+        for (const k of ['name', 'unread', 'ts', 'pinned', 'muted_until', 'archived']) {
+          if (partial?.[k] != null) {
+            update[k] = (k === 'pinned' || k === 'archived')
+              ? (partial[k] ? 1 : 0)
+              : partial[k];
+          }
+        }
+        if (Object.keys(update).length) {
+          await conn.collection('chats').updateOne(
+            { jid },
+            { $set: update, $setOnInsert: { jid } },
+            { upsert: true },
+          );
+        }
+      } catch (e) { logger.warn({ err: e, jid }, 'updateChat failed'); }
+    },
+    async markChatDeleted(jid) {
+      try { await conn.collection('chats').updateOne({ jid }, { $set: { deleted_at: Date.now() } }); }
+      catch (e) { logger.warn({ err: e, jid }, 'markChatDeleted failed'); }
+    },
+    async listChats() {
+      try {
+        return await conn.collection('chats')
+          .find({}, { projection: { _id: 0 } })
+          .sort({ ts: -1 })
+          .toArray();
+      } catch (e) { logger.warn({ err: e }, 'listChats failed'); return []; }
+    },
+    async getChat(jid) {
+      try { return await conn.collection('chats').findOne({ jid }, { projection: { _id: 0 } }); }
+      catch (e) { logger.warn({ err: e, jid }, 'getChat failed'); return null; }
+    },
+
+    // contacts (bulk + extended) ─────────────────────────────
+    async bulkUpsertContacts(contacts) {
+      try {
+        if (!Array.isArray(contacts) || !contacts.length) return 0;
+        const ops = contacts.filter((c) => c?.id).map((c) => ({
+          updateOne: {
+            filter: { jid: c.id },
+            update: {
+              $set: {
+                ...(c.name != null && { name: c.name }),
+                ...(c.notify != null && { notify: c.notify }),
+                ...(c.imgUrl != null && { img_url: c.imgUrl }),
+                ...(c.status != null && { status: c.status }),
+                ...(c.verifiedName != null && { verified_name: c.verifiedName }),
+              },
+              $setOnInsert: { jid: c.id },
+            },
+            upsert: true,
+          },
+        }));
+        if (!ops.length) return 0;
+        const r = await conn.collection('contacts').bulkWrite(ops, { ordered: false });
+        return (r.upsertedCount || 0) + (r.modifiedCount || 0);
+      } catch (e) { logger.warn({ err: e }, 'bulkUpsertContacts failed'); return 0; }
+    },
+    async getContact(jid) {
+      try { return await conn.collection('contacts').findOne({ jid }, { projection: { _id: 0 } }); }
+      catch (e) { logger.warn({ err: e, jid }, 'getContact failed'); return null; }
+    },
+    async listContacts({ limit = 100, offset = 0 } = {}) {
+      try {
+        return await conn.collection('contacts')
+          .find({}, { projection: { _id: 0 } })
+          .sort({ name: 1 })
+          .skip(offset)
+          .limit(limit)
+          .toArray();
+      } catch (e) { logger.warn({ err: e }, 'listContacts failed'); return []; }
+    },
+    async countContacts() {
+      try { return await conn.collection('contacts').countDocuments(); }
+      catch (e) { logger.warn({ err: e }, 'countContacts failed'); return 0; }
+    },
+
     recordStat(key, inc = 1) {
       Stat.updateOne({ key }, { $inc: { value: inc } }, { upsert: true })
         .catch((e) => logger.warn({ err: e, key }, 'recordStat failed'));

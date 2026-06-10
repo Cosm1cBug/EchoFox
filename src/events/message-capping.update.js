@@ -5,10 +5,33 @@
  */
 'use strict';
 
-const logger = require('../core/logger');
+/**
+ * message-capping.update — per-chat message-cap (storage limit) settings. Payload:
+ *   { sock, u: { jid|chatJid, cap_value|cap, ... } | [...] }
+ *
+ * NOTE: payload has no `store` — pulled from the singleton.
+ */
 
-const log = logger.child({ mod: 'message-capping.update' });
+const logger = require('../core/logger').child({ mod: 'message-capping.update' });
+const { getStore } = require('../store/instance');
 
-module.exports = async (payload) => {
-  log.info({ payload }, 'message-capping.update received');
+module.exports = async ({ u }) => {
+  if (!u) return;
+  const store = getStore();
+  if (!store?.setMessageCap) return;
+
+  const list = Array.isArray(u) ? u : [u];
+  let count = 0;
+  for (const ev of list) {
+    const jid = ev?.jid || ev?.chatJid;
+    const cap = ev?.cap_value ?? ev?.cap ?? ev?.maxMessages;
+    if (!jid || cap == null) continue;
+    try {
+      await store.setMessageCap(jid, cap);
+      count++;
+    } catch (err) {
+      logger.debug({ err, jid }, 'setMessageCap failed');
+    }
+  }
+  if (count) logger.info({ count }, 'message-capping persisted');
 };

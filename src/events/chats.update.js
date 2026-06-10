@@ -5,10 +5,29 @@
  */
 'use strict';
 
-const logger = require('../core/logger');
+/**
+ * chats.update — partial mutations on existing chats. Payload:
+ *   { sock, store, u: [{ id, name?, unreadCount?, conversationTimestamp?, pinned?, mute?, archived? }, ...] }
+ *
+ * The store's existing `bind(sock.ev)` handles name/unread/ts via
+ * chatUpdate prepared stmt. This handler propagates extended-field
+ * mutations (pin/mute/archive) via updateChat with COALESCE semantics.
+ */
 
-const log = logger.child({ mod: 'chats.update' });
+const logger = require('../core/logger').child({ mod: 'chats.update' });
 
-module.exports = async (payload) => {
-  log.info({ payload }, 'chats.update received');
+module.exports = async ({ store, u }) => {
+  if (!Array.isArray(u) || !u.length || !store) return;
+  for (const c of u) {
+    if (!c?.id) continue;
+    try {
+      await store.updateChat?.(c.id, {
+        pinned:      c.pinned,
+        muted_until: c.mute,
+        archived:    c.archived,
+      });
+    } catch (err) {
+      logger.trace({ err, jid: c.id }, 'chat update propagation failed');
+    }
+  }
 };

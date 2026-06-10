@@ -18,7 +18,7 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const TARGETS = ['src', 'scripts'].map((d) => path.join(ROOT, d));
-const EXCLUDE_DIRS = new Set(['node_modules', '.git', 'commands']);
+const EXCLUDE_DIRS = new Set(['node_modules', '.git', 'commands', 'react']);
 const EXCLUDE_FILES = new Set(['src/config.js']);   // user data, not our code
 const HEADER_MARKER = '@license AGPL-3.0';
 const HEADER = `/*

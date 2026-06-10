@@ -244,6 +244,159 @@ function startDashboard(port, store, config) {
     } catch (e) { next(e); }
   });
 
+  app.get('/api/blocklist', async (_req, res, next) => {
+    try {
+      const data = (typeof store.getBlocklist === 'function')
+        ? await store.getBlocklist()
+        : [];
+      res.json(data);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/contacts', async (req, res, next) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const offset = Number(req.query.offset) || 0;
+      if (typeof store.listContacts !== 'function') return res.json({ items: [], total: 0 });
+      const [items, total] = await Promise.all([
+        store.listContacts({ limit, offset }),
+        store.countContacts(),
+      ]);
+      res.json({ items, total, limit, offset });
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/contacts/:jid', async (req, res, next) => {
+    try {
+      if (typeof store.getContact !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      const c = await store.getContact(req.params.jid);
+      if (!c) return res.status(404).json({ error: 'not_found' });
+      res.json(c);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/chats', async (_req, res, next) => {
+    try {
+      const data = (typeof store.listChats === 'function')
+        ? await store.listChats()
+        : [];
+      res.json(data);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/chats/:jid', async (req, res, next) => {
+    try {
+      if (typeof store.getChat !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      const c = await store.getChat(req.params.jid);
+      if (!c) return res.status(404).json({ error: 'not_found' });
+      res.json(c);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/presence', async (req, res, next) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 50, 500);
+      const data = (typeof store.getRecentPresence === 'function')
+        ? await store.getRecentPresence(limit)
+        : [];
+      res.json(data);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/presence/:jid', async (req, res, next) => {
+    try {
+      if (typeof store.getPresence !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      const p = await store.getPresence(req.params.jid);
+      if (!p) return res.status(404).json({ error: 'not_found' });
+      res.json(p);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/chats/:jid/presence', async (req, res, next) => {
+    try {
+      const data = (typeof store.getPresenceInChat === 'function')
+        ? await store.getPresenceInChat(req.params.jid)
+        : [];
+      res.json(data);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/labels', async (_req, res, next) => {
+    try {
+      const data = (typeof store.listLabels === 'function')
+        ? await store.listLabels()
+        : [];
+      res.json(data);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/labels/:id/associations', async (req, res, next) => {
+    try {
+      const data = (typeof store.getLabelAssociations === 'function')
+        ? await store.getLabelAssociations(req.params.id)
+        : [];
+      res.json(data);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/chats/:jid/labels', async (req, res, next) => {
+    try {
+      const data = (typeof store.getLabelsForTarget === 'function')
+        ? await store.getLabelsForTarget(req.params.jid)
+        : [];
+      res.json(data);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/newsletters', async (_req, res, next) => {
+    try {
+      const data = (typeof store.listNewsletters === 'function')
+        ? await store.listNewsletters()
+        : [];
+      res.json(data);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/newsletters/:id', async (req, res, next) => {
+    try {
+      if (typeof store.getNewsletter !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      const n = await store.getNewsletter(req.params.id);
+      if (!n) return res.status(404).json({ error: 'not_found' });
+      const settings = (typeof store.getNewsletterSettings === 'function')
+        ? await store.getNewsletterSettings(req.params.id)
+        : null;
+      res.json({ ...n, settings: settings?.settings || null });
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/newsletters/:id/views', async (req, res, next) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const data = (typeof store.getNewsletterViews === 'function')
+        ? await store.getNewsletterViews(req.params.id, null, limit)
+        : [];
+      res.json(data);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/newsletters/:id/:msgId/reactions', async (req, res, next) => {
+    try {
+      const data = (typeof store.getNewsletterReactions === 'function')
+        ? await store.getNewsletterReactions(req.params.id, req.params.msgId)
+        : [];
+      res.json(data);
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/lid-mapping/:lid', async (req, res, next) => {
+    try {
+      if (typeof store.getLidMapping !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      const jid = await store.getLidMapping(req.params.lid);
+      if (!jid) return res.status(404).json({ error: 'not_found' });
+      res.json({ lid: req.params.lid, jid });
+    } catch (e) { next(e); }
+  });
+
   // ── Error handler ─────────────────────────────────────────────────────
   app.use((err, _req, res, _next) => {
     logger.error({ err }, 'dashboard route error');

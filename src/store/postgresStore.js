@@ -186,6 +186,444 @@ function makePostgresStore(url, logger, groupCache) {
       } catch { return []; }
     },
 
+    // labels ─────────────────────────────────────────
+    async upsertLabel(labelId, name, color) {
+      try {
+        if (!labelId || !name) return;
+        await pool.query(
+          `INSERT INTO labels (label_id, name, color, deleted, updated_at)
+           VALUES ($1, $2, $3, FALSE, $4)
+           ON CONFLICT (label_id) DO UPDATE SET
+             name = EXCLUDED.name,
+             color = EXCLUDED.color,
+             deleted = FALSE,
+             updated_at = EXCLUDED.updated_at`,
+          [labelId, name, color ?? null, Date.now()],
+        );
+      } catch (e) { logger.warn({ err: e, labelId }, 'upsertLabel failed'); }
+    },
+    async deleteLabel(labelId) {
+      try {
+        await pool.query('UPDATE labels SET deleted = TRUE, updated_at = $1 WHERE label_id = $2', [Date.now(), labelId]);
+      } catch (e) { logger.warn({ err: e, labelId }, 'deleteLabel failed'); }
+    },
+    async getLabel(labelId) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT label_id, name, color, deleted, updated_at FROM labels WHERE label_id = $1',
+          [labelId],
+        );
+        return rows[0] || null;
+      } catch (e) { logger.warn({ err: e, labelId }, 'getLabel failed'); return null; }
+    },
+    async listLabels() {
+      try {
+        const { rows } = await pool.query(
+          'SELECT label_id, name, color, deleted, updated_at FROM labels WHERE deleted = FALSE ORDER BY name',
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e }, 'listLabels failed'); return []; }
+    },
+    async associateLabel(labelId, targetType, targetJid, targetMsgId = null) {
+      try {
+        await pool.query(
+          `INSERT INTO label_associations (label_id, target_type, target_jid, target_msg_id, associated_at)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (label_id, target_type, target_jid, target_msg_id) DO NOTHING`,
+          [labelId, targetType, targetJid, targetMsgId || '', Date.now()],
+        );
+      } catch (e) { logger.warn({ err: e, labelId, targetJid }, 'associateLabel failed'); }
+    },
+    async disassociateLabel(labelId, targetType, targetJid, targetMsgId = null) {
+      try {
+        await pool.query(
+          `DELETE FROM label_associations
+           WHERE label_id = $1 AND target_type = $2 AND target_jid = $3
+             AND COALESCE(target_msg_id, '') = COALESCE($4, '')`,
+          [labelId, targetType, targetJid, targetMsgId || ''],
+        );
+      } catch (e) { logger.warn({ err: e, labelId, targetJid }, 'disassociateLabel failed'); }
+    },
+    async getLabelAssociations(labelId) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT label_id, target_type, target_jid, target_msg_id, associated_at FROM label_associations WHERE label_id = $1',
+          [labelId],
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e, labelId }, 'getLabelAssociations failed'); return []; }
+    },
+    async getLabelsForTarget(targetJid) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT la.label_id, l.name, l.color
+           FROM label_associations la
+           JOIN labels l ON la.label_id = l.label_id
+           WHERE la.target_jid = $1 AND l.deleted = FALSE`,
+          [targetJid],
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e, targetJid }, 'getLabelsForTarget failed'); return []; }
+    },
+
+    // newsletters ────────────────────────────────────
+    async upsertNewsletter(newsletterId, meta = {}) {
+      try {
+        if (!newsletterId) return;
+        const ts = Date.now();
+        const m = meta || {};
+        await pool.query(
+          `INSERT INTO newsletters (newsletter_id, name, description, picture_url, verification, subscribers, meta, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (newsletter_id) DO UPDATE SET
+             name = COALESCE(EXCLUDED.name, newsletters.name),
+             description = COALESCE(EXCLUDED.description, newsletters.description),
+             picture_url = COALESCE(EXCLUDED.picture_url, newsletters.picture_url),
+             verification = COALESCE(EXCLUDED.verification, newsletters.verification),
+             subscribers = COALESCE(EXCLUDED.subscribers, newsletters.subscribers),
+             meta = COALESCE(EXCLUDED.meta, newsletters.meta),
+             updated_at = EXCLUDED.updated_at`,
+          [
+            newsletterId,
+            m.name ?? null,
+            m.description ?? null,
+            m.picture_url ?? m.pictureUrl ?? null,
+            m.verification ?? null,
+            m.subscribers ?? null,
+            m.raw ? JSON.stringify(m.raw) : null,
+            m.created_at ?? ts,
+            ts,
+          ],
+        );
+      } catch (e) { logger.warn({ err: e, newsletterId }, 'upsertNewsletter failed'); }
+    },
+    async updateNewsletter(newsletterId, partial = {}) {
+      return this.upsertNewsletter(newsletterId, partial);
+    },
+    async getNewsletter(newsletterId) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT newsletter_id, name, description, picture_url, verification, subscribers, meta, created_at, updated_at FROM newsletters WHERE newsletter_id = $1',
+          [newsletterId],
+        );
+        return rows[0] || null;
+      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletter failed'); return null; }
+    },
+    async listNewsletters() {
+      try {
+        const { rows } = await pool.query(
+          'SELECT newsletter_id, name, description, picture_url, verification, subscribers, created_at, updated_at FROM newsletters ORDER BY updated_at DESC',
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e }, 'listNewsletters failed'); return []; }
+    },
+    async incrementNewsletterView(newsletterId, messageId) {
+      try {
+        await pool.query(
+          `INSERT INTO newsletter_views (newsletter_id, message_id, view_count, updated_at)
+           VALUES ($1, $2, 1, $3)
+           ON CONFLICT (newsletter_id, message_id) DO UPDATE SET
+             view_count = newsletter_views.view_count + 1,
+             updated_at = EXCLUDED.updated_at`,
+          [newsletterId, messageId, Date.now()],
+        );
+      } catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'incrementNewsletterView failed'); }
+    },
+    async getNewsletterViews(newsletterId, messageId, limit = 100) {
+      try {
+        if (messageId) {
+          const { rows } = await pool.query(
+            'SELECT message_id, view_count, updated_at FROM newsletter_views WHERE newsletter_id = $1 AND message_id = $2',
+            [newsletterId, messageId],
+          );
+          return rows;
+        }
+        const { rows } = await pool.query(
+          'SELECT message_id, view_count, updated_at FROM newsletter_views WHERE newsletter_id = $1 ORDER BY updated_at DESC LIMIT $2',
+          [newsletterId, limit],
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletterViews failed'); return []; }
+    },
+    async recordNewsletterReaction(newsletterId, messageId, emoji, count = 1) {
+      try {
+        await pool.query(
+          'INSERT INTO newsletter_reactions (newsletter_id, message_id, emoji, count, recorded_at) VALUES ($1, $2, $3, $4, $5)',
+          [newsletterId, messageId, emoji || null, count || 1, Date.now()],
+        );
+      } catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'recordNewsletterReaction failed'); }
+    },
+    async getNewsletterReactions(newsletterId, messageId) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT emoji, SUM(count)::int AS total, MAX(recorded_at) AS last_seen
+           FROM newsletter_reactions
+           WHERE newsletter_id = $1 AND message_id = $2
+           GROUP BY emoji ORDER BY total DESC`,
+          [newsletterId, messageId],
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'getNewsletterReactions failed'); return []; }
+    },
+    async updateNewsletterSettings(newsletterId, settings = {}) {
+      try {
+        await pool.query(
+          `INSERT INTO newsletter_settings (newsletter_id, settings_json, updated_at)
+           VALUES ($1, $2::jsonb, $3)
+           ON CONFLICT (newsletter_id) DO UPDATE SET settings_json = EXCLUDED.settings_json, updated_at = EXCLUDED.updated_at`,
+          [newsletterId, JSON.stringify(settings || {}), Date.now()],
+        );
+      } catch (e) { logger.warn({ err: e, newsletterId }, 'updateNewsletterSettings failed'); }
+    },
+    async getNewsletterSettings(newsletterId) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT settings_json AS settings, updated_at FROM newsletter_settings WHERE newsletter_id = $1',
+          [newsletterId],
+        );
+        return rows[0] || null;
+      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletterSettings failed'); return null; }
+    },
+
+    // lid-mapping ────────────────────────────────────
+    async setLidMapping(lid, jid) {
+      try {
+        if (!lid || !jid) return;
+        await pool.query(
+          `INSERT INTO lid_mapping (lid, jid, updated_at) VALUES ($1, $2, $3)
+           ON CONFLICT (lid) DO UPDATE SET jid = EXCLUDED.jid, updated_at = EXCLUDED.updated_at`,
+          [lid, jid, Date.now()],
+        );
+      } catch (e) { logger.warn({ err: e, lid, jid }, 'setLidMapping failed'); }
+    },
+    async getLidMapping(lid) {
+      try {
+        const { rows } = await pool.query('SELECT jid FROM lid_mapping WHERE lid = $1', [lid]);
+        return rows[0]?.jid || null;
+      } catch (e) { logger.warn({ err: e, lid }, 'getLidMapping failed'); return null; }
+    },
+    async getReverseLidMapping(jid) {
+      try {
+        const { rows } = await pool.query('SELECT lid FROM lid_mapping WHERE jid = $1', [jid]);
+        return rows[0]?.lid || null;
+      } catch (e) { logger.warn({ err: e, jid }, 'getReverseLidMapping failed'); return null; }
+    },
+
+    // message-capping ────────────────────────────────
+    async setMessageCap(jid, capValue) {
+      try {
+        if (!jid || capValue == null) return;
+        await pool.query(
+          `INSERT INTO message_capping (jid, cap_value, updated_at) VALUES ($1, $2, $3)
+           ON CONFLICT (jid) DO UPDATE SET cap_value = EXCLUDED.cap_value, updated_at = EXCLUDED.updated_at`,
+          [jid, Number(capValue), Date.now()],
+        );
+      } catch (e) { logger.warn({ err: e, jid }, 'setMessageCap failed'); }
+    },
+    async getMessageCap(jid) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT cap_value, updated_at FROM message_capping WHERE jid = $1',
+          [jid],
+        );
+        return rows[0] || null;
+      } catch (e) { logger.warn({ err: e, jid }, 'getMessageCap failed'); return null; }
+    },
+
+    // blocklist ───────────────────────────────────────────────
+    async setBlocklist(jids) {
+      try {
+        if (!Array.isArray(jids)) return;
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('DELETE FROM blocklist');
+          const ts = Date.now();
+          for (const j of jids) if (j) {
+            await client.query(
+              'INSERT INTO blocklist (jid, added_at) VALUES ($1, $2) ON CONFLICT (jid) DO NOTHING',
+              [j, ts],
+            );
+          }
+          await client.query('COMMIT');
+        } catch (e) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw e;
+        } finally { client.release(); }
+      } catch (e) { logger.warn({ err: e }, 'setBlocklist failed'); }
+    },
+    async addToBlocklist(jid) {
+      try {
+        await pool.query(
+          'INSERT INTO blocklist (jid, added_at) VALUES ($1, $2) ON CONFLICT (jid) DO NOTHING',
+          [jid, Date.now()],
+        );
+      } catch (e) { logger.warn({ err: e, jid }, 'addToBlocklist failed'); }
+    },
+    async removeFromBlocklist(jid) {
+      try { await pool.query('DELETE FROM blocklist WHERE jid = $1', [jid]); }
+      catch (e) { logger.warn({ err: e, jid }, 'removeFromBlocklist failed'); }
+    },
+    async getBlocklist() {
+      try {
+        const { rows } = await pool.query('SELECT jid, added_at FROM blocklist ORDER BY added_at DESC');
+        return rows;
+      } catch (e) { logger.warn({ err: e }, 'getBlocklist failed'); return []; }
+    },
+    async isBlocked(jid) {
+      try {
+        const { rows } = await pool.query('SELECT 1 FROM blocklist WHERE jid = $1 LIMIT 1', [jid]);
+        return rows.length > 0;
+      } catch (e) { logger.warn({ err: e, jid }, 'isBlocked failed'); return false; }
+    },
+
+    // presence ────────────────────────────────────────────────
+    async recordPresence(jid, state, lastSeenTs, chatJid) {
+      try {
+        await pool.query(
+          `INSERT INTO presence (jid, last_state, last_seen_ts, chat_jid, updated_at)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (jid) DO UPDATE SET
+             last_state = EXCLUDED.last_state,
+             last_seen_ts = COALESCE(EXCLUDED.last_seen_ts, presence.last_seen_ts),
+             chat_jid = EXCLUDED.chat_jid,
+             updated_at = EXCLUDED.updated_at`,
+          [jid, state || null, lastSeenTs || null, chatJid || null, Date.now()],
+        );
+      } catch (e) { logger.warn({ err: e, jid }, 'recordPresence failed'); }
+    },
+    async getPresence(jid) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT jid, last_state, last_seen_ts, chat_jid, updated_at FROM presence WHERE jid = $1',
+          [jid],
+        );
+        return rows[0] || null;
+      } catch (e) { logger.warn({ err: e, jid }, 'getPresence failed'); return null; }
+    },
+    async getPresenceInChat(chatJid) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT jid, last_state, last_seen_ts, updated_at FROM presence WHERE chat_jid = $1 ORDER BY updated_at DESC',
+          [chatJid],
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e }, 'getPresenceInChat failed'); return []; }
+    },
+    async getRecentPresence(limit = 50) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT jid, last_state, last_seen_ts, chat_jid, updated_at FROM presence ORDER BY updated_at DESC LIMIT $1',
+          [limit],
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e }, 'getRecentPresence failed'); return []; }
+    },
+
+    // chat state ──────────────────────────────────────────────
+    async updateChat(jid, partial) {
+      try {
+        if (!jid) return;
+        const { name, unread, ts, pinned, muted_until, archived } = partial || {};
+        await pool.query(
+          `UPDATE chats SET
+             name = COALESCE($2, name),
+             unread = COALESCE($3, unread),
+             ts = COALESCE($4, ts),
+             pinned = COALESCE($5, pinned),
+             muted_until = COALESCE($6, muted_until),
+             archived = COALESCE($7, archived)
+           WHERE jid = $1`,
+          [
+            jid,
+            name ?? null,
+            unread ?? null,
+            ts ?? null,
+            pinned == null ? null : (pinned ? 1 : 0),
+            muted_until ?? null,
+            archived == null ? null : (archived ? 1 : 0),
+          ],
+        );
+      } catch (e) { logger.warn({ err: e, jid }, 'updateChat failed'); }
+    },
+    async markChatDeleted(jid) {
+      try { await pool.query('UPDATE chats SET deleted_at = $1 WHERE jid = $2', [Date.now(), jid]); }
+      catch (e) { logger.warn({ err: e, jid }, 'markChatDeleted failed'); }
+    },
+    async listChats() {
+      try {
+        const { rows } = await pool.query(
+          'SELECT jid, name, unread, ts, pinned, muted_until, archived, deleted_at FROM chats ORDER BY ts DESC NULLS LAST',
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e }, 'listChats failed'); return []; }
+    },
+    async getChat(jid) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT jid, name, unread, ts, pinned, muted_until, archived, deleted_at FROM chats WHERE jid = $1',
+          [jid],
+        );
+        return rows[0] || null;
+      } catch (e) { logger.warn({ err: e, jid }, 'getChat failed'); return null; }
+    },
+
+    // contacts (bulk + extended) ─────────────────────────────
+    async bulkUpsertContacts(contacts) {
+      try {
+        if (!Array.isArray(contacts) || !contacts.length) return 0;
+        const client = await pool.connect();
+        let n = 0;
+        try {
+          await client.query('BEGIN');
+          for (const c of contacts) {
+            if (!c?.id) continue;
+            await client.query(
+              `INSERT INTO contacts (jid, name, notify, img_url, status, verified_name)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (jid) DO UPDATE SET
+                 name = COALESCE(EXCLUDED.name, contacts.name),
+                 notify = COALESCE(EXCLUDED.notify, contacts.notify),
+                 img_url = COALESCE(EXCLUDED.img_url, contacts.img_url),
+                 status = COALESCE(EXCLUDED.status, contacts.status),
+                 verified_name = COALESCE(EXCLUDED.verified_name, contacts.verified_name)`,
+              [c.id, c.name ?? null, c.notify ?? null, c.imgUrl ?? null, c.status ?? null, c.verifiedName ?? null],
+            );
+            n++;
+          }
+          await client.query('COMMIT');
+        } catch (e) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw e;
+        } finally { client.release(); }
+        return n;
+      } catch (e) { logger.warn({ err: e }, 'bulkUpsertContacts failed'); return 0; }
+    },
+    async getContact(jid) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT jid, name, notify, img_url, status, verified_name FROM contacts WHERE jid = $1',
+          [jid],
+        );
+        return rows[0] || null;
+      } catch (e) { logger.warn({ err: e, jid }, 'getContact failed'); return null; }
+    },
+    async listContacts({ limit = 100, offset = 0 } = {}) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT jid, name, notify, img_url, status, verified_name FROM contacts ORDER BY COALESCE(name, notify, jid) LIMIT $1 OFFSET $2',
+          [limit, offset],
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e }, 'listContacts failed'); return []; }
+    },
+    async countContacts() {
+      try {
+        const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM contacts');
+        return rows[0]?.n || 0;
+      } catch (e) { logger.warn({ err: e }, 'countContacts failed'); return 0; }
+    },
+
     recordStat(key, inc = 1) {
       pool.query(
         `INSERT INTO stats (key, value) VALUES ($1, $2)

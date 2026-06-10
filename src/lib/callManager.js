@@ -11,11 +11,12 @@ const logger = require('../core/logger').child({ mod: 'call-manager' });
 class CallManager {
   constructor(sock) {
     this.sock = sock;
-    this.activeCalls = new Map(); // callId -> { peer, from }
+    this.activeCalls = new Map(); // callId -> { peer, from, state }
   }
 
-  async handleOffer(callId, from, offer) {
-    logger.info({ from, callId }, 'Received call offer');
+  // ==================== ACCEPT CALL ====================
+  async acceptCall(callId, from, offer) {
+    logger.info({ from, callId }, 'Accepting call');
 
     const peer = new dc.PeerConnection(`call-${callId}`, {
       iceServers: [
@@ -23,7 +24,7 @@ class CallManager {
       ],
     });
 
-    this.activeCalls.set(callId, { peer, from });
+    this.activeCalls.set(callId, { peer, from, state: 'connecting' });
 
     // Handle incoming media tracks
     peer.onTrack = (track) => {
@@ -32,70 +33,109 @@ class CallManager {
       if (track.kind === 'video') this.handleVideoTrack(track, callId);
     };
 
-    // Send local ICE candidates to the remote peer
+    // Send ICE candidates to remote peer
     peer.onIceCandidate = (candidate) => {
-      logger.debug({ callId, candidate }, 'Generated ICE candidate');
-      // TODO: Send this candidate to the caller via WhatsApp signaling
-      this.sendIceCandidate(callId, from, candidate);
+      this.sendSignalingMessage(from, {
+        type: 'ice-candidate',
+        callId,
+        candidate,
+      });
     };
 
     try {
-      // Set remote description (offer)
+      // Set remote description (offer from caller)
       await peer.setRemoteDescription(offer, 'offer');
 
-      // Create answer
+      // Create and set local description (answer)
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
 
       // Send answer back to caller
-      this.sendAnswer(callId, from, answer);
+      this.sendSignalingMessage(from, {
+        type: 'answer',
+        callId,
+        answer,
+      });
 
-      logger.info({ callId, from }, 'Answer sent');
+      this.activeCalls.get(callId).state = 'connected';
+      logger.info({ callId, from }, 'Call accepted and answer sent');
     } catch (err) {
-      logger.error({ err, callId }, 'Failed to handle offer');
+      logger.error({ err, callId }, 'Failed to accept call');
+      this.endCall(callId);
     }
 
     return peer;
   }
 
-  // Send Answer via WhatsApp (you'll implement signaling here)
-  async sendAnswer(callId, from, answer) {
+  // ==================== REJECT CALL ====================
+  async rejectCall(callId, from) {
     try {
-      // Example: Send answer as a message or custom signaling
-      await this.sock.sendMessage(from, {
-        text: JSON.stringify({ type: 'answer', callId, answer }),
-      });
-      logger.info({ callId, from }, 'Answer sent to caller');
+      await this.sock.rejectCall(callId, from);
+      logger.info({ from, callId }, 'Call rejected');
+      this.endCall(callId);
     } catch (err) {
-      logger.error({ err, callId }, 'Failed to send answer');
+      logger.error({ err, callId }, 'Failed to reject call');
     }
   }
 
-  // Send ICE Candidate via WhatsApp
-  async sendIceCandidate(callId, from, candidate) {
+  // ==================== HANDLE REMOTE ICE CANDIDATE ====================
+  async addRemoteCandidate(callId, candidate) {
+    const call = this.activeCalls.get(callId);
+    if (!call || !call.peer) {
+      logger.warn({ callId }, 'No active peer for ICE candidate');
+      return;
+    }
+
     try {
-      await this.sock.sendMessage(from, {
-        text: JSON.stringify({ type: 'ice-candidate', callId, candidate }),
-      });
+      await call.peer.addRemoteCandidate(candidate);
+      logger.debug({ callId }, 'Added remote ICE candidate');
     } catch (err) {
-      logger.error({ err, callId }, 'Failed to send ICE candidate');
+      logger.error({ err, callId }, 'Failed to add remote ICE candidate');
     }
   }
 
+  // ==================== HANDLE ANSWER FROM REMOTE ====================
+  async handleAnswer(callId, answer) {
+    const call = this.activeCalls.get(callId);
+    if (!call || !call.peer) return;
+
+    try {
+      await call.peer.setRemoteDescription(answer, 'answer');
+      logger.info({ callId }, 'Remote answer set');
+    } catch (err) {
+      logger.error({ err, callId }, 'Failed to set remote answer');
+    }
+  }
+
+  // ==================== MEDIA TRACK HANDLERS ====================
   handleAudioTrack(track, callId) {
-    logger.info({ callId }, 'Audio track ready');
+    logger.info({ callId }, 'Audio track ready for processing');
+    // You can record, play, or process audio here
   }
 
   handleVideoTrack(track, callId) {
-    logger.info({ callId }, 'Video track ready');
+    logger.info({ callId }, 'Video track ready for processing');
+    // You can record or process video here
   }
 
+  // ==================== SEND SIGNALING MESSAGES ====================
+  async sendSignalingMessage(to, message) {
+    try {
+      await this.sock.sendMessage(to, {
+        text: JSON.stringify(message),
+      });
+    } catch (err) {
+      logger.error({ err, to }, 'Failed to send signaling message');
+    }
+  }
+
+  // ==================== END CALL ====================
   endCall(callId) {
     const call = this.activeCalls.get(callId);
     if (call?.peer) {
       call.peer.close();
       this.activeCalls.delete(callId);
-      logger.info({ callId }, 'Call ended');
+      logger.info({ callId }, 'Call ended and peer closed');
     }
   }
 }

@@ -5,10 +5,28 @@
  */
 'use strict';
 
-const logger = require('../core/logger');
+/**
+ * blocklist.set — Baileys initial sync of the blocklist. Payload:
+ *   { sock, u: { blocklist: ['<jid>', '<jid>', ...] } }
+ *
+ * Replaces our stored blocklist wholesale. Subsequent diffs come via
+ * blocklist.update.
+ *
+ * NOTE: payload has no `store` — pulled from the singleton.
+ */
 
-const log = logger.child({ mod: 'blocklist.set' });
+const logger = require('../core/logger').child({ mod: 'blocklist.set' });
+const { getStore } = require('../store/instance');
 
-module.exports = async (payload) => {
-  log.info({ payload }, 'blocklist.set received');
+module.exports = async ({ u }) => {
+  const list = u?.blocklist;
+  if (!Array.isArray(list)) return;
+  const store = getStore();
+  if (!store?.setBlocklist) return;
+  try {
+    await store.setBlocklist(list);
+    logger.info({ count: list.length }, 'blocklist set (full snapshot)');
+  } catch (err) {
+    logger.warn({ err }, 'setBlocklist failed');
+  }
 };

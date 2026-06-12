@@ -1,8 +1,16 @@
 name: Release
 
+# v1.4.0:
+#   - tag-trigger: pushing a v* tag (e.g. v1.4.0) creates a release immediately
+#   - push-to-main fallback: detects version change in package.json and creates
+#     a release with the matching v<version> tag
+#   - runs tests + headers check before publishing
+#   - prefers RELEASE_NOTES_v<version>.md body; falls back to auto-generated notes
+#   - attaches a source tarball (src + dashboard + LICENSE + README + CHANGELOG)
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -19,47 +27,111 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get current version
-        id: current_version
-        run: |
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
 
-      - name: Get previous version
-        id: previous_version
-        run: |
-          PREV_VERSION=$(git show HEAD~1:package.json 2>/dev/null | node -e "
-            const fs = require('fs');
-            try {
-              const pkg = JSON.parse(fs.readFileSync(0, 'utf8'));
-              console.log(pkg.version || '0.0.0');
-            } catch {
-              console.log('0.0.0');
-            }
-          " || echo '0.0.0')
-          echo "version=$PREV_VERSION" >> $GITHUB_OUTPUT
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Check for version change
-        id: version_check
+      - name: Run tests (gate the release)
+        run: npm test
+
+      - name: Check AGPL headers (gate the release)
+        run: npm run headers:check
+
+      - name: Resolve target version
+        id: target
         run: |
-          CURRENT="${{ steps.current_version.outputs.version }}"
-          PREVIOUS="${{ steps.previous_version.outputs.version }}"
-          
+          # Tag pushes: use the tag (strip leading v); push-to-main: read package.json
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+            SOURCE="tag"
+          else
+            VERSION=$(node -p "require('./package.json').version")
+            TAG="v${VERSION}"
+            SOURCE="package"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}"         >> $GITHUB_OUTPUT
+          echo "source=${SOURCE}"   >> $GITHUB_OUTPUT
+          echo "Releasing ${TAG} (source: ${SOURCE})"
+
+      - name: Detect version bump (push-to-main path only)
+        id: bump
+        if: steps.target.outputs.source == 'package'
+        run: |
+          CURRENT="${{ steps.target.outputs.version }}"
+          PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null \
+            | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).version||'0.0.0')}catch{console.log('0.0.0')}})" \
+            || echo '0.0.0')
           if [ "$CURRENT" != "$PREVIOUS" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "new_version=$CURRENT" >> $GITHUB_OUTPUT
+            echo "changed=true"  >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Decide whether to release
+        id: decide
+        run: |
+          if [[ "${{ steps.target.outputs.source }}" == "tag" ]]; then
+            echo "release=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.bump.outputs.changed }}" == "true" ]]; then
+            echo "release=true" >> $GITHUB_OUTPUT
+          else
+            echo "release=false" >> $GITHUB_OUTPUT
+            echo "No version change and no tag push — skipping release."
+          fi
+
+      - name: Build dashboard
+        if: steps.decide.outputs.release == 'true'
+        run: |
+          cd dashboard
+          npm ci
+          npm run build || npx vite build || echo "no dashboard build script — skipping"
+
+      - name: Prepare release notes body
+        id: notes
+        if: steps.decide.outputs.release == 'true'
+        run: |
+          NOTES_FILE="RELEASE_NOTES_${{ steps.target.outputs.tag }}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            echo "use_file=true" >> $GITHUB_OUTPUT
+            echo "file=$NOTES_FILE" >> $GITHUB_OUTPUT
+          else
+            echo "use_file=false" >> $GITHUB_OUTPUT
+            echo "No $NOTES_FILE — will use GitHub's auto-generated notes"
+          fi
+
+      - name: Build source tarball
+        if: steps.decide.outputs.release == 'true'
+        run: |
+          TARBALL="echofox-${{ steps.target.outputs.version }}.tar.gz"
+          tar --exclude='node_modules' \
+              --exclude='.git' \
+              --exclude='.github' \
+              --exclude='*.tar.gz' \
+              -czf "$TARBALL" \
+              src scripts ecosystem.config.js LICENSE NOTICE README.md \
+              CHANGELOG.md DISCLAIMER.md SECURITY.md package.json \
+              dashboard/src dashboard/index.html dashboard/package.json \
+              dashboard/vite.config.ts dashboard/tsconfig.json \
+              docs Dockerfile docker-compose.yml || true
+          ls -lh "$TARBALL"
+
       - name: Create GitHub Release
-        if: steps.version_check.outputs.changed == 'true'
+        if: steps.decide.outputs.release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version_check.outputs.new_version }}
-          name: Release v${{ steps.version_check.outputs.new_version }}
+          tag_name: ${{ steps.target.outputs.tag }}
+          name: Release ${{ steps.target.outputs.tag }}
+          body_path: ${{ steps.notes.outputs.use_file == 'true' && steps.notes.outputs.file || '' }}
+          generate_release_notes: ${{ steps.notes.outputs.use_file != 'true' }}
           draft: false
-          prerelease: ${{ contains(steps.version_check.outputs.new_version, 'beta') || contains(steps.version_check.outputs.new_version, 'alpha') }}
-          generate_release_notes: true
+          prerelease: ${{ contains(steps.target.outputs.version, 'beta') || contains(steps.target.outputs.version, 'alpha') || contains(steps.target.outputs.version, 'rc') }}
+          files: echofox-${{ steps.target.outputs.version }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

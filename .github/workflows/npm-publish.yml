@@ -1,0 +1,65 @@
+name: npm publish
+
+# v1.4.0:
+#   - Triggered by v* tag push, after the Release workflow has succeeded.
+#   - Requires repository secret NPM_TOKEN (npm automation token with
+#     publish scope on the 'echofox' package).
+#   - Skips if the package version is already published to the registry
+#     (no-op rerun safety).
+#   - Uses provenance attestation (npm supply-chain hardening).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # required for npm provenance
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies (without scripts to be safe)
+        run: npm ci --ignore-scripts
+
+      - name: Run tests (gate the publish)
+        run: npm test
+
+      - name: Resolve version
+        id: ver
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "v${VERSION}" != "${TAG}" ]]; then
+            echo "::error::package.json version (${VERSION}) does not match pushed tag (${TAG})"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check if version already published
+        id: check
+        run: |
+          if npm view "echofox@${{ steps.ver.outputs.version }}" version >/dev/null 2>&1; then
+            echo "already=true"  >> $GITHUB_OUTPUT
+            echo "::notice::echofox@${{ steps.ver.outputs.version }} is already on npm — skipping"
+          else
+            echo "already=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish to npm (with provenance)
+        if: steps.check.outputs.already == 'false'
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

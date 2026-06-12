@@ -29,6 +29,15 @@ jobs:
       - name: Run Prettier check
         run: npm run format:check
 
+      - name: Check AGPL headers (v1.4.0)
+        run: npm run headers:check
+
+      - name: Dashboard install + typecheck (v1.4.0)
+        run: |
+          cd dashboard
+          npm ci
+          npx tsc -b --noEmit
+
   test:
     name: Test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest

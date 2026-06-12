@@ -452,7 +452,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       const mem = groupCache.get(jid);
       if (mem) return mem;
       const row = stmts.groupGet.get(jid);
-      if (!row?.meta) return undefined;F
+      if (!row?.meta) return undefined;
       const parsed = JSON.parse(row.meta.toString('utf8'));
       groupCache.set(jid, parsed);
       return parsed;

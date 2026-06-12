@@ -56,3 +56,13 @@ tmp/
 *.tmp
 *.bak
 *.backup
+
+
+# ─── build artefacts ─────────────────────────────────────────────
+# TypeScript incremental build info (dashboard tsc --build)
+*.tsbuildinfo
+dashboard/*.tsbuildinfo
+
+# Lockfiles ─────────────────────────────────────────────────────────────────
+# package-lock.json
+dashboard/package-lock.json

@@ -778,6 +778,59 @@ function makePostgresStore(url, logger, groupCache) {
       } catch (e) { logger.warn({ err: e }, 'listAiOptedInChats failed'); return []; }
     },
 
+    // v1.3.0 AI persistent rate-limit ────────────────────────
+    async incrAiRateUser(userJid, hourBucket) {
+      try {
+        const exp = (Number(hourBucket) + 2) * 60 * 60 * 1000;
+        const { rows } = await pool.query(
+          `INSERT INTO ai_rate_user (user_jid, hour_bucket, count, expires_at)
+           VALUES ($1, $2, 1, $3)
+           ON CONFLICT (user_jid, hour_bucket) DO UPDATE SET count = ai_rate_user.count + 1
+           RETURNING count`,
+          [String(userJid), Number(hourBucket), exp],
+        );
+        return Number(rows[0]?.count || 0);
+      } catch (e) { logger.warn({ err: e, userJid }, 'incrAiRateUser failed'); return 0; }
+    },
+    async getAiRateUser(userJid, hourBucket) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT count FROM ai_rate_user WHERE user_jid = $1 AND hour_bucket = $2`,
+          [String(userJid), Number(hourBucket)],
+        );
+        return Number(rows[0]?.count || 0);
+      } catch (e) { logger.warn({ err: e, userJid }, 'getAiRateUser failed'); return 0; }
+    },
+    async incrAiRateChat(chatJid, dayBucket) {
+      try {
+        const exp = (Number(dayBucket) + 2) * 24 * 60 * 60 * 1000;
+        const { rows } = await pool.query(
+          `INSERT INTO ai_rate_chat (chat_jid, day_bucket, count, expires_at)
+           VALUES ($1, $2, 1, $3)
+           ON CONFLICT (chat_jid, day_bucket) DO UPDATE SET count = ai_rate_chat.count + 1
+           RETURNING count`,
+          [String(chatJid), Number(dayBucket), exp],
+        );
+        return Number(rows[0]?.count || 0);
+      } catch (e) { logger.warn({ err: e, chatJid }, 'incrAiRateChat failed'); return 0; }
+    },
+    async getAiRateChat(chatJid, dayBucket) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT count FROM ai_rate_chat WHERE chat_jid = $1 AND day_bucket = $2`,
+          [String(chatJid), Number(dayBucket)],
+        );
+        return Number(rows[0]?.count || 0);
+      } catch (e) { logger.warn({ err: e, chatJid }, 'getAiRateChat failed'); return 0; }
+    },
+    async pruneAiRate(now = Date.now()) {
+      try {
+        const a = await pool.query(`DELETE FROM ai_rate_user WHERE expires_at < $1`, [Number(now)]);
+        const b = await pool.query(`DELETE FROM ai_rate_chat WHERE expires_at < $1`, [Number(now)]);
+        return { users: a.rowCount || 0, chats: b.rowCount || 0 };
+      } catch (e) { logger.warn({ err: e }, 'pruneAiRate failed'); return { users: 0, chats: 0 }; }
+    },
+
     recordStat(key, inc = 1) {
       pool.query(
         `INSERT INTO stats (key, value) VALUES ($1, $2)

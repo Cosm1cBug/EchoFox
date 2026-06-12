@@ -366,8 +366,34 @@ const schema = z.object({
   }).default({}),
 
   telegram: z.object({
+    // v1.3.0 — log-only outbound bridge (no inbound polling)
     enabled:      z.boolean().default(false),
     botToken:     z.string().default(''),
+
+    // v1.3.0 — per-channel routing: WA log-channel key -> Telegram chat id / @channel.
+    // Empty string for any field disables that channel's forward.
+    // Keys mirror config.channels.*
+    routing: z.object({
+      syslogs:      z.string().default(''),
+      botLogs:      z.string().default(''),
+      userLogs:     z.string().default(''),
+      groupUpdates: z.string().default(''),
+      callLogs:     z.string().default(''),
+      errLogs:      z.string().default(''),
+      movGroup:     z.string().default(''),
+    }).default({}),
+
+    // v1.3.0 — message format
+    parseMode:    z.enum(['HTML', 'MarkdownV2', 'plain']).default('HTML'),
+
+    // v1.3.0 — buffering (ms). 0 = forward each line immediately.
+    // Error-level entries always flush instantly regardless of batchMs.
+    batchMs:      z.coerce.number().int().min(0).max(60_000).default(2_000),
+
+    // Telegram outbound max msg size is 4096 chars; we chunk above this.
+    maxChunkChars: z.coerce.number().int().min(500).max(4096).default(3800),
+
+    // ── legacy / future fields kept for back-compat (unused by log bridge) ──
     botUsername:  z.string().default(''),
     userId:       z.string().default(''),
     apiId:        z.string().default(''),
@@ -375,7 +401,7 @@ const schema = z.object({
     channelId:    z.string().default(''),
     groupId:      z.string().default(''),
     bridgedChats: z.record(z.string()).default({}),
-  }).default({}),
+  }).passthrough().default({}),
 
   // ─── v0.4.5 NEW: per-command failure-rate alerts ────────────────────────
   alerts: z.object({

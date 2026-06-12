@@ -26,6 +26,7 @@ const { makeRateLimiter } = require('../middleware/rateLimit');
 const { config }   = require('../lib/configLoader');
 const metrics      = require('../services/metrics');
 const alertEngine  = require('../services/alertEngine');
+const telegram     = require('../services/telegram');
 const { isUserFacingError, shouldCountAsFailure } = require('../lib/errors');
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -94,6 +95,15 @@ async function postCrashToChannel(sock, cmd, ctx, err) {
     '```\n' + (err.stack || err.message || String(err)).slice(0, 1500) + '\n```';
   try { await sock.sendMessage(ch, { text: txt }); }
   catch (_e) { /* don't crash the runner because the log channel is down */ }
+
+  // v1.3.0 — also mirror to Telegram errLogs (no-op if telegram disabled)
+  try {
+    telegram.forward('errLogs', {
+      level:  'error',
+      source: `cmd:${cmd.name}`,
+      text:   `Command crashed: ${cmd.name} (cat:${cmd.category || '?'})\nFrom ${ctx.sender} in ${ctx.chat}\n\n${(err.stack || err.message || String(err)).slice(0, 2500)}`,
+    });
+  } catch (_e) { /* ignore — telegram bridge must never crash the runner */ }
 }
 
 async function run({ sock, cmd, m, ctx, handlerArgs }) {

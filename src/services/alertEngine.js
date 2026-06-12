@@ -35,6 +35,7 @@
 const { LRUCache } = require('lru-cache');
 const logger  = require('../core/logger').child({ mod: 'alerts' });
 const metrics = require('./metrics');
+const telegram = require('./telegram');
 
 const WINDOW_MINUTES_DEFAULT     = 60;
 const MIN_INVOCATIONS_DEFAULT    = 10;
@@ -193,6 +194,15 @@ function _notify(kind, command, info) {
     ? `🚨 *Command alert — TRIGGERED*\n*Cmd:* \`${command}\`\n*Failure rate:* ${(info.rate * 100).toFixed(0)}% over last 1h\n*Invocations:* ${info.invocations}`
     : `✅ *Command alert — CLEARED*\n*Cmd:* \`${command}\`\n*Invocations in window:* ${info?.invocations || 0}`;
   st.sock.sendMessage(st.channelJid, { text: msg }, { skipPresence: true }).catch(() => {});
+
+  // v1.3.0 — also mirror to Telegram errLogs (no-op if telegram disabled)
+  try {
+    telegram.forward('errLogs', {
+      level:  kind === 'triggered' ? 'error' : 'info',
+      source: `alert:${command}`,
+      text:   msg,
+    });
+  } catch (_e) { /* never crash the alert engine */ }
 }
 
 module.exports = {

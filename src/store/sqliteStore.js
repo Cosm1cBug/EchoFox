@@ -214,6 +214,25 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       model       TEXT,
       updated_at  INTEGER NOT NULL
     );
+
+    -- v1.3.0 AI persistent rate-limit counters ───────────────
+    CREATE TABLE IF NOT EXISTS ai_rate_user (
+      user_jid    TEXT    NOT NULL,
+      hour_bucket INTEGER NOT NULL,
+      count       INTEGER NOT NULL DEFAULT 0,
+      expires_at  INTEGER NOT NULL,
+      PRIMARY KEY (user_jid, hour_bucket)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_rate_user_exp ON ai_rate_user (expires_at);
+
+    CREATE TABLE IF NOT EXISTS ai_rate_chat (
+      chat_jid    TEXT    NOT NULL,
+      day_bucket  INTEGER NOT NULL,
+      count       INTEGER NOT NULL DEFAULT 0,
+      expires_at  INTEGER NOT NULL,
+      PRIMARY KEY (chat_jid, day_bucket)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_rate_chat_exp ON ai_rate_chat (expires_at);
     
   `);
 
@@ -360,6 +379,14 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     aiOptInUpsert: db.prepare(`INSERT INTO ai_chat_opt_in (chat_jid, enabled, persona, provider, model, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(chat_jid) DO UPDATE SET enabled=excluded.enabled, persona=excluded.persona, provider=excluded.provider, model=excluded.model, updated_at=excluded.updated_at`),
     aiOptInGet:    db.prepare(`SELECT enabled, persona, provider, model, updated_at FROM ai_chat_opt_in WHERE chat_jid = ?`),
     aiOptInAll:    db.prepare(`SELECT chat_jid, enabled, persona, provider, model, updated_at FROM ai_chat_opt_in ORDER BY updated_at DESC LIMIT ?`),
+
+    // v1.3.0 — AI persistent rate-limit counters
+    aiRateUserUpsert: db.prepare(`INSERT INTO ai_rate_user (user_jid, hour_bucket, count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(user_jid, hour_bucket) DO UPDATE SET count = count + 1`),
+    aiRateUserGet:    db.prepare(`SELECT count FROM ai_rate_user WHERE user_jid = ? AND hour_bucket = ?`),
+    aiRateUserPrune:  db.prepare(`DELETE FROM ai_rate_user WHERE expires_at < ?`),
+    aiRateChatUpsert: db.prepare(`INSERT INTO ai_rate_chat (chat_jid, day_bucket, count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(chat_jid, day_bucket) DO UPDATE SET count = count + 1`),
+    aiRateChatGet:    db.prepare(`SELECT count FROM ai_rate_chat WHERE chat_jid = ? AND day_bucket = ?`),
+    aiRateChatPrune:  db.prepare(`DELETE FROM ai_rate_chat WHERE expires_at < ?`),
   };
 
   const msgHot = new LRUCache({ max: 5_000, ttl: 1000 * 60 * 30 });
@@ -810,6 +837,43 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           updatedAt: r.updated_at,
         }));
       } catch (e) { logger.warn({ err: e }, 'listAiOptedInChats failed'); return []; }
+    },
+
+    // v1.3.0 AI persistent rate-limit ────────────────────────
+    async incrAiRateUser(userJid, hourBucket) {
+      try {
+        const exp = (Number(hourBucket) + 2) * 60 * 60 * 1000;
+        stmts.aiRateUserUpsert.run(String(userJid), Number(hourBucket), exp);
+        const r = stmts.aiRateUserGet.get(String(userJid), Number(hourBucket));
+        return Number(r?.count || 0);
+      } catch (e) { logger.warn({ err: e, userJid }, 'incrAiRateUser failed'); return 0; }
+    },
+    async getAiRateUser(userJid, hourBucket) {
+      try {
+        const r = stmts.aiRateUserGet.get(String(userJid), Number(hourBucket));
+        return Number(r?.count || 0);
+      } catch (e) { logger.warn({ err: e, userJid }, 'getAiRateUser failed'); return 0; }
+    },
+    async incrAiRateChat(chatJid, dayBucket) {
+      try {
+        const exp = (Number(dayBucket) + 2) * 24 * 60 * 60 * 1000;
+        stmts.aiRateChatUpsert.run(String(chatJid), Number(dayBucket), exp);
+        const r = stmts.aiRateChatGet.get(String(chatJid), Number(dayBucket));
+        return Number(r?.count || 0);
+      } catch (e) { logger.warn({ err: e, chatJid }, 'incrAiRateChat failed'); return 0; }
+    },
+    async getAiRateChat(chatJid, dayBucket) {
+      try {
+        const r = stmts.aiRateChatGet.get(String(chatJid), Number(dayBucket));
+        return Number(r?.count || 0);
+      } catch (e) { logger.warn({ err: e, chatJid }, 'getAiRateChat failed'); return 0; }
+    },
+    async pruneAiRate(now = Date.now()) {
+      try {
+        const a = stmts.aiRateUserPrune.run(Number(now));
+        const b = stmts.aiRateChatPrune.run(Number(now));
+        return { users: a.changes, chats: b.changes };
+      } catch (e) { logger.warn({ err: e }, 'pruneAiRate failed'); return { users: 0, chats: 0 }; }
     },
 
     recordStat(key, inc = 1) {

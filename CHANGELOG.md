@@ -12,6 +12,121 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] — 2026-06-11
+
+> **Bridges & persistence.** v1.3.0 adds an outbound-only Telegram log
+> bridge (mirror your WhatsApp log channels to Telegram with per-channel
+> routing) and makes the v1.2.0 AI rate-limit counters survive restarts
+> by moving them to the store.
+
+### Added
+
+- **Telegram outbound log bridge** (`src/services/telegram/`) — raw HTTPS
+  to the Bot API (no SDK, zero new dependencies). Outbound-only:
+  the bot never polls Telegram. Per-channel routing maps each WA log
+  channel (`syslogs`, `botLogs`, `userLogs`, `groupUpdates`, `callLogs`,
+  `errLogs`, `movGroup`) to a Telegram chat id / `@channel`.
+  - Default 2-second batching coalesces noisy info-level logs into a
+    single Telegram message.
+  - `error` / `fatal` levels flush **immediately**, bypassing the batch
+    timer, so real incidents arrive in real time.
+  - HTML render adds a level icon + bold tag + UTC timestamp + `[source]`
+    prefix per entry.
+  - Chunker splits messages at the configurable `maxChunkChars`
+    (default 3800, below Telegram's 4096 cap) preferring newline
+    boundaries.
+  - Telegram `retry_after` is honoured once (max 60 s); subsequent
+    failures are logged quietly so the bridge never crashes producers.
+- **Per-channel routing** in `config.telegram`:
+
+  ```js
+  telegram: {
+    enabled: true,
+    botToken: process.env.TELEGRAM_BOT_TOKEN,
+    routing: {
+      syslogs: '@echofox_sys',
+      errLogs: '-1001234567890',
+      // ... empty string => disable that channel's mirror
+    },
+    parseMode: 'HTML',     // 'HTML' | 'MarkdownV2' | 'plain'
+    batchMs:   2000,       // errors flush instantly regardless
+    maxChunkChars: 3800,
+  }
+  ```
+
+- **Telegram mirror hookups** — non-invasive, try/catch wrapped so the
+  bridge can never crash the producer:
+  - `src/core/commandRunner.js` — `postCrashToChannel()` also mirrors
+    the stack trace to `errLogs`.
+  - `src/services/alertEngine.js` — fire-alert path mirrors triggered
+    (level=error) and cleared (level=info) alerts.
+- **Persistent AI rate-limit counters** (replaces v1.2.0's in-memory
+  Maps). 5 new methods across all 4 store flavours:
+  - `incrAiRateUser(jid, hourBucket)` / `getAiRateUser(...)`
+  - `incrAiRateChat(jid, dayBucket)`  / `getAiRateChat(...)`
+  - `pruneAiRate(now)`
+- **Migration 006** across sqlite / postgres / mongo / redis — creates
+  `ai_rate_user` + `ai_rate_chat` tables (or equivalents).
+  Mongo uses TTL indexes on `expires_at`; Redis uses native `EXPIREAT`.
+- **`src/services/ai/router.js` refactored** — `shouldRespond()` calls
+  the store-backed counter wrappers and gracefully **falls back to
+  in-memory Maps** if the active store doesn't implement the new
+  methods (so the bot still works on a store flavour that hasn't
+  applied migration 006).
+- **16 new tests** — 12 Telegram (routing, batching, immediate-flush
+  on error, chunking, retry, render layout, drain) + 4 persistence
+  (counter survives `sqlite` re-open, router uses store, fallback to
+  memory, `pruneAiRate` respects `expires_at`).
+
+### Changed
+
+- `config.ai.router` rate-limit counters move from in-memory to store
+  (when the store supports it). Existing in-memory behaviour is
+  preserved as a fallback — no breaking change.
+- `router.noteSent()` is now `async`. Existing callers (only
+  `src/services/ai/index.js`) treat it as fire-and-forget — no
+  observable change.
+- Bumped `package.json` 1.2.0 → 1.3.0.
+
+### Removed
+
+- **Discord bridge** dropped from the roadmap. Telegram is now the
+  only out-of-WhatsApp surface, and even that is log-only.
+
+### Security
+
+- The Telegram bridge is **strictly outbound**. No bot polling, no
+  webhook, no way for Telegram users to issue commands to EchoFox.
+- HTML escaping is enforced by default (`parseMode: 'HTML'`) to
+  prevent injection from log payloads.
+- The bot token is read from `config.telegram.botToken` (typically
+  via `process.env.TELEGRAM_BOT_TOKEN`); the dashboard already
+  refuses to leak provider tokens via `/api/ai/config` and the
+  Telegram token is never exposed via any API route.
+
+### Migration notes
+
+- **Existing users:** just `npm install` and restart. Migration 006
+  is additive across all 4 store flavours; rate-limit data will
+  start populating on the first AI response after upgrade.
+- **To enable Telegram log mirror:** create a bot via @BotFather,
+  add it as admin to each target chat/channel, then fill in
+  `config.telegram.botToken` + `config.telegram.routing.*`. Leave
+  any routing entry as `''` to disable that channel.
+
+### Known limitations
+
+- Telegram bridge does not yet attach files / images — log channels
+  are text-only. Media in WA log channels is not mirrored.
+- Persistent rate-limit counters use the active store's flavour; if
+  you switch from `sqlite` to `postgres`, prior counters do not
+  migrate (window resets at most ~1 hour later).
+- Incremental WhatsApp message streaming for AI replies was
+  evaluated and **rejected** — risks Baileys ban. The v1.2.0
+  "composing" presence indicator remains the streaming UX.
+
+---
+
 ## [1.2.0] — 2026-06-11
 
 > **AI service — multi-provider LLM with tool calling, persona memory and

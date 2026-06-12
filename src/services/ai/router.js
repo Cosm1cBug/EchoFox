@@ -33,15 +33,20 @@ const conv = require('./conversationStore');
 const cost = require('./costTracker');
 const { getStore } = require('../../store/instance');
 
-// ─── in-memory rate-limit counters ────────────────────────────────
+// ─── rate-limit counters: store-backed (v1.3.0+) with in-memory fallback ──
+// If the active store lacks AI rate methods we transparently fall back
+// to the v1.2.0 in-memory Maps so the bot still works.
 const _userHour = new Map();   // key: `${userJid}|${hourBucket}` -> count
 const _chatDay  = new Map();   // key: `${chatJid}|${dayBucket}`  -> count
 
 function _hourBucket(now = Date.now()) { return Math.floor(now / (60 * 60 * 1000)); }
 function _dayBucket(now = Date.now())  { return Math.floor(now / (24 * 60 * 60 * 1000)); }
 
-// Prune old keys every 10 min — bound memory.
-setInterval(() => {
+// Periodic prune for the in-memory fallback path AND a defensive prune on
+// the persistent store (sqlite/postgres only — mongo TTL + redis EXPIRE
+// handle themselves). 10-minute cadence.
+const _pruneTimer = setInterval(() => {
+  // in-memory prune
   const h = _hourBucket();
   const d = _dayBucket();
   for (const k of _userHour.keys()) {
@@ -52,22 +57,58 @@ setInterval(() => {
     const db = Number(k.split('|')[1]);
     if (db < d - 1) _chatDay.delete(k);
   }
-}, 10 * 60 * 1000).unref();
+  // store prune (best-effort)
+  try {
+    const store = getStore();
+    if (store && typeof store.pruneAiRate === 'function') {
+      Promise.resolve(store.pruneAiRate()).catch(() => {});
+    }
+  } catch (_) { /* getStore throws before lifecycle.selectStore — fine */ }
+}, 10 * 60 * 1000);
+if (typeof _pruneTimer.unref === 'function') _pruneTimer.unref();
 
-function _bumpUser(jid) {
+async function _peekUserStore(jid) {
+  try {
+    const store = getStore();
+    if (store && typeof store.getAiRateUser === 'function') {
+      return await store.getAiRateUser(jid, _hourBucket());
+    }
+  } catch (_) { /* fall through to memory */ }
+  return _userHour.get(`${jid}|${_hourBucket()}`) || 0;
+}
+async function _peekChatStore(jid) {
+  try {
+    const store = getStore();
+    if (store && typeof store.getAiRateChat === 'function') {
+      return await store.getAiRateChat(jid, _dayBucket());
+    }
+  } catch (_) { /* fall through to memory */ }
+  return _chatDay.get(`${jid}|${_dayBucket()}`) || 0;
+}
+async function _bumpUserStore(jid) {
+  try {
+    const store = getStore();
+    if (store && typeof store.incrAiRateUser === 'function') {
+      return await store.incrAiRateUser(jid, _hourBucket());
+    }
+  } catch (_) { /* fall through */ }
   const k = `${jid}|${_hourBucket()}`;
   const n = (_userHour.get(k) || 0) + 1;
   _userHour.set(k, n);
   return n;
 }
-function _peekUser(jid) { return _userHour.get(`${jid}|${_hourBucket()}`) || 0; }
-function _bumpChat(jid) {
+async function _bumpChatStore(jid) {
+  try {
+    const store = getStore();
+    if (store && typeof store.incrAiRateChat === 'function') {
+      return await store.incrAiRateChat(jid, _dayBucket());
+    }
+  } catch (_) { /* fall through */ }
   const k = `${jid}|${_dayBucket()}`;
   const n = (_chatDay.get(k) || 0) + 1;
   _chatDay.set(k, n);
   return n;
 }
-function _peekChat(jid) { return _chatDay.get(`${jid}|${_dayBucket()}`) || 0; }
 
 /**
  * @param {object} ctx
@@ -122,10 +163,10 @@ async function shouldRespond(ctx) {
   const perUser = Number(aiCfg.rateLimitPerUserPerHour || 0);
   const perChat = Number(aiCfg.rateLimitPerChatPerDay  || 0);
 
-  if (perUser > 0 && _peekUser(ctx.userJid) >= perUser) {
+  if (perUser > 0 && (await _peekUserStore(ctx.userJid)) >= perUser) {
     return { respond: false, reason: 'rate_limit_user', optIn };
   }
-  if (perChat > 0 && _peekChat(ctx.chatJid) >= perChat) {
+  if (perChat > 0 && (await _peekChatStore(ctx.chatJid)) >= perChat) {
     return { respond: false, reason: 'rate_limit_chat', optIn };
   }
 
@@ -137,10 +178,13 @@ async function shouldRespond(ctx) {
   return { respond: true, optIn };
 }
 
-/** Call AFTER a successful response is sent — bumps rate counters. */
-function noteSent({ chatJid, userJid }) {
-  if (userJid) _bumpUser(userJid);
-  if (chatJid) _bumpChat(chatJid);
+/**
+ * Call AFTER a successful response is sent — bumps rate counters.
+ * Returns a promise but callers may ignore it (fire-and-forget is fine).
+ */
+async function noteSent({ chatJid, userJid }) {
+  if (userJid) { try { await _bumpUserStore(userJid); } catch (_) { /* ignore */ } }
+  if (chatJid) { try { await _bumpChatStore(chatJid); } catch (_) { /* ignore */ } }
 }
 
 function _resetForTests() {

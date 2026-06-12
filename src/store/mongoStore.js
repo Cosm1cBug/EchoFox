@@ -705,6 +705,56 @@ function makeMongoStore(uri, logger, groupCache) {
       } catch (e) { logger.warn({ err: e }, 'listAiOptedInChats failed'); return []; }
     },
 
+    // v1.3.0 AI persistent rate-limit ────────────────────────
+    async incrAiRateUser(userJid, hourBucket) {
+      try {
+        const exp = (Number(hourBucket) + 2) * 60 * 60 * 1000;
+        const r = await conn.collection('ai_rate_user').findOneAndUpdate(
+          { user_jid: String(userJid), hour_bucket: Number(hourBucket) },
+          { $inc: { count: 1 }, $set: { expires_at: new Date(exp) } },
+          { upsert: true, returnDocument: 'after' },
+        );
+        return Number((r && (r.value?.count ?? r.count)) || 1);
+      } catch (e) { logger.warn({ err: e, userJid }, 'incrAiRateUser failed'); return 0; }
+    },
+    async getAiRateUser(userJid, hourBucket) {
+      try {
+        const r = await conn.collection('ai_rate_user').findOne(
+          { user_jid: String(userJid), hour_bucket: Number(hourBucket) },
+        );
+        return Number(r?.count || 0);
+      } catch (e) { logger.warn({ err: e, userJid }, 'getAiRateUser failed'); return 0; }
+    },
+    async incrAiRateChat(chatJid, dayBucket) {
+      try {
+        const exp = (Number(dayBucket) + 2) * 24 * 60 * 60 * 1000;
+        const r = await conn.collection('ai_rate_chat').findOneAndUpdate(
+          { chat_jid: String(chatJid), day_bucket: Number(dayBucket) },
+          { $inc: { count: 1 }, $set: { expires_at: new Date(exp) } },
+          { upsert: true, returnDocument: 'after' },
+        );
+        return Number((r && (r.value?.count ?? r.count)) || 1);
+      } catch (e) { logger.warn({ err: e, chatJid }, 'incrAiRateChat failed'); return 0; }
+    },
+    async getAiRateChat(chatJid, dayBucket) {
+      try {
+        const r = await conn.collection('ai_rate_chat').findOne(
+          { chat_jid: String(chatJid), day_bucket: Number(dayBucket) },
+        );
+        return Number(r?.count || 0);
+      } catch (e) { logger.warn({ err: e, chatJid }, 'getAiRateChat failed'); return 0; }
+    },
+    async pruneAiRate(now = Date.now()) {
+      // MongoDB TTL index on expires_at handles this automatically (within ~60s).
+      // We still expose this for parity; manual delete here as a belt-and-braces.
+      try {
+        const cutoff = new Date(Number(now));
+        const a = await conn.collection('ai_rate_user').deleteMany({ expires_at: { $lt: cutoff } });
+        const b = await conn.collection('ai_rate_chat').deleteMany({ expires_at: { $lt: cutoff } });
+        return { users: a.deletedCount || 0, chats: b.deletedCount || 0 };
+      } catch (e) { logger.warn({ err: e }, 'pruneAiRate failed'); return { users: 0, chats: 0 }; }
+    },
+
     recordStat(key, inc = 1) {
       Stat.updateOne({ key }, { $inc: { value: inc } }, { upsert: true })
         .catch((e) => logger.warn({ err: e, key }, 'recordStat failed'));

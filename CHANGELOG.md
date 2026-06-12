@@ -12,6 +12,133 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] — 2026-06-11
+
+> **Ops polish.** v1.4.0 closes the long-standing roadmap items:
+> auto-release on tag (Release + Docker + npm publish + Pages deploy),
+> a refreshed VitePress docs site covering v1.2/v1.3/v1.4, and a full
+> observability slice — 12 new store-backed counters / 3 new gauges
+> for AI + Telegram, exposed in Prometheus format on the dashboard
+> port, with 12 new Grafana panels and 2 new built-in alert rules.
+
+### Added
+
+- **CI/CD automation**:
+  - `release.yml` — full rewrite. Tag-triggered (`v*`) OR version-bump
+    on `main`. Gates the release with `npm test` + headers check,
+    builds the dashboard, builds an `echofox-<version>.tar.gz`, and
+    attaches it as a release asset. Body uses `RELEASE_NOTES_v<v>.md`
+    when present, otherwise GitHub's auto-generated notes.
+  - `docker.yml` — now also tag-triggered. Tags every image as
+    `:1.4.0`, `:1.4` (major.minor), `:latest`, and `:sha-<short>`
+    across both `ghcr.io/cosm1cbug/echofox` and Docker Hub. Weekly
+    cron retained for base-image patches.
+  - **NEW `npm-publish.yml`** — publishes to `registry.npmjs.org` on
+    `v*` tag push. Requires `NPM_TOKEN` repo secret. Pre-flight:
+    `--ignore-scripts` install, `npm test`, asserts pkg.version
+    matches the pushed tag. Idempotent (skips if already published).
+    Uses `--provenance` for SLSA-style npm supply-chain attestation.
+  - `ci.yml` lint job now also runs `npm run headers:check` and the
+    dashboard `tsc --noEmit` — both gate PR merges.
+- **Docs site** (`docs/.vitepress/` + GitHub Pages):
+  - Existing `docs/.vitepress/config.js` had a syntax error
+    (missing comma between `sidebar` and `socialLinks`) that
+    silently broke the build — **fixed**.
+  - Renamed to `config.mjs` so Node can parse it without
+    `"type": "module"` in `package.json`.
+  - Refreshed nav + sidebar: new sections for **AI** and
+    **Telegram**, expanded **Deployment** section.
+  - 3 new pages: `guide/ai.md`, `guide/telegram.md`,
+    `deploy/ci-cd.md`.
+  - `ignoreDeadLinks` pattern added for repo-root files
+    (`README`, `LICENSE`, etc.) that live outside `docs/`.
+- **Observability — metrics, Prometheus exposition, Grafana panels**:
+  - 12 new counters (`store/schema/stats.js`):
+    `ai_chat_requests_total`, `ai_chat_requests_failed_total`,
+    `ai_tokens_{prompt,completion}_total`,
+    `ai_tool_invocations(_failed)_total`,
+    `ai_rate_limit_hits_total`, `ai_cost_cap_hits_total`,
+    `telegram_forwards_total`, `telegram_forwards_dropped_total`,
+    `telegram_send_failures_total`, `telegram_send_retries_total`.
+  - 3 new gauges: `ai_cost_usd_today`, `ai_active_opt_in_chats`,
+    `telegram_routed_channels`.
+  - 9 typed convenience wrappers in `services/metrics.js`
+    (`incAiRequest`, `incAiTokens`, `incAiTool`,
+    `incAiRateLimit`, `incAiCostCapHit`, `setAiCostUsdToday`,
+    `setAiOptInChats`, `incTelegramForward`,
+    `setTelegramRoutedChannels`).
+  - Wired into `services/ai/index.js`, `services/ai/router.js`,
+    and `services/telegram/index.js`.
+  - **NEW `GET /metrics`** on the dashboard port (default `:3001`)
+    that renders all store-backed counters/gauges in Prometheus
+    text-exposition format with the `echofox_` prefix.
+  - `docker/prometheus/prometheus.yml` now scrapes both
+    `:3000` (supervisor: worker_up + Node.js defaults) and
+    `:3001` (dashboard: store-backed metrics) with the
+    distinguishing label `job_part`.
+  - `docker/grafana/dashboards/echofox-overview.json` — 12 new
+    panels in 2 sections:
+    - **AI (v1.2.0+)**: requests (24h), failures (24h), tokens
+      today, cost today (USD), tool invocation rate, rate-limit
+      + cost-cap hit rate.
+    - **Telegram bridge (v1.3.0+)**: forwards (24h), failures
+      (24h), routed channels, failure rate (percent) + retries/sec.
+- **2 new built-in alert rules** in `services/alertEngine.js`:
+  - `config.alerts.rules.aiCostPct` (default threshold `0.80`,
+    cooldown `60min`) — fires when today's AI cost reaches the
+    configured fraction of `config.ai.costCapPerDayUsd`.
+  - `config.alerts.rules.telegramFailureRate` (default `0.20`,
+    `minSends: 10`, cooldown `30min`) — fires when Telegram's
+    send-failure ratio over the alert window exceeds the
+    threshold AND total sends ≥ `minSends`.
+  - Both rules use synthetic command keys (`__ai_cost_pct`,
+    `__telegram_failure_rate`) so they appear in `getActiveAlerts()`
+    without colliding with real commands. They reuse the existing
+    `_notify()` path so the WhatsApp `errLogs` AND the v1.3.0
+    Telegram mirror both fire for free.
+- **7 new tests** (`__tests__/integration/metrics-alerts-v140.test.js`)
+  covering stats schema completeness, typed wrappers, both new
+  alert rules (fire/no-fire boundary + idempotency).
+
+### Changed
+
+- `package.json` version `1.3.0 → 1.4.0`.
+- `docs/.vitepress/config.js` → `docs/.vitepress/config.mjs`.
+- `config.alerts` schema extended with the `rules` sub-block
+  (`aiCostPct` + `telegramFailureRate`); existing keys unchanged,
+  backwards-compatible.
+- `services/alertEngine.js` now imports `config` + `getStore`
+  (was previously pure in-memory).
+
+### Fixed
+
+- VitePress docs config had a missing comma between `sidebar` and
+  `socialLinks` that broke any local `vitepress build docs` run.
+
+### Migration notes
+
+- **Existing users**: just `npm install` and restart. No schema
+  changes; no data migrations needed.
+- **New CI features require secrets** (all optional):
+  - `NPM_TOKEN` for `npm-publish.yml`
+  - `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN` for the Docker Hub
+    push leg of `docker.yml`
+- Without those, the workflows skip cleanly; only the
+  GitHub Container Registry push + GitHub Release will run.
+- If you previously had Grafana provisioned from
+  `docker/grafana/dashboards/echofox-overview.json`, reload the
+  dashboard to pick up the 12 new panels.
+
+### Known limitations
+
+- `/metrics` is exposed without authentication on the dashboard
+  port. If you expose `:3001` publicly, gate it at your reverse
+  proxy. (Existing `/api/*` routes already use Basic auth.)
+- The 2 transitive CVEs in `@whiskeysockets/baileys`' bundled
+  `link-preview-js` remain upstream issues.
+
+---
+
 ## [1.3.0] — 2026-06-11
 
 > **Bridges & persistence.** v1.3.0 adds an outbound-only Telegram log

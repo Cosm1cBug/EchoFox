@@ -397,6 +397,41 @@ function startDashboard(port, store, config) {
     } catch (e) { next(e); }
   });
 
+  // ── v1.4.0 Prometheus exposition for store-backed metrics ────────────
+  //
+  // The supervisor (bootstrap.js) already exposes worker_up + Node.js
+  // defaults at :3000/metrics. The store-backed counters/gauges live
+  // in the worker process, so we expose them here on the dashboard port
+  // in Prometheus text format. Prefix: echofox_
+  app.get('/metrics', async (_req, res) => {
+    try {
+      const snap = await metrics.snapshot();
+      const lines = [];
+      const now = Date.now();
+      const seen = new Set();
+
+      function emit(prefix, m, type, help) {
+        for (const [k, v] of Object.entries(m || {})) {
+          if (seen.has(k)) continue;
+          seen.add(k);
+          const name = `echofox_${k}`;
+          lines.push(`# HELP ${name} ${help || 'store-backed metric'}`);
+          lines.push(`# TYPE ${name} ${type}`);
+          lines.push(`${name} ${Number(v) || 0} ${now}`);
+        }
+      }
+
+      emit('counter', snap.counters, 'counter', 'EchoFox counter');
+      emit('gauge',   snap.gauges,   'gauge',   'EchoFox gauge');
+
+      res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+      res.end(lines.join('\n') + '\n');
+    } catch (e) {
+      logger.warn({ err: e }, 'metrics export failed');
+      res.status(500).type('text/plain').send('# metrics unavailable\n');
+    }
+  });
+
   // ── v1.2.0 AI routes ──────────────────────────────────────────────────
   app.get('/api/ai/stats', async (req, res, next) => {
     try {

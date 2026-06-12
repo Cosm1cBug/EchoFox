@@ -180,12 +180,30 @@ module.exports = {
   },
 
   // ─── per-command failure-rate alerts ──────────────────────────────────
+  // v1.4.0: added rules.aiCostPct + rules.telegramFailureRate
   alerts: {
     enabled:              true,
     windowMinutes:        60,             // rolling window
     minInvocations:       10,             // need at least N runs to alert
     failureRateThreshold: 0.30,           // alert if ≥30% fail in window
     notifyChannel:        '',             // empty = use channels.errLogs
+
+    // v1.4.0 — built-in rules. Set enabled: false on either to disable.
+    rules: {
+      // Alert when today's AI cost reaches 80% of config.ai.costCapPerDayUsd
+      aiCostPct: {
+        enabled:         true,
+        threshold:       0.80,
+        cooldownMinutes: 60,
+      },
+      // Alert when Telegram send-failure rate over the alert window is high
+      telegramFailureRate: {
+        enabled:         true,
+        threshold:       0.20,     // 20% failures
+        minSends:        10,       // need at least 10 sends to count
+        cooldownMinutes: 30,
+      },
+    },
   },
 
   // ─── AI / LLM (v1.2.0) ────────────────────────────────────
@@ -233,6 +251,36 @@ module.exports = {
       anthropic: { apiKey: process.env.ANTHROPIC_API_KEY || '', baseUrl: '' },
       local:     { baseUrl: 'http://localhost:11434', model: 'llama3.2' },
     },
+  },
+
+  // ─── Telegram log bridge (v1.3.0) ────────────────────────
+  // OUTBOUND-ONLY. Forwards messages from your WhatsApp log channels
+  // (config.channels.*) to Telegram chats/channels. Read-only — does
+  // not receive Telegram commands or messages back.
+  //
+  // Setup:
+  //   1. Create a bot via @BotFather, copy the token below.
+  //   2. Add the bot to each target channel/group as admin.
+  //   3. Fill in the routing map: WA channel key -> Telegram chat id.
+  //      Public channels can use '@channelname'; private groups use
+  //      the numeric id like '-1001234567890'.
+  telegram: {
+    enabled:   false,
+    botToken:  process.env.TELEGRAM_BOT_TOKEN || '',
+
+    routing: {
+      syslogs:      '',   // e.g. '@echofox_sys'
+      botLogs:      '',   // e.g. '-1001234567890'
+      userLogs:     '',
+      groupUpdates: '',
+      callLogs:     '',
+      errLogs:      '',   // e.g. '@echofox_err'
+      movGroup:     '',
+    },
+
+    parseMode:     'HTML',   // 'HTML' | 'MarkdownV2' | 'plain'
+    batchMs:        2000,    // batch window; errors flush instantly
+    maxChunkChars:  3800,    // Telegram cap is 4096
   },
 
   // ─── Text-to-Speech provider ──────────────────────────────

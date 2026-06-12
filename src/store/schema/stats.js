@@ -45,6 +45,19 @@ const COUNTERS = Object.freeze([
   'worker_restarts_total',
   'command_alerts_triggered_total',
   'command_alerts_cleared_total',
+  // ── v1.4.0: AI + Telegram observability ─────────────────────────────
+  'ai_chat_requests_total',
+  'ai_chat_requests_failed_total',
+  'ai_tokens_prompt_total',
+  'ai_tokens_completion_total',
+  'ai_tool_invocations_total',
+  'ai_tool_invocations_failed_total',
+  'ai_rate_limit_hits_total',
+  'ai_cost_cap_hits_total',
+  'telegram_forwards_total',
+  'telegram_forwards_dropped_total',
+  'telegram_send_failures_total',
+  'telegram_send_retries_total',
 ]);
 
 const GAUGES = Object.freeze([
@@ -55,6 +68,10 @@ const GAUGES = Object.freeze([
   // ── v0.4.5: stability ──────────────────────────────────────────────
   'heap_pressure_percent',
   'active_command_alerts',
+  // ── v1.4.0: AI + Telegram observability ─────────────────────────────
+  'ai_cost_usd_today',
+  'ai_active_opt_in_chats',
+  'telegram_routed_channels',
 ]);
 
 /**

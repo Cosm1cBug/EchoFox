@@ -36,6 +36,8 @@ const { LRUCache } = require('lru-cache');
 const logger  = require('../core/logger').child({ mod: 'alerts' });
 const metrics = require('./metrics');
 const telegram = require('./telegram');
+const { config } = require('../lib/configLoader');
+const { getStore } = require('../store/instance');
 
 const WINDOW_MINUTES_DEFAULT     = 60;
 const MIN_INVOCATIONS_DEFAULT    = 10;
@@ -177,6 +179,111 @@ function _sweep() {
   // Re-evaluate everything periodically so commands that stop running
   // get cleared once their invocation count drops below the threshold.
   for (const cmdName of st.active.keys()) _evaluate(cmdName);
+
+  // v1.4.0 — evaluate built-in extra rules
+  Promise.resolve(_evaluateBuiltinRules()).catch((e) =>
+    logger.warn({ err: e }, 'builtin rule sweep failed'));
+}
+
+// ─── v1.4.0: built-in extra rules ────────────────────────────────────────
+//
+// Implementation notes:
+//   - Each rule shares the existing st.active map but uses a synthetic
+//     command key prefixed with '__' so it never collides with a real
+//     command. Re-uses the same notify path (WhatsApp + Telegram mirror).
+//   - Cooldown is enforced via st.cooldowns: ruleKey -> lastFiredAt(ms).
+//   - Rules are no-ops if the relevant config block isn't enabled.
+
+const RULE_KEY_AI_COST = '__ai_cost_pct';
+const RULE_KEY_TG_FAIL = '__telegram_failure_rate';
+
+function _ruleOnCooldown(st, ruleKey, cooldownMinutes) {
+  st.cooldowns = st.cooldowns || new Map();
+  const last = st.cooldowns.get(ruleKey) || 0;
+  return (Date.now() - last) < (Number(cooldownMinutes) || 60) * 60 * 1000;
+}
+function _ruleMarkFired(st, ruleKey) {
+  st.cooldowns = st.cooldowns || new Map();
+  st.cooldowns.set(ruleKey, Date.now());
+}
+
+async function _evaluateBuiltinRules() {
+  const st = _ensure();
+  const rules = config.alerts?.rules || {};
+
+  // ── aiCostPct ──────────────────────────────────────────────────────
+  const rAi = rules.aiCostPct;
+  if (rAi?.enabled && Number(rAi.threshold) > 0) {
+    try {
+      const cap = Number(config.ai?.costCapPerDayUsd || 0);
+      if (cap > 0) {
+        const store = getStore();
+        const day = new Date().toISOString().slice(0, 10);
+        const used = typeof store?.getAiUsageDayTotal === 'function'
+          ? await store.getAiUsageDayTotal(day)
+          : 0;
+        const pct = used / cap;
+        const isFiring = pct >= Number(rAi.threshold);
+        const wasActive = st.active.has(RULE_KEY_AI_COST);
+
+        if (isFiring && !wasActive && !_ruleOnCooldown(st, RULE_KEY_AI_COST, rAi.cooldownMinutes)) {
+          const info = {
+            since: Math.floor(Date.now() / 1000),
+            pct, used, cap, threshold: Number(rAi.threshold),
+          };
+          st.active.set(RULE_KEY_AI_COST, info);
+          _ruleMarkFired(st, RULE_KEY_AI_COST);
+          try { metrics.inc?.('command_alerts_triggered_total'); } catch {}
+          logger.warn({ pct: pct.toFixed(2), used, cap }, '🚨 AI cost rule TRIGGERED');
+          _notify('triggered', RULE_KEY_AI_COST, info);
+        } else if (!isFiring && wasActive) {
+          const info = st.active.get(RULE_KEY_AI_COST);
+          st.active.delete(RULE_KEY_AI_COST);
+          try { metrics.inc?.('command_alerts_cleared_total'); } catch {}
+          logger.info({ pct: pct.toFixed(2) }, '✅ AI cost rule CLEARED');
+          _notify('cleared', RULE_KEY_AI_COST, info);
+        }
+      }
+    } catch (e) { logger.warn({ err: e }, 'aiCostPct evaluator failed'); }
+  }
+
+  // ── telegramFailureRate ───────────────────────────────────────────
+  const rTg = rules.telegramFailureRate;
+  if (rTg?.enabled && Number(rTg.threshold) > 0) {
+    try {
+      const store = getStore();
+      const stats = typeof store?.getStats === 'function'
+        ? await store.getStats()
+        : {};
+      const sends    = Number(stats.telegram_forwards_total) || 0;
+      const failures = Number(stats.telegram_send_failures_total) || 0;
+      const minSends = Number(rTg.minSends) || 10;
+
+      if (sends >= minSends) {
+        const rate = sends === 0 ? 0 : failures / sends;
+        const isFiring = rate >= Number(rTg.threshold);
+        const wasActive = st.active.has(RULE_KEY_TG_FAIL);
+
+        if (isFiring && !wasActive && !_ruleOnCooldown(st, RULE_KEY_TG_FAIL, rTg.cooldownMinutes)) {
+          const info = {
+            since: Math.floor(Date.now() / 1000),
+            rate, sends, failures, threshold: Number(rTg.threshold),
+          };
+          st.active.set(RULE_KEY_TG_FAIL, info);
+          _ruleMarkFired(st, RULE_KEY_TG_FAIL);
+          try { metrics.inc?.('command_alerts_triggered_total'); } catch {}
+          logger.warn({ rate: rate.toFixed(2), sends, failures }, '🚨 Telegram failure-rate rule TRIGGERED');
+          _notify('triggered', RULE_KEY_TG_FAIL, info);
+        } else if (!isFiring && wasActive) {
+          const info = st.active.get(RULE_KEY_TG_FAIL);
+          st.active.delete(RULE_KEY_TG_FAIL);
+          try { metrics.inc?.('command_alerts_cleared_total'); } catch {}
+          logger.info({ rate: rate.toFixed(2) }, '✅ Telegram failure-rate rule CLEARED');
+          _notify('cleared', RULE_KEY_TG_FAIL, info);
+        }
+      }
+    } catch (e) { logger.warn({ err: e }, 'telegramFailureRate evaluator failed'); }
+  }
 }
 
 function _notify(kind, command, info) {
@@ -214,4 +321,5 @@ module.exports = {
   subscribe,
   unsubscribe,
   stop,
+  _evaluateBuiltinRules,   // v1.4.0 — exposed for tests
 };

@@ -30,6 +30,7 @@
 const logger = require('../../core/logger').child({ mod: 'ai/router' });
 const { config } = require('../../lib/configLoader');
 const conv = require('./conversationStore');
+const metrics = require('../metrics');
 const cost = require('./costTracker');
 const { getStore } = require('../../store/instance');
 
@@ -164,14 +165,17 @@ async function shouldRespond(ctx) {
   const perChat = Number(aiCfg.rateLimitPerChatPerDay  || 0);
 
   if (perUser > 0 && (await _peekUserStore(ctx.userJid)) >= perUser) {
+    metrics.incAiRateLimit();
     return { respond: false, reason: 'rate_limit_user', optIn };
   }
   if (perChat > 0 && (await _peekChatStore(ctx.chatJid)) >= perChat) {
+    metrics.incAiRateLimit();
     return { respond: false, reason: 'rate_limit_chat', optIn };
   }
 
   // cost cap ────────────────────────────────────────────────────
   if (await cost.isOverCap()) {
+    metrics.incAiCostCapHit();
     return { respond: false, reason: 'cost_cap', optIn };
   }
 

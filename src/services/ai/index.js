@@ -35,6 +35,7 @@ const router    = require('./router');
 const cost      = require('./costTracker');
 const personas  = require('./personas');
 const tools     = require('./toolRegistry');
+const metrics   = require('../metrics');
 
 const providers = {
   openai:    require('./providers/openai'),
@@ -64,6 +65,7 @@ function _resolveSettings({ optIn, providerName, modelName, persona }) {
  * Main entry point. Caller MUST have already gated through router.shouldRespond().
  */
 async function chat({ chatJid, userJid, text, optIn, providerName, modelName, persona: personaName }) {
+  metrics.incAiRequest('start');
   const aiCfg = config.ai || {};
   const { provider, model, persona: pname } = _resolveSettings({ optIn, providerName, modelName, persona: personaName });
 
@@ -102,6 +104,7 @@ async function chat({ chatJid, userJid, text, optIn, providerName, modelName, pe
     // accumulate token + cost
     const { costUsd } = await cost.record(provider, resp.model || model,
       resp.usage?.promptTokens || 0, resp.usage?.completionTokens || 0);
+    metrics.incAiTokens(resp.usage?.promptTokens || 0, resp.usage?.completionTokens || 0);
     aggUsage.promptTokens     += resp.usage?.promptTokens     || 0;
     aggUsage.completionTokens += resp.usage?.completionTokens || 0;
     aggUsage.costUsd          += costUsd;
@@ -129,6 +132,7 @@ async function chat({ chatJid, userJid, text, optIn, providerName, modelName, pe
     // Dispatch each tool call, append result
     for (const tc of resp.toolCalls) {
       const r = await tools.invoke(tc.name, tc.args);
+      metrics.incAiTool(r.ok ? 'success' : 'failure');
       const resultContent = r.ok ? JSON.stringify(r.result) : JSON.stringify({ error: r.error });
       toolTrace.push({ name: tc.name, args: tc.args, ok: r.ok, result: r.result, error: r.error });
       const toolTurn = {

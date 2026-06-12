@@ -6,12 +6,20 @@ global:
 
 scrape_configs:
   - job_name: echofox
+    # v1.4.0: scrape both the supervisor (process + worker_up) and the
+    # dashboard (store-backed AI/Telegram/command counters + gauges)
     scheme: http
     metrics_path: /metrics
     static_configs:
       - targets: ['echofox:3000']
         labels:
           service: echofox
+          job_part: supervisor
+          env:     production
+      - targets: ['echofox:3001']
+        labels:
+          service: echofox
+          job_part: dashboard
           env:     production
 
   - job_name: prometheus

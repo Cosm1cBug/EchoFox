@@ -31,6 +31,7 @@ const logger = require('../../core/logger').child({ mod: 'telegram' });
 const { config } = require('../../lib/configLoader');
 const routing = require('./routing');
 const transport = require('./transport');
+const metrics = require('../metrics');
 
 const _buffers = new Map();    // channelKey -> [{ text, level, source, ts }]
 const _timers  = new Map();    // channelKey -> Timeout
@@ -79,10 +80,15 @@ async function _flushChannel(channelKey) {
     if (!r.ok) {
       // Retry once after Telegram's suggested back-off, otherwise drop silently.
       if (r.retryAfter && r.retryAfter > 0 && r.retryAfter < 60) {
+        metrics.incTelegramForward('retried');
         await new Promise((res) => setTimeout(res, r.retryAfter * 1000));
         const r2 = await transport.sendMessage({ chatId, text, parseMode });
-        if (!r2.ok) logger.warn({ channelKey, err: r2.error }, 'telegram: send failed after retry');
+        if (!r2.ok) {
+          metrics.incTelegramForward('failure');
+          logger.warn({ channelKey, err: r2.error }, 'telegram: send failed after retry');
+        }
       } else {
+        metrics.incTelegramForward('failure');
         logger.warn({ channelKey, err: r.error, status: r.status }, 'telegram: send failed');
       }
     }
@@ -134,9 +140,11 @@ function forward(channelKey, payload) {
     } else {
       _scheduleFlush(channelKey);
     }
+    metrics.incTelegramForward('queued');
     return true;
   } catch (e) {
     logger.warn({ err: e, channelKey }, 'forward failed');
+    metrics.incTelegramForward('dropped');
     return false;
   }
 }

@@ -89,6 +89,33 @@ function incMediaUp(n = 1)   { inc('media_uploaded_total', n); }
 function incRateLimit(n = 1) { inc('rate_limit_hits_total', n); }
 function incCooldown(n = 1)  { inc('cooldown_hits_total', n); }
 
+// ─── v1.4.0: AI metrics ─────────────────────────────────────────────────
+function incAiRequest(outcome) {
+  inc('ai_chat_requests_total');
+  if (outcome === 'failure') inc('ai_chat_requests_failed_total');
+}
+function incAiTokens(promptN = 0, completionN = 0) {
+  if (promptN)     inc('ai_tokens_prompt_total',     Number(promptN) || 0);
+  if (completionN) inc('ai_tokens_completion_total', Number(completionN) || 0);
+}
+function incAiTool(outcome) {
+  inc('ai_tool_invocations_total');
+  if (outcome === 'failure') inc('ai_tool_invocations_failed_total');
+}
+function incAiRateLimit()  { inc('ai_rate_limit_hits_total'); }
+function incAiCostCapHit() { inc('ai_cost_cap_hits_total'); }
+function setAiCostUsdToday(n) { setGauge('ai_cost_usd_today', Number(n) || 0); }
+function setAiOptInChats(n)   { setGauge('ai_active_opt_in_chats', Number(n) || 0); }
+
+// ─── v1.4.0: Telegram metrics ───────────────────────────────────────────
+function incTelegramForward(outcome) {
+  inc('telegram_forwards_total');
+  if (outcome === 'dropped')  inc('telegram_forwards_dropped_total');
+  if (outcome === 'failure')  inc('telegram_send_failures_total');
+  if (outcome === 'retried')  inc('telegram_send_retries_total');
+}
+function setTelegramRoutedChannels(n) { setGauge('telegram_routed_channels', Number(n) || 0); }
+
 // ─── Derived gauges (call periodically from worker / dashboard) ─────────
 function refreshDerivedGauges({ groupsCount, uniqueUsersSeen } = {}) {
   if (!_ensureStore('refreshDerivedGauges')) return;
@@ -121,4 +148,14 @@ module.exports = {
   incCooldown,
   refreshDerivedGauges,
   snapshot,
+  // v1.4.0
+  incAiRequest,
+  incAiTokens,
+  incAiTool,
+  incAiRateLimit,
+  incAiCostCapHit,
+  setAiCostUsdToday,
+  setAiOptInChats,
+  incTelegramForward,
+  setTelegramRoutedChannels,
 };

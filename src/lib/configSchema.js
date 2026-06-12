@@ -404,13 +404,34 @@ const schema = z.object({
   }).passthrough().default({}),
 
   // ─── v0.4.5 NEW: per-command failure-rate alerts ────────────────────────
+  // ─── v1.4.0: added aiCostPct + telegramFailureRate built-in rules ──────
   alerts: z.object({
     enabled:              z.boolean().default(true),
     windowMinutes:        z.coerce.number().int().min(5).max(1440).default(60),
     minInvocations:       z.coerce.number().int().min(1).default(10),
     failureRateThreshold: z.coerce.number().min(0).max(1).default(0.30),
     notifyChannel:        z.string().default(''),   // override config.channels.errLogs if set
-  }).default({}),
+
+    // v1.4.0 — extra built-in rules. Each can be disabled by setting
+    // its threshold to 0 (or its enabled flag below to false).
+    rules: z.object({
+      // Fire when today's AI cost reaches this fraction of costCapPerDayUsd.
+      // 0 disables. Default 0.80 = warn at 80%.
+      aiCostPct: z.object({
+        enabled:   z.boolean().default(true),
+        threshold: z.coerce.number().min(0).max(1).default(0.80),
+        cooldownMinutes: z.coerce.number().int().min(1).default(60),
+      }).default({}),
+      // Fire when telegram send-failure rate over the alert window exceeds
+      // the threshold (0..1). minSends gates noise from low traffic.
+      telegramFailureRate: z.object({
+        enabled:   z.boolean().default(true),
+        threshold: z.coerce.number().min(0).max(1).default(0.20),
+        minSends:  z.coerce.number().int().min(1).default(10),
+        cooldownMinutes: z.coerce.number().int().min(1).default(30),
+      }).default({}),
+    }).default({}),
+  }).passthrough().default({}),
 
 }).passthrough();   // tolerate any extras the user adds at the top level
 

@@ -397,6 +397,53 @@ function startDashboard(port, store, config) {
     } catch (e) { next(e); }
   });
 
+  // ── v1.2.0 AI routes ──────────────────────────────────────────────────
+  app.get('/api/ai/stats', async (req, res, next) => {
+    try {
+      if (typeof store.getAiUsageByDay !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      const days = Math.max(1, Math.min(180, Number(req.query.days) || 30));
+      const rows = await store.getAiUsageByDay(days);
+      const today = new Date().toISOString().slice(0, 10);
+      const todayUsd = typeof store.getAiUsageDayTotal === 'function' ? await store.getAiUsageDayTotal(today) : 0;
+      res.json({ days, rows, todayUsd, costCapPerDayUsd: config.ai?.costCapPerDayUsd || 0 });
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/ai/chats', async (_req, res, next) => {
+    try {
+      if (typeof store.listAiOptedInChats !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      const rows = await store.listAiOptedInChats(200);
+      res.json({ count: rows.length, chats: rows });
+    } catch (e) { next(e); }
+  });
+
+  app.get('/api/ai/config', (_req, res) => {
+    const ai = config.ai || {};
+    // Never expose API keys via the dashboard.
+    const safe = {
+      enabled:          !!ai.enabled,
+      defaultProvider:  ai.defaultProvider,
+      model:            ai.model,
+      persona:          ai.persona,
+      memoryTurns:      ai.memoryTurns,
+      maxTokens:        ai.maxTokens,
+      costCapPerDayUsd: ai.costCapPerDayUsd,
+      optInDefault:     ai.optInDefault,
+      enableToolCalling: ai.enableToolCalling,
+      typingWhileGenerating: ai.typingWhileGenerating,
+      toolWhitelist:    ai.toolWhitelist || [],
+      rateLimitPerUserPerHour: ai.rateLimitPerUserPerHour,
+      rateLimitPerChatPerDay:  ai.rateLimitPerChatPerDay,
+      providersConfigured: {
+        openai:    !!ai.providers?.openai?.apiKey,
+        gemini:    !!ai.providers?.gemini?.apiKey,
+        anthropic: !!ai.providers?.anthropic?.apiKey,
+        local:     !!ai.providers?.local?.baseUrl,
+      },
+    };
+    res.json(safe);
+  });
+
   // ── Error handler ─────────────────────────────────────────────────────
   app.use((err, _req, res, _next) => {
     logger.error({ err }, 'dashboard route error');

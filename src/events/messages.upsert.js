@@ -33,6 +33,7 @@ const { config }          = require('../lib/configLoader');
 const { correct }         = require('../lib/stringMatch');
 const { rememberUser }    = require('../services/userDirectory');
 const { run: runCommand } = require('../core/commandRunner');
+const ai = require('../services/ai');
 const { makeRateLimiter } = require('../middleware/rateLimit');
 const metrics             = require('../services/metrics');
 
@@ -192,6 +193,48 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
   if (!matched) {
     if (/^(echofox|buggy)$/i.test(text.trim())) {
       await ctx.reply(`🦊 EchoFox online. Type \`${config.bot.prefix}menu\` for commands.`);
+      return;
+    }
+
+    // ─── v1.2.0 AI fallback ────────────────────────────────
+    if (config.ai?.enabled) {
+      try {
+        const decision = await ai.router.shouldRespond({
+          chatJid: ctx.chat,
+          userJid: ctx.sender,
+          text,
+          isDM:    ctx.isPrivate,
+        });
+        if (decision.respond) {
+          // Typing indicator while we generate (UX choice: typing_indicator)
+          let typingTimer = null;
+          if (config.ai.typingWhileGenerating) {
+            try { await sock.sendPresenceUpdate('composing', ctx.chat); } catch (_) { /* ignore */ }
+            typingTimer = setInterval(() => {
+              sock.sendPresenceUpdate('composing', ctx.chat).catch(() => {});
+            }, 8_000).unref();
+          }
+          try {
+            const out = await ai.chat({
+              chatJid: ctx.chat,
+              userJid: ctx.sender,
+              text,
+              optIn:   decision.optIn,
+            });
+            if (out?.reply) await ctx.reply(out.reply);
+          } finally {
+            if (typingTimer) clearInterval(typingTimer);
+            try { await sock.sendPresenceUpdate('paused', ctx.chat); } catch (_) { /* ignore */ }
+          }
+        } else if (decision.reason === 'rate_limit_user' || decision.reason === 'rate_limit_chat') {
+          // Quiet drop — don't spam every blocked message
+          logger.debug({ chat: ctx.chat, reason: decision.reason }, 'ai: rate-limited');
+        } else if (decision.reason === 'cost_cap') {
+          logger.warn({ chat: ctx.chat }, 'ai: daily cost cap reached — dropping');
+        }
+      } catch (e) {
+        logger.warn({ err: e, chat: ctx.chat }, 'ai fallback failed');
+      }
     }
     return;
   }

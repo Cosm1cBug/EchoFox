@@ -19,6 +19,7 @@ import { Contacts } from "./pages/Contacts";
 import { Presence } from "./pages/Presence";
 import { Labels } from "./pages/Labels";
 import { Newsletters } from "./pages/Newsletters";
+import { Ai } from "./pages/Ai";
 
 const TABS = [
   "Overview",
@@ -32,6 +33,7 @@ const TABS = [
   "Metrics",
   "Diagnostics",
   "Alerts",
+  "AI",
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -86,6 +88,7 @@ export default function App() {
           {activeTab === "Metrics" && <Metrics />}
           {activeTab === "Diagnostics" && <Diagnostics />}
           {activeTab === "Alerts" && <Alerts />}
+          {activeTab === "AI" && <Ai />}
         </div>
       </div>
     </div>

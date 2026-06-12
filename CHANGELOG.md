@@ -12,6 +12,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] — 2026-06-11
+
+> **AI service — multi-provider LLM with tool calling, persona memory and
+> per-chat opt-in.** EchoFox can now answer messages with OpenAI / Gemini
+> / Anthropic / local-Ollama models, call 12 intel-focused tools
+> (VirusTotal, AlienVault OTX, GitHub advisories, Wikipedia, fetch_url
+> with SSRF guard, plus 5 read-only store queries), keep a 20-turn
+> rolling memory per chat, and stay under a configurable daily $ cost cap.
+
+### Added
+
+- **4 LLM SDKs** as dependencies: `openai` 6.42, `@google/generative-ai`
+  0.24, `@anthropic-ai/sdk` 0.104, `ollama` 0.6.
+- **`config.ai` block expanded** with 12 new fields:
+  `persona`, `customPersona`, `memoryTurns` (default 20),
+  `enableToolCalling`, `toolWhitelist[12]`, `optInDefault`,
+  `botNameRegex`, `typingWhileGenerating`,
+  `rateLimitPerUserPerHour` (30), `rateLimitPerChatPerDay` (100),
+  `providers.local.model`, plus `maxTokens` default bumped 500 → 800.
+- **Migration 005** across all 4 store flavours (sqlite / postgres /
+  mongo / redis) — adds tables `ai_conversations`, `ai_usage_daily`,
+  `ai_chat_opt_in` (or equivalents). All 4 stores now expose 9 AI
+  methods (`appendAiTurn`, `getRecentAiTurns`, `clearAiTurns`,
+  `recordAiUsage`, `getAiUsageDayTotal`, `getAiUsageSince`,
+  `getAiUsageByDay`, `setAiChatOptIn`, `getAiChatOptIn`,
+  `listAiOptedInChats`).
+- **`src/services/ai/`** — new service module:
+  - `index.js` — facade with `MAX_TOOL_ROUNDS = 3` tool-call loop,
+    aggregating token usage and persisting memory after every round.
+  - `router.js` — `shouldRespond()` with 5-rule decision tree
+    (disabled / empty / command-prefix / opt-in / bot-name) plus
+    in-memory rate-limit Maps and a cost-cap pre-flight check.
+  - `personas.js` — `threat-intel` (default, security-focused) /
+    `general` / `custom` system prompts.
+  - `costTracker.js` — pricing table for OpenAI / Anthropic / Gemini
+    models (USD/1M tokens), `record()`, `todayTotalUsd()`,
+    `isOverCap()`, `summary()`. Local Ollama hard-coded to $0.
+  - `conversationStore.js` — thin facade over store AI methods.
+  - `toolRegistry.js` — 12 tools (5 read-only store + 7 intel APIs),
+    `getActiveSpec()` filters by `config.ai.toolWhitelist` + API-key
+    presence, `invoke()` runs the handler with try/catch. SSRF guard
+    in `fetch_url` blocks `127.`, `10.`, `192.168.`, `169.254.`,
+    `172.16-31.`, `localhost` and `::1`.
+  - `providers/openai.js`, `providers/gemini.js`,
+    `providers/anthropic.js`, `providers/local.js` — per-vendor
+    adapters with singleton `_client` + `__testOverride()` for tests.
+- **Message integration** (`events/messages.upsert.js`) — when no
+  command prefix matches and `config.ai.enabled = true`, the bot
+  consults `router.shouldRespond()` and (on respond=true) shows a
+  `composing` presence indicator (refreshed every 8 s) while the
+  LLM generates, then sends the final reply as a single message.
+- **Two new commands**:
+  - `.ai` (user) — `status` / `on` / `off` / `clear` / `persona <n>` /
+    `provider <n>` / `model <n>`.
+  - `$ai-admin` (admin, alias `aiadmin`) — `stats [days]` / `chats` /
+    `limit get|set <usd>` / `enable` / `disable`.
+- **3 new dashboard API routes**:
+  - `GET /api/ai/stats?days=N` — daily token + cost rollup + today's
+    spend vs cap.
+  - `GET /api/ai/chats` — opted-in chats with per-chat overrides.
+  - `GET /api/ai/config` — sanitised live config (no API keys).
+- **New dashboard tab "AI"** — config card, today-vs-cap progress bar,
+  per-day usage table, opted-in-chats table. Auto-refresh every 60 s.
+- **11 new integration tests** (`__tests__/integration/ai.test.js`)
+  covering router decisions, tool-call loop, memory persistence,
+  cost aggregation, rate limiting, SSRF guard, toolWhitelist
+  filtering, and persona resolution.
+
+### Changed
+
+- `config.ai.maxTokens` default raised 500 → 800 (better fit for
+  threat-intel summaries with tool results).
+- `config.ai.providers.local` now accepts a `model` field
+  (default `llama3.2`).
+- `package.json` version 1.1.2 → 1.2.0.
+
+### Security
+
+- `fetch_url` tool refuses to dial private IP space (RFC 1918,
+  link-local, loopback) to prevent SSRF abuse via the LLM.
+- Dashboard `/api/ai/config` never returns provider API keys; only
+  a boolean per provider indicating whether one is configured.
+
+### Migration notes
+
+- **Existing users**: just `npm install` + restart. The new `ai`
+  section is fully opt-in (`enabled: false` by default) and migration
+  005 is additive — no data loss, no schema breaks.
+- **To enable AI**: set `config.ai.enabled = true`, populate at least
+  one provider API key, optionally `.ai on` per chat (or set
+  `optInDefault: 'on'` for all chats). Cost cap defaults to **\$5/day**
+  globally — adjust via `costCapPerDayUsd` or live with `$ai-admin
+  limit set <usd>`.
+
+### Known limitations
+
+- AI streaming is single-message ("composing" presence + one final
+  reply), not incremental WhatsApp message edits.
+- Rate-limit counters are in-memory only; bouncing the process
+  resets them. Persistence is a v1.3.x candidate.
+- 2 transitive CVEs remain in `@whiskeysockets/baileys`' bundled
+  `link-preview-js` — upstream issue, not actionable here.
+
+---
+
 ## [1.1.2] — 2026-06-10
 
 > **Dashboard tabs for v1.1.0 data.** Five new React tabs surface all

@@ -563,6 +563,148 @@ function makeMongoStore(uri, logger, groupCache) {
       catch (e) { logger.warn({ err: e }, 'countContacts failed'); return 0; }
     },
 
+    // v1.2.0 AI ──────────────────────────────────────────────
+    async appendAiTurn(chatJid, turn) {
+      try {
+        await conn.collection('ai_conversations').insertOne({
+          chat_jid:           chatJid,
+          role:               String(turn.role || ''),
+          content:            String(turn.content == null ? '' : turn.content),
+          tool_name:          turn.toolName || null,
+          tool_args:          turn.toolArgs
+                                ? (typeof turn.toolArgs === 'string' ? turn.toolArgs : JSON.stringify(turn.toolArgs))
+                                : null,
+          tool_id:            turn.toolId || null,
+          model:              turn.model || null,
+          provider:           turn.provider || null,
+          prompt_tokens:      Number(turn.promptTokens || 0),
+          completion_tokens:  Number(turn.completionTokens || 0),
+          ts:                 Number(turn.ts || Date.now()),
+        });
+        return true;
+      } catch (e) { logger.warn({ err: e, chatJid }, 'appendAiTurn failed'); return false; }
+    },
+    async getRecentAiTurns(chatJid, limit = 20) {
+      try {
+        const rows = await conn.collection('ai_conversations')
+          .find({ chat_jid: chatJid })
+          .sort({ ts: -1 })
+          .limit(Number(limit) || 20)
+          .toArray();
+        return rows.reverse().map((r) => ({
+          role:     r.role,
+          content:  r.content,
+          toolName: r.tool_name || undefined,
+          toolArgs: r.tool_args || undefined,
+          toolId:   r.tool_id   || undefined,
+          model:    r.model     || undefined,
+          provider: r.provider  || undefined,
+          promptTokens:     r.prompt_tokens     || 0,
+          completionTokens: r.completion_tokens || 0,
+          ts:       Number(r.ts),
+        }));
+      } catch (e) { logger.warn({ err: e, chatJid }, 'getRecentAiTurns failed'); return []; }
+    },
+    async clearAiTurns(chatJid) {
+      try { await conn.collection('ai_conversations').deleteMany({ chat_jid: chatJid }); return true; }
+      catch (e) { logger.warn({ err: e, chatJid }, 'clearAiTurns failed'); return false; }
+    },
+
+    async recordAiUsage({ day, provider, model, promptTokens = 0, completionTokens = 0, costUsd = 0 }) {
+      try {
+        await conn.collection('ai_usage_daily').updateOne(
+          { day: String(day), provider: String(provider || ''), model: String(model || '') },
+          {
+            $inc: {
+              prompt_tokens:     Number(promptTokens) || 0,
+              completion_tokens: Number(completionTokens) || 0,
+              cost_usd:          Number(costUsd) || 0,
+              calls:             1,
+            },
+            $setOnInsert: { created_at: Date.now() },
+          },
+          { upsert: true },
+        );
+        return true;
+      } catch (e) { logger.warn({ err: e }, 'recordAiUsage failed'); return false; }
+    },
+    async getAiUsageDayTotal(day) {
+      try {
+        const rows = await conn.collection('ai_usage_daily')
+          .aggregate([
+            { $match: { day: String(day) } },
+            { $group: { _id: null, total: { $sum: '$cost_usd' } } },
+          ]).toArray();
+        return Number(rows[0]?.total || 0);
+      } catch (e) { logger.warn({ err: e }, 'getAiUsageDayTotal failed'); return 0; }
+    },
+    async getAiUsageSince(day) {
+      try {
+        return await conn.collection('ai_usage_daily')
+          .find({ day: { $gte: String(day) } })
+          .sort({ day: -1, cost_usd: -1 })
+          .toArray();
+      } catch (e) { logger.warn({ err: e }, 'getAiUsageSince failed'); return []; }
+    },
+    async getAiUsageByDay(limit = 30) {
+      try {
+        return await conn.collection('ai_usage_daily').aggregate([
+          { $group: {
+              _id: '$day',
+              cost_usd:          { $sum: '$cost_usd' },
+              prompt_tokens:     { $sum: '$prompt_tokens' },
+              completion_tokens: { $sum: '$completion_tokens' },
+              calls:             { $sum: '$calls' },
+          } },
+          { $sort: { _id: -1 } },
+          { $limit: Number(limit) || 30 },
+          { $project: { _id: 0, day: '$_id', cost_usd: 1, prompt_tokens: 1, completion_tokens: 1, calls: 1 } },
+        ]).toArray();
+      } catch (e) { logger.warn({ err: e }, 'getAiUsageByDay failed'); return []; }
+    },
+
+    async setAiChatOptIn(chatJid, { enabled = false, persona = null, provider = null, model = null } = {}) {
+      try {
+        await conn.collection('ai_chat_opt_in').updateOne(
+          { chat_jid: chatJid },
+          { $set: { enabled: !!enabled, overrides: { persona, provider, model }, updated_at: Date.now() } },
+          { upsert: true },
+        );
+        return true;
+      } catch (e) { logger.warn({ err: e, chatJid }, 'setAiChatOptIn failed'); return false; }
+    },
+    async getAiChatOptIn(chatJid) {
+      try {
+        const r = await conn.collection('ai_chat_opt_in').findOne({ chat_jid: chatJid });
+        if (!r) return null;
+        const o = r.overrides || {};
+        return {
+          enabled:  !!r.enabled,
+          persona:  o.persona  ?? null,
+          provider: o.provider ?? null,
+          model:    o.model    ?? null,
+          updatedAt: Number(r.updated_at),
+        };
+      } catch (e) { logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed'); return null; }
+    },
+    async listAiOptedInChats(limit = 100) {
+      try {
+        const rows = await conn.collection('ai_chat_opt_in')
+          .find({}).sort({ updated_at: -1 }).limit(Number(limit) || 100).toArray();
+        return rows.map((r) => {
+          const o = r.overrides || {};
+          return {
+            chatJid:   r.chat_jid,
+            enabled:   !!r.enabled,
+            persona:   o.persona  ?? null,
+            provider:  o.provider ?? null,
+            model:     o.model    ?? null,
+            updatedAt: Number(r.updated_at),
+          };
+        });
+      } catch (e) { logger.warn({ err: e }, 'listAiOptedInChats failed'); return []; }
+    },
+
     recordStat(key, inc = 1) {
       Stat.updateOne({ key }, { $inc: { value: inc } }, { upsert: true })
         .catch((e) => logger.warn({ err: e, key }, 'recordStat failed'));

@@ -177,6 +177,43 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       cap_value   INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL DEFAULT 0
     );
+
+    -- v1.2.0 AI tables ───────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS ai_conversations (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_jid    TEXT    NOT NULL,
+      role        TEXT    NOT NULL,
+      content     TEXT    NOT NULL,
+      tool_name   TEXT,
+      tool_args   TEXT,
+      tool_id     TEXT,
+      model       TEXT,
+      provider    TEXT,
+      prompt_tokens     INTEGER DEFAULT 0,
+      completion_tokens INTEGER DEFAULT 0,
+      ts          INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_conv_chat_ts ON ai_conversations (chat_jid, ts);
+
+    CREATE TABLE IF NOT EXISTS ai_usage_daily (
+      day               TEXT    NOT NULL,
+      provider          TEXT    NOT NULL,
+      model             TEXT    NOT NULL,
+      prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+      completion_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_usd          REAL    NOT NULL DEFAULT 0,
+      calls             INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, provider, model)
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_chat_opt_in (
+      chat_jid    TEXT    PRIMARY KEY,
+      enabled     INTEGER NOT NULL DEFAULT 0,
+      persona     TEXT,
+      provider    TEXT,
+      model       TEXT,
+      updated_at  INTEGER NOT NULL
+    );
     
   `);
 
@@ -309,6 +346,20 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
 
     messageCappingUpsert: db.prepare(`INSERT INTO message_capping (jid, cap_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(jid) DO UPDATE SET cap_value=excluded.cap_value, updated_at=excluded.updated_at`),
     messageCappingGet:    db.prepare(`SELECT cap_value, updated_at FROM message_capping WHERE jid = ?`),
+
+    // v1.2.0 AI ──────────────────────────────────────────────
+    aiConvInsert: db.prepare(`INSERT INTO ai_conversations (chat_jid, role, content, tool_name, tool_args, tool_id, model, provider, prompt_tokens, completion_tokens, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    aiConvRecent: db.prepare(`SELECT role, content, tool_name, tool_args, tool_id, model, provider, prompt_tokens, completion_tokens, ts FROM ai_conversations WHERE chat_jid = ? ORDER BY id DESC LIMIT ?`),
+    aiConvClear:  db.prepare(`DELETE FROM ai_conversations WHERE chat_jid = ?`),
+
+    aiUsageUpsert: db.prepare(`INSERT INTO ai_usage_daily (day, provider, model, prompt_tokens, completion_tokens, cost_usd, calls) VALUES (?, ?, ?, ?, ?, ?, 1) ON CONFLICT(day, provider, model) DO UPDATE SET prompt_tokens = prompt_tokens + excluded.prompt_tokens, completion_tokens = completion_tokens + excluded.completion_tokens, cost_usd = cost_usd + excluded.cost_usd, calls = calls + 1`),
+    aiUsageDayTotal: db.prepare(`SELECT COALESCE(SUM(cost_usd), 0) AS total FROM ai_usage_daily WHERE day = ?`),
+    aiUsageRecent: db.prepare(`SELECT day, provider, model, prompt_tokens, completion_tokens, cost_usd, calls FROM ai_usage_daily WHERE day >= ? ORDER BY day DESC, cost_usd DESC`),
+    aiUsageAllDays: db.prepare(`SELECT day, SUM(cost_usd) AS cost_usd, SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, SUM(calls) AS calls FROM ai_usage_daily GROUP BY day ORDER BY day DESC LIMIT ?`),
+
+    aiOptInUpsert: db.prepare(`INSERT INTO ai_chat_opt_in (chat_jid, enabled, persona, provider, model, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(chat_jid) DO UPDATE SET enabled=excluded.enabled, persona=excluded.persona, provider=excluded.provider, model=excluded.model, updated_at=excluded.updated_at`),
+    aiOptInGet:    db.prepare(`SELECT enabled, persona, provider, model, updated_at FROM ai_chat_opt_in WHERE chat_jid = ?`),
+    aiOptInAll:    db.prepare(`SELECT chat_jid, enabled, persona, provider, model, updated_at FROM ai_chat_opt_in ORDER BY updated_at DESC LIMIT ?`),
   };
 
   const msgHot = new LRUCache({ max: 5_000, ttl: 1000 * 60 * 30 });
@@ -672,6 +723,93 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     async countContacts() {
       try { return stmts.contactCount.get()?.n || 0; }
       catch (e) { logger.warn({ err: e }, 'countContacts failed'); return 0; }
+    },
+
+    // v1.2.0 AI ──────────────────────────────────────────────
+    async appendAiTurn(chatJid, turn) {
+      try {
+        stmts.aiConvInsert.run(
+          chatJid,
+          String(turn.role || ''),
+          String(turn.content == null ? '' : turn.content),
+          turn.toolName || null,
+          turn.toolArgs ? (typeof turn.toolArgs === 'string' ? turn.toolArgs : JSON.stringify(turn.toolArgs)) : null,
+          turn.toolId || null,
+          turn.model || null,
+          turn.provider || null,
+          Number(turn.promptTokens || 0),
+          Number(turn.completionTokens || 0),
+          Number(turn.ts || Date.now()),
+        );
+        return true;
+      } catch (e) { logger.warn({ err: e, chatJid }, 'appendAiTurn failed'); return false; }
+    },
+    async getRecentAiTurns(chatJid, limit = 20) {
+      try {
+        const rows = stmts.aiConvRecent.all(chatJid, Number(limit));
+        return rows.reverse().map((r) => ({
+          role: r.role,
+          content: r.content,
+          toolName: r.tool_name || undefined,
+          toolArgs: r.tool_args || undefined,
+          toolId: r.tool_id || undefined,
+          model: r.model || undefined,
+          provider: r.provider || undefined,
+          promptTokens: r.prompt_tokens || 0,
+          completionTokens: r.completion_tokens || 0,
+          ts: r.ts,
+        }));
+      } catch (e) { logger.warn({ err: e, chatJid }, 'getRecentAiTurns failed'); return []; }
+    },
+    async clearAiTurns(chatJid) {
+      try { stmts.aiConvClear.run(chatJid); return true; }
+      catch (e) { logger.warn({ err: e, chatJid }, 'clearAiTurns failed'); return false; }
+    },
+
+    async recordAiUsage({ day, provider, model, promptTokens = 0, completionTokens = 0, costUsd = 0 }) {
+      try {
+        stmts.aiUsageUpsert.run(String(day), String(provider || ''), String(model || ''),
+          Number(promptTokens) || 0, Number(completionTokens) || 0, Number(costUsd) || 0);
+        return true;
+      } catch (e) { logger.warn({ err: e }, 'recordAiUsage failed'); return false; }
+    },
+    async getAiUsageDayTotal(day) {
+      try { return Number(stmts.aiUsageDayTotal.get(String(day))?.total || 0); }
+      catch (e) { logger.warn({ err: e }, 'getAiUsageDayTotal failed'); return 0; }
+    },
+    async getAiUsageSince(day) {
+      try { return stmts.aiUsageRecent.all(String(day)) || []; }
+      catch (e) { logger.warn({ err: e }, 'getAiUsageSince failed'); return []; }
+    },
+    async getAiUsageByDay(limit = 30) {
+      try { return stmts.aiUsageAllDays.all(Number(limit)) || []; }
+      catch (e) { logger.warn({ err: e }, 'getAiUsageByDay failed'); return []; }
+    },
+
+    async setAiChatOptIn(chatJid, { enabled = false, persona = null, provider = null, model = null } = {}) {
+      try {
+        stmts.aiOptInUpsert.run(chatJid, enabled ? 1 : 0, persona, provider, model, Date.now());
+        return true;
+      } catch (e) { logger.warn({ err: e, chatJid }, 'setAiChatOptIn failed'); return false; }
+    },
+    async getAiChatOptIn(chatJid) {
+      try {
+        const r = stmts.aiOptInGet.get(chatJid);
+        if (!r) return null;
+        return { enabled: !!r.enabled, persona: r.persona, provider: r.provider, model: r.model, updatedAt: r.updated_at };
+      } catch (e) { logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed'); return null; }
+    },
+    async listAiOptedInChats(limit = 100) {
+      try {
+        return (stmts.aiOptInAll.all(Number(limit)) || []).map((r) => ({
+          chatJid: r.chat_jid,
+          enabled: !!r.enabled,
+          persona: r.persona,
+          provider: r.provider,
+          model: r.model,
+          updatedAt: r.updated_at,
+        }));
+      } catch (e) { logger.warn({ err: e }, 'listAiOptedInChats failed'); return []; }
     },
 
     recordStat(key, inc = 1) {

@@ -73,3 +73,10 @@ export const getNewsletterReactions = (id: string, msgId: string) =>
 
 export const getLidMapping = (lid: string) =>
   fetchJson(`/api/lid-mapping/${encodeURIComponent(lid)}`);
+
+export const getAiStats = (days = 30) =>
+  fetchJson(`/api/ai/stats?days=${days}`);
+
+export const getAiChats = () => fetchJson("/api/ai/chats");
+
+export const getAiConfig = () => fetchJson("/api/ai/config");

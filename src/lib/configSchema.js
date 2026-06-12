@@ -297,18 +297,52 @@ const schema = z.object({
   }).default({}),
 
   ai: z.object({
-    enabled:         z.boolean().default(false),
-    defaultProvider: z.enum(['openai', 'gemini', 'anthropic', 'local']).default('openai'),
-    model:           z.string().default('gpt-4o-mini'),
-    maxTokens:       z.coerce.number().int().min(1).max(200_000).default(500),
-    costCapPerDayUsd: z.coerce.number().min(0).default(5),
+    enabled:           z.boolean().default(false),
+    defaultProvider:   z.enum(['openai', 'gemini', 'anthropic', 'local']).default('openai'),
+    model:             z.string().default('gpt-4o-mini'),
+    maxTokens:         z.coerce.number().int().min(1).max(200_000).default(800),
+    costCapPerDayUsd:  z.coerce.number().min(0).default(5),
+
+    // v1.2.0 — persona + memory
+    persona:           z.enum(['threat-intel', 'general', 'custom']).default('threat-intel'),
+    customPersona:     z.string().default(''),
+    memoryTurns:       z.coerce.number().int().min(0).max(100).default(20),
+
+    // v1.2.0 — opt-in trigger model
+    optInDefault:      z.enum(['on', 'off']).default('off'),
+    botNameRegex:      z.string().default('echofox|bot|@assistant'),
+
+    // v1.2.0 — UX
+    typingWhileGenerating: z.boolean().default(true),
+
+    // v1.2.0 — tool calling
+    enableToolCalling: z.boolean().default(true),
+    toolWhitelist:     z.array(z.string()).default([
+      'get_blocklist',
+      'get_presence_in_chat',
+      'get_labels_for_chat',
+      'list_newsletters',
+      'get_recent_messages',
+      'check_virustotal',
+      'search_alienvault',
+      'latest_hackernews',
+      'github_releases',
+      'github_advisories',
+      'wiki_lookup',
+      'fetch_url',
+    ]),
+
+    // v1.2.0 — rate limits (loose preset chosen at delivery time)
+    rateLimitPerUserPerHour: z.coerce.number().int().min(0).default(30),
+    rateLimitPerChatPerDay:  z.coerce.number().int().min(0).default(100),
+
     providers: z.object({
       openai:    z.object({ apiKey: z.string().default(''), baseUrl: z.string().default('') }).default({}),
       gemini:    z.object({ apiKey: z.string().default(''), baseUrl: z.string().default('') }).default({}),
       anthropic: z.object({ apiKey: z.string().default(''), baseUrl: z.string().default('') }).default({}),
-      local:     z.object({ baseUrl: z.string().default('http://localhost:11434') }).default({}),
+      local:     z.object({ baseUrl: z.string().default('http://localhost:11434'), model: z.string().default('llama3.2') }).default({}),
     }).default({}),
-  }).default({}),
+  }).passthrough().default({}),
 
   // Text-to-Speech provider abstraction
   tts: z.object({

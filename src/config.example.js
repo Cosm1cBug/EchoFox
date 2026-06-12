@@ -188,6 +188,53 @@ module.exports = {
     notifyChannel:        '',             // empty = use channels.errLogs
   },
 
+  // ─── AI / LLM (v1.2.0) ────────────────────────────────────
+  // Multi-provider LLM with persona, conversation memory, tool calling
+  // and opt-in per chat. Disabled by default; enable with .ai on (user) or
+  // by setting `enabled: true` here.
+  ai: {
+    enabled:          false,
+    defaultProvider:  'openai',      // 'openai' | 'gemini' | 'anthropic' | 'local'
+    model:            'gpt-4o-mini',
+    maxTokens:        800,
+    costCapPerDayUsd: 5,             // global daily cap across all providers
+
+    persona:          'threat-intel', // 'threat-intel' | 'general' | 'custom'
+    customPersona:    '',            // used when persona === 'custom'
+    memoryTurns:      20,            // rolling window: 10 user + 10 assistant
+
+    optInDefault:     'off',         // 'on' = all chats reply automatically
+    botNameRegex:     'echofox|bot|@assistant',
+
+    typingWhileGenerating: true,     // show 'composing' presence while generating
+
+    enableToolCalling: true,
+    toolWhitelist: [
+      'get_blocklist',
+      'get_presence_in_chat',
+      'get_labels_for_chat',
+      'list_newsletters',
+      'get_recent_messages',
+      'check_virustotal',
+      'search_alienvault',
+      'latest_hackernews',
+      'github_releases',
+      'github_advisories',
+      'wiki_lookup',
+      'fetch_url',
+    ],
+
+    rateLimitPerUserPerHour: 30,
+    rateLimitPerChatPerDay:  100,
+
+    providers: {
+      openai:    { apiKey: process.env.OPENAI_API_KEY    || '', baseUrl: '' },
+      gemini:    { apiKey: process.env.GEMINI_API_KEY    || '', baseUrl: '' },
+      anthropic: { apiKey: process.env.ANTHROPIC_API_KEY || '', baseUrl: '' },
+      local:     { baseUrl: 'http://localhost:11434', model: 'llama3.2' },
+    },
+  },
+
   // ─── Text-to-Speech provider ──────────────────────────────
   tts: {
     provider:     'edge',                       // 'edge' | 'google' | 'piper' | 'coqui'

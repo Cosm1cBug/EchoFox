@@ -624,6 +624,160 @@ function makePostgresStore(url, logger, groupCache) {
       } catch (e) { logger.warn({ err: e }, 'countContacts failed'); return 0; }
     },
 
+    // v1.2.0 AI ──────────────────────────────────────────────
+    async appendAiTurn(chatJid, turn) {
+      try {
+        await pool.query(
+          `INSERT INTO ai_conversations
+            (chat_jid, role, content, tool_name, tool_args, tool_id, model, provider, prompt_tokens, completion_tokens, ts)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            chatJid,
+            String(turn.role || ''),
+            String(turn.content == null ? '' : turn.content),
+            turn.toolName || null,
+            turn.toolArgs ? (typeof turn.toolArgs === 'string' ? turn.toolArgs : JSON.stringify(turn.toolArgs)) : null,
+            turn.toolId || null,
+            turn.model || null,
+            turn.provider || null,
+            Number(turn.promptTokens || 0),
+            Number(turn.completionTokens || 0),
+            Number(turn.ts || Date.now()),
+          ],
+        );
+        return true;
+      } catch (e) { logger.warn({ err: e, chatJid }, 'appendAiTurn failed'); return false; }
+    },
+    async getRecentAiTurns(chatJid, limit = 20) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT role, content, tool_name, tool_args, tool_id, model, provider,
+                  prompt_tokens, completion_tokens, ts
+           FROM ai_conversations WHERE chat_jid = $1 ORDER BY id DESC LIMIT $2`,
+          [chatJid, Number(limit) || 20],
+        );
+        return rows.reverse().map((r) => ({
+          role:     r.role,
+          content:  r.content,
+          toolName: r.tool_name || undefined,
+          toolArgs: r.tool_args || undefined,
+          toolId:   r.tool_id   || undefined,
+          model:    r.model     || undefined,
+          provider: r.provider  || undefined,
+          promptTokens:     r.prompt_tokens     || 0,
+          completionTokens: r.completion_tokens || 0,
+          ts:       Number(r.ts),
+        }));
+      } catch (e) { logger.warn({ err: e, chatJid }, 'getRecentAiTurns failed'); return []; }
+    },
+    async clearAiTurns(chatJid) {
+      try { await pool.query(`DELETE FROM ai_conversations WHERE chat_jid = $1`, [chatJid]); return true; }
+      catch (e) { logger.warn({ err: e, chatJid }, 'clearAiTurns failed'); return false; }
+    },
+
+    async recordAiUsage({ day, provider, model, promptTokens = 0, completionTokens = 0, costUsd = 0 }) {
+      try {
+        await pool.query(
+          `INSERT INTO ai_usage_daily (day, provider, model, prompt_tokens, completion_tokens, cost_usd, calls)
+           VALUES ($1, $2, $3, $4, $5, $6, 1)
+           ON CONFLICT (day, provider, model) DO UPDATE SET
+             prompt_tokens = ai_usage_daily.prompt_tokens + EXCLUDED.prompt_tokens,
+             completion_tokens = ai_usage_daily.completion_tokens + EXCLUDED.completion_tokens,
+             cost_usd = ai_usage_daily.cost_usd + EXCLUDED.cost_usd,
+             calls    = ai_usage_daily.calls + 1`,
+          [String(day), String(provider || ''), String(model || ''),
+           Number(promptTokens) || 0, Number(completionTokens) || 0, Number(costUsd) || 0],
+        );
+        return true;
+      } catch (e) { logger.warn({ err: e }, 'recordAiUsage failed'); return false; }
+    },
+    async getAiUsageDayTotal(day) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT COALESCE(SUM(cost_usd), 0)::float AS total FROM ai_usage_daily WHERE day = $1`,
+          [String(day)],
+        );
+        return Number(rows[0]?.total || 0);
+      } catch (e) { logger.warn({ err: e }, 'getAiUsageDayTotal failed'); return 0; }
+    },
+    async getAiUsageSince(day) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT day, provider, model, prompt_tokens, completion_tokens, cost_usd::float AS cost_usd, calls
+           FROM ai_usage_daily WHERE day >= $1 ORDER BY day DESC, cost_usd DESC`,
+          [String(day)],
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e }, 'getAiUsageSince failed'); return []; }
+    },
+    async getAiUsageByDay(limit = 30) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT day,
+                  SUM(cost_usd)::float AS cost_usd,
+                  SUM(prompt_tokens)::int  AS prompt_tokens,
+                  SUM(completion_tokens)::int AS completion_tokens,
+                  SUM(calls)::int AS calls
+           FROM ai_usage_daily GROUP BY day ORDER BY day DESC LIMIT $1`,
+          [Number(limit) || 30],
+        );
+        return rows;
+      } catch (e) { logger.warn({ err: e }, 'getAiUsageByDay failed'); return []; }
+    },
+
+    async setAiChatOptIn(chatJid, { enabled = false, persona = null, provider = null, model = null } = {}) {
+      try {
+        const overrides = { persona, provider, model };
+        await pool.query(
+          `INSERT INTO ai_chat_opt_in (chat_jid, enabled, overrides, updated_at)
+           VALUES ($1, $2, $3::jsonb, $4)
+           ON CONFLICT (chat_jid) DO UPDATE SET
+             enabled = EXCLUDED.enabled,
+             overrides = EXCLUDED.overrides,
+             updated_at = EXCLUDED.updated_at`,
+          [chatJid, !!enabled, JSON.stringify(overrides), Date.now()],
+        );
+        return true;
+      } catch (e) { logger.warn({ err: e, chatJid }, 'setAiChatOptIn failed'); return false; }
+    },
+    async getAiChatOptIn(chatJid) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT enabled, overrides, updated_at FROM ai_chat_opt_in WHERE chat_jid = $1`,
+          [chatJid],
+        );
+        if (!rows[0]) return null;
+        const o = rows[0].overrides || {};
+        return {
+          enabled:  !!rows[0].enabled,
+          persona:  o.persona  ?? null,
+          provider: o.provider ?? null,
+          model:    o.model    ?? null,
+          updatedAt: Number(rows[0].updated_at),
+        };
+      } catch (e) { logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed'); return null; }
+    },
+    async listAiOptedInChats(limit = 100) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT chat_jid, enabled, overrides, updated_at
+           FROM ai_chat_opt_in ORDER BY updated_at DESC LIMIT $1`,
+          [Number(limit) || 100],
+        );
+        return rows.map((r) => {
+          const o = r.overrides || {};
+          return {
+            chatJid:   r.chat_jid,
+            enabled:   !!r.enabled,
+            persona:   o.persona  ?? null,
+            provider:  o.provider ?? null,
+            model:     o.model    ?? null,
+            updatedAt: Number(r.updated_at),
+          };
+        });
+      } catch (e) { logger.warn({ err: e }, 'listAiOptedInChats failed'); return []; }
+    },
+
     recordStat(key, inc = 1) {
       pool.query(
         `INSERT INTO stats (key, value) VALUES ($1, $2)

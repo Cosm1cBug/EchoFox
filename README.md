@@ -5,21 +5,25 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Node ≥20](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org/)
 [![Baileys 7.0.0-rc13](https://img.shields.io/badge/baileys-7.0.0--rc13-orange)](https://www.npmjs.com/package/@whiskeysockets/baileys)
+[![npm version](https://img.shields.io/npm/v/echofox?logo=npm)](https://www.npmjs.com/package/echofox)
 [![Docker Hub](https://img.shields.io/badge/docker-cosm1cbug%2Fechofox-blue?logo=docker)](https://hub.docker.com/r/cosm1cbug/echofox)
 [![GHCR](https://img.shields.io/badge/ghcr-Cosm1cBug%2Fechofox-181717?logo=github)](https://github.com/Cosm1cBug/EchoFox/pkgs/container/echofox)
-[![Deploy Documentation](https://github.com/Cosm1cBug/EchoFox/actions/workflows/docs.yml/badge.svg)](https://github.com/Cosm1cBug/EchoFox/actions/workflows/docs.yml)
+[![CI](https://github.com/Cosm1cBug/EchoFox/actions/workflows/ci.yml/badge.svg)](https://github.com/Cosm1cBug/EchoFox/actions/workflows/ci.yml)
+[![Docs](https://github.com/Cosm1cBug/EchoFox/actions/workflows/docs.yml/badge.svg)](https://github.com/Cosm1cBug/EchoFox/actions/workflows/docs.yml)
+
 > ⚠️ **Please read [DISCLAIMER.md](./DISCLAIMER.md) before using.** Running an unofficial WhatsApp client may violate WhatsApp's Terms of Service and can result in your number being banned. Use a number you can afford to lose.
 
 ---
 
 ## ✨ Features
 
+### Core 
 - 🔌 **Baileys 7.x** with the recommended retry, group-metadata, and signal-key caches wired in
 - 🧩 **Folder-based command registry** with hot-reload, alias resolution, and auto-skip of commands missing API keys
 - 📦 **Pluggable store backend** — SQLite (default), Postgres, MongoDB, or Redis
 - 🔑 **Pluggable auth backend** — multi-file (default), Redis, or SQLite
 - 🆔 **Login via QR or pairing code**
-- 📊 **Built-in web dashboard** at `:3000/dashboard` (React-based, for internal use)
+- 📊 **Built-in web dashboard** at `:3001/dashboard` (React-based, with live stats + 11 tabs)
 - 🚦 **Per-chat queue** for back-pressure
 - ❤️ **Health & metrics** at `GET /healthz` and `GET /metrics` (Prometheus)
 - 📝 **Structured logging** via Pino
@@ -27,7 +31,28 @@
 - 🔄 **Supervisor + worker** model with exponential-backoff restart
 - 🌐 **Dual prefix** — `.` for users, `$` for admins
 - 🧪 **Zod-validated config** with legacy support
-- 🛠️ **Professional CI/CD** with automated testing, releases, Docker publishing, and security scanning
+
+### AI service 
+- 🤖 **4 LLM providers** out of the box: **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **local Ollama**
+- 🛠️ **12 intel-focused tools** — VirusTotal, AlienVault OTX, GitHub releases/advisories, Wikipedia, SSRF-guarded `fetch_url`, plus 5 read-only WhatsApp store queries
+- 🎭 **Personas** — `threat-intel` (default, security-focused) / `general` / `custom`
+- 🧠 **20-turn rolling memory** per chat, persisted across restarts
+- ✋ **Per-chat opt-in** — no surprise replies; users explicitly enable with `.ai on`
+- 💰 **Hard daily USD cost cap** with per-provider pricing table; rate limits **30/user/hour** + **100/chat/day**
+
+### Telegram log bridge 
+- 📡 **Outbound-only** mirror of WhatsApp log channels (`syslogs`, `botLogs`, `errLogs`, …) to Telegram chats/channels
+- 🔌 **Zero new dependencies** — raw HTTPS to `api.telegram.org` over the existing circuit-breaker
+- ⚡ **2-second batching** for info-level logs; `error`/`fatal` flushes **immediately**
+- 🎯 **Per-channel routing** — different WhatsApp log channels can go to different Telegram destinations
+- 💾 **Persistent AI rate-limit counters** (v1.3.0) survive bot restarts
+
+### Ops polish 
+- 🚀 **CI/CD auto-release** — `git push origin v1.x.x` triggers GitHub Release + Docker (GHCR + Docker Hub, multi-arch) + npm publish (with provenance) + Pages deploy in parallel
+- 📚 **VitePress docs site** auto-deployed to [cosm1cbug.github.io/echofox](https://cosm1cbug.github.io/echofox/)
+- 📊 **22 Grafana panels** out of the box (defaults + AI + Telegram + Signal Protocol Health)
+- 🚨 **2 built-in alert rules**: AI cost > 80% of cap, Telegram failure rate > 20% — mirrored to both WhatsApp `errLogs` AND Telegram
+- 🩹 **Signal protocol self-healing** (v1.4.2) — auto-recovers from `Bad MAC` / `No session found` decryption errors without operator intervention; demotes the noisy ERROR logs to DEBUG
 
 ---
 
@@ -35,12 +60,11 @@
 
 ### Prerequisites
 
-- **Node.js ≥ 20** (Baileys 7.x requires it — `node -v` to check)
-- Python 3 + a C compiler (for `better-sqlite3`'s native build)
-  - Debian/Ubuntu: `sudo apt install -y build-essential python3`
-  - macOS: `xcode-select --install`
-  - Windows: install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
-- A spare WhatsApp number you don't mind losing
+| | |
+|---|---|
+| Node.js | ≥ 20 (tested on 20 + 22 in CI) |
+| OS | Linux / macOS / Windows 11 |
+| WhatsApp | A real phone number you can scan a QR / pairing code from |
 
 ### Install
 
@@ -50,116 +74,181 @@ cd EchoFox
 npm install
 ```
 
+Or use the published npm package:
+```bash
+npm install echofox
+```
+
+Or pull the Docker image:
+```bash
+docker pull cosm1cbug/echofox:latest      # or :1.4, :1.4.2, :sha-abc1234
+```
+
 ### Configure
 
 ```bash
 cp src/config.example.js src/config.js
-# Open src/config.js and set at least:
-#   admins[]              — your own WhatsApp JID (so $ commands work)
-#   apis.*.apiKey         — any optional API keys you have
-#   dashboard.password    — change from default if you enable the dashboard
+# Edit src/config.js with your details
 ```
 
-You can also override any config field with environment variables (handy for Docker):
+At minimum set:
+- `admins[]` — your own JID (e.g. `1234567890@s.whatsapp.net`)
+- `bot.timezone` — your IANA timezone
 
-```bash
-ECHOFOX_BOT_PREFIX=! ECHOFOX_APIS_OMDB_APIKEY=xxx npm start
-```
+Everything else has sensible defaults. See [Configuration reference](#%EF%B8%8F-configuration-reference) below.
 
 ### Run
 
 ```bash
-npm run dev          # development mode (pretty logs, debug level)
-# OR
-NODE_ENV=production npm start
+npm start
 ```
 
-A QR code will appear in the terminal. Scan it from **WhatsApp → Settings → Linked devices → Link a device**. After pairing:
+On first run you'll see a QR code in the terminal. Open WhatsApp on your phone → **Settings → Linked Devices → Link a Device → scan it**.
 
-```bash
-# In another terminal:
-curl http://localhost:3000/healthz
-# → {"status":"ok","uptime":12.4,"pid":12345}
-
-# From another WhatsApp account:
-# Send ".ping" to your bot number → should reply within ~150 ms
+Alternatively, pairing code:
+```js
+// src/config.js
+login: { type: 'PAIRING', phoneNumber: '1234567890' }
 ```
+
+Then `npm start` prints an 8-character code; enter it on your phone in the same Linked Devices flow.
 
 ---
 
 ## 🖥️ Dashboard
 
-EchoFox includes a modern **React-based dashboard** for monitoring and management.
+The bot ships a React-based web dashboard at `:3001/dashboard`. **11 tabs** covering everything the bot tracks:
+
+| Tab | Shows |
+|---|---|
+| Overview | uptime, throughput, current load |
+| Groups | groups the bot is in + per-group activity |
+| Contacts | known contacts with extended status |
+| Presence | recently-active users with state icons |
+| Newsletters | WhatsApp channels the bot follows |
+| Subscriptions | RSS / AlienVault / VirusTotal subscriptions |
+| Labels | WA Business labels |
+| Blocklist | blocked JIDs |
+| Metrics | full Prometheus metric snapshot |
+| Diagnostics | self-test report (config, store, auth, network) |
+| Alerts | active built-in alert rules |
+| **AI** | config, cost-cap progress bar, per-day usage table, opted-in chats |
 
 ### Development
 
 ```bash
 cd dashboard
 npm install
-npm run dev
+npm run dev          # Vite dev server, hot reload
 ```
-
-Open [http://localhost:5173](http://localhost:5173)
 
 ### Production
 
-1. Build the React dashboard and copy it into the backend:
-   ```bash
-    npm run build:dashboard
-   ```
+```bash
+cd dashboard
+npm run build        # outputs to dashboard/dist/
+```
 
-2. The dashboard will be served automatically at:
-    ```bash
-    http://localhost:3000/dashboard
-    ```
-
-> **Note**: The dashboard is intended for **internal/admin use only**.
+Or let the bot serve the bundled version automatically when `dashboard.enabled = true`.
 
 ---
 
 ## 📦 Built-in commands
 
-Type `.menu` in any chat with the bot to see the live list. By category:
+Run `.menu` in WhatsApp to see the live list — 30+ commands across `general`, `download`, `convert`, `group`, `admin`, `misc`, `main`, `tools`, `user`.
 
-`*` means requires an API key in `src/config.js`; auto-disabled if missing.
+Highlights:
 
-Run `npm run docs:commands` to regenerate the full catalog at `docs/commands.md`.
+| Category | Commands |
+|---|---|
+| AI (v1.2.0+) | `.ai status` / `on` / `off` / `clear` / `persona` / `provider` / `model` |
+| Intel | `.virustotal`, `.alienvault`, `.thehackersnews`, `.rss`, `.github`, `.vtwatch` |
+| Download | `.song`, `.video`, `.mediafire`, … |
+| Convert | `.sticker`, `.toimg`, `.tts` |
+| Group | `.add`, `.kick`, `.promote`, `.demote`, `.link`, `.approve`, … |
+| Admin (`$`) | `$healthcheck`, `$serverinfo`, `$ai-admin stats`, … |
+
+See [`docs/commands.md`](./docs/commands.md) for the full auto-generated catalogue.
+
+---
+
+## 🤖 AI service
+
+Set in `src/config.js`:
+
+```js
+ai: {
+  enabled:          true,
+  defaultProvider:  'openai',          // openai | gemini | anthropic | local
+  model:            'gpt-4o-mini',
+  costCapPerDayUsd: 5,
+  providers: {
+    openai: { apiKey: process.env.OPENAI_API_KEY },
+  },
+},
+```
+
+Then in any chat:
+```
+.ai on
+hey echofox, what's the latest on log4j
+```
+
+The bot routes to the selected provider, chains tools (e.g. `github_advisories` + `latest_hackernews` + `wiki_lookup`), cites sources, and stays under your daily cap. Full guide: [`docs/guide/ai.md`](./docs/guide/ai.md) or [the docs site](https://cosm1cbug.github.io/echofox/guide/ai).
+
+---
+
+## 📡 Telegram log bridge
+
+Mirror WhatsApp log channels to Telegram with per-channel routing — outbound-only, no Telegram polling.
+
+```js
+telegram: {
+  enabled:   true,
+  botToken:  process.env.TELEGRAM_BOT_TOKEN,
+  routing: {
+    syslogs: '@echofox_sys',          // public channel handle
+    errLogs: '-1001234567890',        // private group numeric id
+    // empty string disables that channel's mirror
+  },
+  parseMode: 'HTML',
+  batchMs:   2000,                    // errors flush instantly
+},
+```
+
+Full guide: [`docs/guide/telegram.md`](./docs/guide/telegram.md) or [the docs site](https://cosm1cbug.github.io/echofox/guide/telegram).
 
 ---
 
 ## 🏗️ Architecture
 
+``` 
+                ┌─────────────┐
+                │bootstrap.js │  ← supervisor (PM2-like; restarts on crash)
+                │:3000/healthz│ 
+                │:3000/metrics│
+                └──────┬──────┘
+                       │ fork()
+                ┌────────▼──────┐
+                │  worker.js    │  ← single Baileys socket
+                │:3001/dashboard│  ← (when enabled)
+                │:3001/metrics  │  ← (store-backed counters)
+                └──────┬────────┘
+        ┌──────────────┼──────────────────┐
+        │              │                  │
+   ┌────▼────┐   ┌─────▼─────┐   ┌────────▼────────┐
+   │ events/ │   │ commands/ │   │  services/      │
+   │ (28)    │   │ (32)      │   │  ai, telegram,  │
+   │         │   │           │   │  alertEngine,   │
+   │         │   │           │   │  signalHealth,  │
+   │         │   │           │   │  metrics, …     │
+   └─────────┘   └───────────┘   └─────────────────┘
+                                 │
+                          ┌──────▼──────┐
+                          │  store/     │  SQLite | Postgres | Mongo | Redis
+                          │  migrations │
+                          └─────────────┘
 ```
-                       ┌─────────────────────────────────────────────┐
-                       │       src/core/bootstrap.js   (supervisor)   │
-                       │  • Express :3000  /healthz /metrics          │
-                       │  • fork(worker.js) + exp-backoff restart     │
-                       │  • SIGTERM/SIGINT graceful shutdown          │
-                       └────────────────────┬────────────────────────┘
-                                            │ IPC
-                                            ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                       src/core/worker.js                              │
-│   ┌────────────────────┐    ┌──────────────────────────────────────┐ │
-│   │ configLoader (zod) │    │   makeWASocket  (Baileys 7.x)        │ │
-│   │ commandRegistry    │◄──►│  • cachedGroupMetadata via store     │ │
-│   │ commandRunner      │    │  • getMessage → proto.IMessage       │ │
-│   │ caches (× 7)       │    │  • 5 named retry/device/call caches  │ │
-│   └────────────────────┘    └────────────────┬─────────────────────┘ │
-│                                              │                       │
-│         ┌────────────────────────────────────▼─────────────┐        │
-│         │  per-chat p-queue (concurrency=1, parallel chats)│        │
-│         │  ──► events/messages.upsert.js                   │        │
-│         │      ──► commandRunner.run(cmd) ──► cmd.start()  │        │
-│         └──────────────────────────────────────────────────┘        │
-│                                                                       │
-│   store: sqlite | postgres | mongo | redis (pluggable via storeDB)   │
-│   auth:  multi-file | sqlite | redis (pluggable via auth.method)     │
-│   middleware/{rateLimit, sendQueue}  ·  optional dashboard :3001     │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-Full architecture deep-dive in [UPGRADE.md](./UPGRADE.md).
 
 ---
 
@@ -167,11 +256,13 @@ Full architecture deep-dive in [UPGRADE.md](./UPGRADE.md).
 
 Edit `src/config.js`. Every field has a sensible default; you can leave most empty.
 
+### Core sections
+
 | Path | Type | Default | Description |
 |---|---|---|---|
 | `bot.name`              | string  | `"EchoFox"`     | Bot display name |
-| `bot.prefix`            | string\|RegExp | `"."` | User-command prefix |
-| `bot.adminPrefix`       | string\|RegExp | `"$"` | Admin-command prefix |
+| `bot.prefix`            | string\|RegExp | `"."`  | User-command prefix |
+| `bot.adminPrefix`       | string\|RegExp | `"$"`  | Admin-command prefix |
 | `bot.sessionName`       | string  | `"@session"`    | Folder name for WA auth files |
 | `bot.timezone`          | string  | `"Asia/Kolkata"`| IANA timezone for logs / scheduling |
 | `bot.public`            | boolean | `true`          | `false` = admin-only mode |
@@ -182,108 +273,138 @@ Edit `src/config.js`. Every field has a sensible default; you can leave most emp
 | `login.type`            | enum    | `"QR"`          | `"QR"` or `"PAIRING"` |
 | `login.phoneNumber`     | string  | `""`            | Required if `type="PAIRING"` (digits only) |
 | `auth.method`           | enum    | `"MULTIFILE"`   | `"MULTIFILE"` / `"REDIS"` / `"SQLITE"` |
-| `auth.redisUrl`         | string  | `redis://...`   | Used when `method="REDIS"` |
-| `auth.sqlitePath`       | string  | `./src/store/auth.db` | Used when `method="SQLITE"` |
 | `storeDB.type`          | enum    | `"SQLITE"`      | `"SQLITE"` / `"POSTGRES"` / `"MONGODB"` / `"REDIS"` |
-| `storeDB.sqlitePath`    | string  | `./src/store/runtime/wa.db` | |
-| `storeDB.postgresUrl`   | string  | `postgresql://...` | |
-| `storeDB.mongoUri`      | string  | `mongodb://...` | |
-| `storeDB.redisUrl`      | string  | `redis://...`   | |
 | `dashboard.enabled`     | boolean | `false`         | Built-in web UI |
 | `dashboard.port`        | number  | `3001`          | |
-| `dashboard.username`    | string  | `"admin"`       | |
 | `dashboard.password`    | string  | `"change-me-please"` | ⚠️ change this |
-| `processing.concurrencyPerChat` | number | `1`     | FIFO per chat, parallel across chats |
-| `processing.globalRateLimit`    | number | `20`    | Commands per second across whole bot |
-| `processing.userRateLimit`      | number | `10`    | Commands per minute per sender |
-| `processing.sendConcurrency`    | number | `4`     | Outbound `sendMessage` in-flight cap |
-| `admins[]`              | string[]| `[]`            | Admin JIDs (`1234567890@s.whatsapp.net`) |
-| `channels.{syslogs,botLogs,userLogs,…}` | string | `""` | Group JIDs for log streams (empty = disabled) |
-| `apis.omdb.apiKey`      | string  | `""`            | OMDb API key (for `.omdb`) |
-| `apis.virustotal.apiKey`| string  | `""`            | VirusTotal API key |
-| `apis.alienvault.apiKey`| string  | `""`            | AlienVault OTX API key |
-| `runtime.logLevel`      | enum    | `"info"`        | `trace`/`debug`/`info`/`warn`/`error`/`fatal` |
-| `runtime.port`          | number  | `3000`          | `/healthz` + `/metrics` port |
+
+### AI section
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `ai.enabled`            | boolean | `false` | Master switch |
+| `ai.defaultProvider`    | enum    | `'openai'` | `openai` / `gemini` / `anthropic` / `local` |
+| `ai.model`              | string  | `'gpt-4o-mini'` | Provider-specific model name |
+| `ai.maxTokens`          | number  | `800` | Per-response token cap |
+| `ai.costCapPerDayUsd`   | number  | `5` | Hard daily cap — bot refuses to reply past this |
+| `ai.persona`            | enum    | `'threat-intel'` | `threat-intel` / `general` / `custom` |
+| `ai.memoryTurns`        | number  | `20` | Rolling memory window (10 user + 10 assistant) |
+| `ai.optInDefault`       | enum    | `'off'` | `'on'` to auto-enable in every chat |
+| `ai.rateLimitPerUserPerHour` | number | `30` | |
+| `ai.rateLimitPerChatPerDay`  | number | `100` | |
+| `ai.enableToolCalling`  | boolean | `true` | |
+| `ai.toolWhitelist[]`    | array   | 12 tools | Which intel tools the model can call |
+| `ai.providers.openai.apiKey` | string | `''` | |
+| `ai.providers.gemini.apiKey` | string | `''` | |
+| `ai.providers.anthropic.apiKey` | string | `''` | |
+| `ai.providers.local.baseUrl` | string | `'http://localhost:11434'` | Ollama endpoint |
+
+### Telegram section
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `telegram.enabled`   | boolean | `false` | |
+| `telegram.botToken`  | string  | `''`    | from @BotFather |
+| `telegram.routing.{syslogs,botLogs,userLogs,groupUpdates,callLogs,errLogs,movGroup}` | string | `''` | Telegram chat id or `@channel` per WA log channel |
+| `telegram.parseMode` | enum    | `'HTML'` | `HTML` / `MarkdownV2` / `plain` |
+| `telegram.batchMs`   | number  | `2000`   | Errors flush instantly regardless |
+| `telegram.maxChunkChars` | number | `3800` | Telegram cap is 4096 |
+
+### Alerts section
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `alerts.enabled`             | boolean | `true` | |
+| `alerts.windowMinutes`       | number  | `60`   | rolling window |
+| `alerts.minInvocations`      | number  | `10`   | need at least N runs to alert |
+| `alerts.failureRateThreshold`| number  | `0.30` | per-command failure rate trigger |
+| `alerts.rules.aiCostPct`     | object  | `{threshold: 0.80, cooldownMinutes: 60}` | Fire when daily AI cost reaches this fraction of cap |
+| `alerts.rules.telegramFailureRate`     | object | `{threshold: 0.20, minSends: 10, cooldownMinutes: 30}` | Fire when Telegram send-failure rate is high |
 
 Every field can also be set via an environment variable:
 `ECHOFOX_<SECTION>_<CAMELCASEKEY>` — e.g. `ECHOFOX_APIS_OMDB_APIKEY=xyz`, `ECHOFOX_STOREDB_TYPE=POSTGRES`.
+
+Full configuration guide: [`docs/config.md`](./docs/config.md).
 
 ---
 
 ## ✍️ Writing your own commands
 
-Create a file in `src/commands/<category>/<name>.js`:
+See [CONTRIBUTING.md](./CONTRIBUTING.md). TL;DR: drop a `.js` file in `src/commands/<category>/`:
 
 ```js
 module.exports = {
   name: 'hello',
-  alias: ['hi', 'hey'],
-  desc: 'Say hello',
-  category: 'misc',                  // (optional — defaults to folder name)
-  admin: false,                      // (optional — restricts to admins)
-  group: false,                      // (optional — group-only)
-  needsMetadata: false,              // (optional — pre-fetch group metadata)
-  requires: ['apis.<provider>.apiKey'],    // (optional — auto-skip if config path is empty)
-  cooldown: 0,                       // (optional — seconds between uses per user)
-  timeout: 60,                       // (optional — per-invocation timeout, seconds)
-
-  async start(sock, m, { ctx, args, prefix, config, logger }) {
-    // m   = raw Baileys message + legacy m.sender, m.from, m.isGroup, m.reply, …
-    // ctx = clean parsed view (preferred for new code)
-    await ctx.reply(`Hello, ${ctx.pushName}! You said: ${args.join(' ')}`);
+  alias: ['hi'],
+  desc: 'Says hello',
+  category: 'general',
+  cooldown: 3,
+  async start(sock, m, { ctx, args, text, config }) {
+    await ctx.reply(`Hello ${ctx.pushName || 'friend'}!`);
   },
 };
 ```
 
-The bot **hot-reloads** the command when you save the file — no restart needed.
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full authoring guide.
+Hot reload picks it up immediately. The contract test (`npm test`) verifies every command's shape and detects name/alias collisions across the whole tree.
 
 ---
 
 ## 📊 Observability
 
 ```bash
-curl http://localhost:3000/healthz
-curl http://localhost:3000/metrics
+curl http://localhost:3000/healthz       # supervisor health
+curl http://localhost:3000/metrics       # supervisor + Node.js defaults
+curl http://localhost:3001/metrics       # store-backed counters (AI + Telegram + Signal + …)
 ```
 
-Prometheus metrics exposed (besides the defaults):
+Prometheus metrics exposed (28 counters + 9 gauges across 2 endpoints):
 
-| Metric | Type | Description |
-|---|---|---|
-| `echofox_worker_up`               | gauge   | 1 if the worker is alive |
-| `echofox_worker_restarts_total`   | counter | Cumulative supervisor restarts |
+| Endpoint | Metric | Type | Description |
+|---|---|---|---|
+| `:3000` | `echofox_worker_up`                       | gauge   | 1 if the worker is alive |
+| `:3000` | `echofox_worker_restarts_total`           | counter | Cumulative supervisor restarts |
+| `:3001` | `echofox_messages_received_total`         | counter | Inbound messages |
+| `:3001` | `echofox_commands_total`                  | counter | Command invocations |
+| `:3001` | `echofox_ai_chat_requests_total`          | counter | AI chat requests |
+| `:3001` | `echofox_ai_tokens_prompt_total`          | counter | Prompt tokens consumed |
+| `:3001` | `echofox_ai_tokens_completion_total`      | counter | Completion tokens consumed |
+| `:3001` | `echofox_ai_cost_usd_today`               | gauge   | Today's AI spend |
+| `:3001` | `echofox_telegram_forwards_total`         | counter | Telegram log forwards |
+| `:3001` | `echofox_telegram_send_failures_total`    | counter | Telegram send failures |
+| `:3001` | `echofox_signal_decryption_failures_total`| counter | Baileys decryption errors |
+| `:3001` | `echofox_signal_session_recoveries_total` | counter | Auto-triggered session resets |
 
-Grafana dashboard JSON: `docker/grafana/dashboards/echofox-overview.json` (auto-provisioned by the Compose `observability` profile).
+…plus 18 more. Full list at `src/store/schema/stats.js`.
+
+**Grafana dashboard JSON**: `docker/grafana/dashboards/echofox-overview.json` — 22 panels organised in 3 sections (core process metrics, AI v1.2+, Telegram v1.3+, Signal Protocol Health v1.4.2+). Auto-provisioned by the Compose `observability` profile.
 
 ---
 
 ## 🐳 Docker
 
-The fastest, most portable way to run EchoFox. Multi-arch images
-(`linux/amd64`, `linux/arm64`) published to **GHCR** and **Docker Hub** on
-every tagged release.
-
 ### One-liner
 
 ```bash
-docker run -d \
-  --name echofox \
-  --restart unless-stopped \
-  -p 127.0.0.1:3000:3000 \
+docker run -d --name echofox \
+  -p 3000:3000 -p 3001:3001 \
+  -v echofox-data:/app/src/store/runtime \
   -v echofox-session:/app/src/@session \
-  -v echofox-store:/app/src/store/runtime \
-  -e TZ=Asia/Kolkata \
-  ghcr.io/cosm1cbug/echofox:latest
-
-docker logs -f echofox    # scan the QR
+  -e ECHOFOX_BOT_TIMEZONE=Asia/Kolkata \
+  cosm1cbug/echofox:latest
 ```
+
+Tag scheme:
+- `:1.4.2`, `:1.3.0`, etc. — precise (immutable)
+- `:1.4`, `:1.3`, `:1.2` — major.minor (auto-updates with patches)
+- `:latest` — always newest stable
+- `:sha-abc1234` — per-commit immutable tag
+
+Available on both [GHCR](https://github.com/Cosm1cBug/EchoFox/pkgs/container/echofox) and [Docker Hub](https://hub.docker.com/r/cosm1cbug/echofox).
 
 ### Docker Compose
 
 ```bash
-cp .env.example .env
+# Bot only:
 docker compose up -d
 
 # With Prometheus + Grafana:
@@ -297,12 +418,45 @@ docker compose --profile observability up -d
 - [docs/deploy/podman.md](./docs/deploy/podman.md) — rootless alternative
 - [docs/deploy/multi-arch.md](./docs/deploy/multi-arch.md) — building your own multi-arch images
 - [docs/deploy/troubleshooting.md](./docs/deploy/troubleshooting.md) — when things go wrong
+- [docs/deploy/ci-cd.md](./docs/deploy/ci-cd.md) — the 7 GitHub Actions workflows + release flow
+
+---
+
+## 🚀 Releasing a new version *(maintainers)*
+
+Tag-driven, fully automated:
+
+```bash
+# 1. Bump version
+npm version patch              # or minor / major
+# 2. Update CHANGELOG.md + write RELEASE_NOTES_v<v>.md
+git add . && git commit -m "chore(release): v$(node -p require\('./package.json'\).version)"
+git push origin main
+# 3. Tag — fires 4 workflows in parallel
+git tag v$(node -p "require('./package.json').version")
+git push origin --tags
+```
+
+Within ~5 minutes:
+- ✅ GitHub Release with `RELEASE_NOTES_v<v>.md` body + source tarball
+- ✅ Multi-arch Docker images on GHCR + Docker Hub
+- ✅ npm publish with provenance (SLSA attestation)
+- ✅ Docs site deploy to GitHub Pages
+
+Required secrets (all optional): `NPM_TOKEN`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`. See [docs/deploy/ci-cd.md](./docs/deploy/ci-cd.md).
 
 ---
 
 ## 🤝 Contributing
 
 Pull requests welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+CI gates every PR with:
+- ESLint + Prettier
+- 147 automated tests (Node 20 + 22 matrix)
+- AGPL header check (every `.js` file must have one)
+- Dashboard TypeScript typecheck
+- TruffleHog secret scan
 
 By participating, you agree to behave kindly and constructively.
 
@@ -311,6 +465,16 @@ By participating, you agree to behave kindly and constructively.
 ## 🔐 Security
 
 Found a vulnerability? Please report it privately — see [SECURITY.md](./SECURITY.md).
+
+Hardening summary:
+- 🔒 Per-chat AI opt-in — no surprise replies
+- 🔒 AI fetch_url SSRF guard — refuses RFC 1918 / link-local / loopback
+- 🔒 Telegram bridge is strictly outbound — no inbound command surface
+- 🔒 API keys never exposed via dashboard or `/api/ai/config`
+- 🔒 Dashboard `/api/*` routes Basic-auth gated
+- 🔒 npm published with `--provenance` for SLSA-style supply-chain attestation
+- 🔒 TruffleHog scans every push for leaked secrets
+- 🔒 Weekly Docker image rebuild for base-image security patches
 
 ---
 
@@ -325,8 +489,6 @@ In short: if you run a modified version of EchoFox as a service, you must offer 
 ## 💖 Acknowledgements
 
 - **[Baileys](https://github.com/WhiskeySockets/Baileys)** by @PurpShell and contributors — none of this would exist without their reverse-engineering
-- The original **EchoFox v5** community for the initial command library
-- Everyone who's filed a bug or sent a PR
 
 ---
 

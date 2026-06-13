@@ -107,6 +107,10 @@ function incAiCostCapHit() { inc('ai_cost_cap_hits_total'); }
 function setAiCostUsdToday(n) { setGauge('ai_cost_usd_today', Number(n) || 0); }
 function setAiOptInChats(n)   { setGauge('ai_active_opt_in_chats', Number(n) || 0); }
 
+// ─── v1.4.2: Signal protocol health ─────────────────────────────────────
+function incDecryptionFailure()  { inc('signal_decryption_failures_total'); }
+function incDecryptionRecovery() { inc('signal_session_recoveries_total'); }
+
 // ─── v1.4.0: Telegram metrics ───────────────────────────────────────────
 function incTelegramForward(outcome) {
   inc('telegram_forwards_total');
@@ -158,4 +162,7 @@ module.exports = {
   setAiOptInChats,
   incTelegramForward,
   setTelegramRoutedChannels,
+  // v1.4.2
+  incDecryptionFailure,
+  incDecryptionRecovery,
 };

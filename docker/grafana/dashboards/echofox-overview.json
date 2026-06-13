@@ -996,6 +996,260 @@
           "legendFormat": "retries/sec"
         }
       ]
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "Signal Protocol Health (v1.4.2+)",
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Decryption failures (24h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "increase(echofox_signal_decryption_failures_total[24h])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "stat",
+      "title": "Auto session-recoveries (24h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 45,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "increase(echofox_signal_session_recoveries_total[24h])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "Recovery efficiency",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 45,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "increase(echofox_signal_session_recoveries_total[24h]) / clamp_min(increase(echofox_signal_decryption_failures_total[24h]), 1)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Signal protocol activity (5m rate)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "spanNulls": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(echofox_signal_decryption_failures_total[5m])",
+          "refId": "A",
+          "legendFormat": "decryption failures/sec"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(echofox_signal_session_recoveries_total[5m])",
+          "refId": "B",
+          "legendFormat": "auto-recoveries/sec"
+        }
+      ]
     }
   ],
   "refresh": "30s",

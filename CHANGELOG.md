@@ -12,6 +12,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.2] — 2026-06-12
+
+> **Self-healing for Signal protocol decryption errors + CI/CD bug fixes.**
+> Main feature: proactive recovery for `Bad MAC` / `No session found` errors
+> (after 3 consecutive failures from a sender within 5 minutes, the bot
+> auto-resets that sender's Signal session). Also bundles 3 CI fixes that
+> surfaced during the v1.4.1 release-workflow runs.
+
+### Added
+
+- **`src/services/signalHealth.js`** — new service tracking per-JID
+  decryption failures and triggering self-healing recoveries.
+  - Threshold: **3 consecutive failures within 5 minutes**
+  - Cooldown: **30 minutes per JID** (caps recoveries at ~2/hr/sender
+    even in pathological cases)
+  - Memory-bounded via 10-minute prune timer
+  - Recognises: `Bad MAC`, `No session found to decrypt message`,
+    `No matching sessions found`, `InvalidSignedPreKeyId`,
+    `No identity key`
+- **Baileys logger wrapper in `src/core/worker.js`** — intercepts
+  ERROR-level logs from Baileys, routes decryption failures to
+  signalHealth, **demotes the noise from ERROR → DEBUG**. Real
+  recoveries surface at WARN with a `🩹` prefix so they stand out.
+- **2 new Prometheus counters** in `src/store/schema/stats.js`:
+  - `signal_decryption_failures_total`
+  - `signal_session_recoveries_total`
+- **2 new typed wrappers** in `src/services/metrics.js`:
+  `incDecryptionFailure()`, `incDecryptionRecovery()`.
+- **NEW Grafana row "Signal Protocol Health (v1.4.2+)"** — 4 panels:
+  - Stats: decryption failures (24h), auto-recoveries (24h),
+    recovery efficiency ratio
+  - Timeseries: decryption failures/sec + recoveries/sec
+- **`src/__tests__/integration/signal-health.test.js`** — 10 tests
+  covering pattern recognition, JID normalisation (`:device` tag
+  stripping), per-JID failure counting, threshold trigger,
+  cooldown enforcement, cross-JID isolation, missing-sock graceful
+  degradation.
+
+### Changed
+
+- Baileys decryption ERRORs no longer pollute the production log
+  stream. They're now demoted to DEBUG (default-hidden) and tracked
+  via the metrics + Grafana panels above.
+
+### Why this isn't a ban risk
+
+`signalRepository.deleteSession(jid)` is a **local filesystem operation
+only** — no WhatsApp servers are contacted, no traffic crosses the wire.
+Recovery is driven entirely by the next inbound message triggering
+Signal's standard prekey-fetch flow (the same flow that runs millions
+of times daily for every device reinstall on WhatsApp). With the
+conservative 3-failure / 5-minute threshold and 30-minute per-JID
+cooldown, recoveries are capped at ~2/hour/sender even in adversarial
+conditions. Far below anything WhatsApp could plausibly flag.
+
+### Fixed (CI/CD)
+
+- **`npm test` glob expansion failure.** `package.json`'s test script
+  used `node --test src/**/*.test.js src/commands/__tests__/*.test.js` —
+  Node.js does NOT expand globs, and bash's `**` requires `globstar`
+  which isn't enabled by default on Ubuntu CI / macOS / PowerShell.
+  CI was failing with `Could not find 'src/**/*.test.js'`.
+  - **Replaced** with a new `scripts/run-tests.js` (pure Node recursive
+    walker for `*.test.js`). Works identically on Ubuntu CI runners,
+    Windows PowerShell, macOS bash/zsh, and every Node version we
+    support (20+). Auto-discovers new test files. Spawns
+    `node --test <explicit file list>`.
+- **TruffleHog secret scanning failure on `push` to `main`.** Old config
+  passed `base: github.event.repository.default_branch` and
+  `head: github.ref` — both resolved to `main` on push events, causing
+  TruffleHog to bail with `base == head`. **Split** the workflow into
+  three event paths:
+    - `pull_request` → diff PR head vs PR base (the original good path)
+    - `push` → diff the pushed commit range (`github.event.before` → `github.sha`)
+    - `workflow_dispatch` + first-push-to-branch → full repository scan
+- **Release / npm-publish / CI workflows** all called `npm test`, so
+  the `scripts/run-tests.js` fix above transitively fixes all three.
+
+### Migration notes
+
+- Drop-in upgrade from v1.4.1. No schema changes, no config changes,
+  no env-var changes.
+- Re-provision Grafana from `docker/grafana/dashboards/echofox-overview.json`
+  to see the new panels (4 new panels under "Signal Protocol Health").
+
+---
+
 ## [1.4.1] — 2026-06-12
 
 > **Hotfix release.** Patches a pre-existing runtime bug in

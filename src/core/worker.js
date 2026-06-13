@@ -32,6 +32,7 @@ const { config } = require('../lib/configLoader');
 
 const lifecycle = require('./lifecycle');
 const metrics   = require('../services/metrics');
+const signalHealth = require('../services/signalHealth');
 const CommandRegistry = require('./commandRegistry');
 const eventRouter     = require('../events/router');
 const { startDashboard } = require('../dashboard/server');
@@ -168,11 +169,34 @@ async function start(retry = 0) {
 
   const version = await lifecycle.fetchVersion();
 
+  // v1.4.2: Wrap the Baileys logger so we can intercept decryption errors,
+  // count per-sender failures, and auto-trigger a Signal session reset
+  // when a JID hits the failure threshold. See src/services/signalHealth.js.
+  const _baileysBase = logger.child({ mod: 'baileys' });
+  const _baileysLogger = Object.create(_baileysBase);
+  _baileysLogger.error = function (obj, msg) {
+    try {
+      // Synchronously trigger signal-health bookkeeping; recovery fires
+      // asynchronously without blocking the log path.
+      Promise.resolve(signalHealth.record(sock, obj)).then((res) => {
+        if (!res || !res.matched) {
+          _baileysBase.error.call(_baileysBase, obj, msg);
+        } else {
+          // Demote known decryption noise to debug; signalHealth.warn() will
+          // surface the actually-interesting events (recoveries) at WARN.
+          _baileysBase.debug.call(_baileysBase, obj, msg);
+        }
+      }).catch(() => _baileysBase.error.call(_baileysBase, obj, msg));
+    } catch (_) {
+      _baileysBase.error.call(_baileysBase, obj, msg);
+    }
+  };
+
   sock = makeWASocket({
     version,
     agent:       getWsAgent(),
     fetchAgent:  getWsAgent(),                  
-    logger: logger.child({ mod: 'baileys' }),
+    logger: _baileysLogger,
     browser: Browsers.macOS('EchoFox'),
     auth: {
       creds: state.creds,

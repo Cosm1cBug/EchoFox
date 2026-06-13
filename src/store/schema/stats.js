@@ -58,6 +58,9 @@ const COUNTERS = Object.freeze([
   'telegram_forwards_dropped_total',
   'telegram_send_failures_total',
   'telegram_send_retries_total',
+  // ── v1.4.2: Signal protocol health ─────────────────────────────────
+  'signal_decryption_failures_total',
+  'signal_session_recoveries_total',
 ]);
 
 const GAUGES = Object.freeze([

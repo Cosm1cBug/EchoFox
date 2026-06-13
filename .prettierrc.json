@@ -8,7 +8,7 @@
   "trailingComma": "all",
   "bracketSpacing": true,
   "arrowParens": "always",
-  "endOfLine": "lf",
+  "endOfLine": "auto",
   "overrides": [
     { "files": ["*.md"], "options": { "proseWrap": "preserve" } },
     { "files": ["*.yml", "*.yaml"], "options": { "tabWidth": 2 } }

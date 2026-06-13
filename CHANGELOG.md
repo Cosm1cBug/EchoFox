@@ -12,6 +12,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.1] — 2026-06-12
+
+> **Hotfix release.** Patches a pre-existing runtime bug in
+> sqliteStore.getGroupMetadata that v1.4.0 inherited from v1.1.0.
+
+### Fixed
+
+- `src/store/sqliteStore.js:455` — removed stray `F` character that
+  caused `ReferenceError: F is not defined` whenever
+  `getGroupMetadata(jid)` was called for a JID with no `groups` row.
+  In practice this triggered on the first message in a freshly-joined
+  group, before metadata had been fetched. Bug predates v1.2.0 but
+  surfaced more in v1.2.0+ due to higher event-handler activity.
+
+### Internal
+
+- `.gitignore` — added `*.tsbuildinfo` (and variants) plus
+  `dashboard/package-lock.json` so they stop showing as untracked
+  in `git status` after `npm install` / `tsc --build`.
+
+### Migration notes
+
+- Drop-in upgrade from v1.4.0. No schema changes, no config changes.
+- Re-pull Docker images: `cosm1cbug/echofox:1.4.1` or `:latest`.
+- `npm install echofox@1.4.1`.
+
+---
+
 ## [1.4.0] — 2026-06-11
 
 > **Ops polish.** v1.4.0 closes the long-standing roadmap items:

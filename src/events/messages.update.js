@@ -25,7 +25,6 @@
  *   those to the delete handler.
  */
 
-const { getContentType } = require('@whiskeysockets/baileys');
 const logger = require('../core/logger').child({ mod: 'msg.update' });
 
 const STUB_REVOKE = 68;  // proto.WebMessageInfo.StubType.REVOKE in Baileys 7.x
@@ -46,7 +45,7 @@ function extractBody(message) {
   );
 }
 
-module.exports = async function onMessagesUpdate({ sock, store, payload }) {
+module.exports = async function onMessagesUpdate({ sock: _sock, store, payload }) {
   if (!Array.isArray(payload)) return;
 
   for (const update of payload) {

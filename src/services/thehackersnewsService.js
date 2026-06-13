@@ -5,7 +5,6 @@
  */
 'use strict';
 
-const axios = require('axios');
 const { axiosWithBreaker, isOpenBreakerError } = require('../lib/network');
 const xml2js = require('xml2js');
 const config = require('../lib/configLoader').config;

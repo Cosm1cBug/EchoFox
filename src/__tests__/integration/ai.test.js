@@ -126,7 +126,7 @@ test('ai.chat: tool-call loop persists memory + aggregates cost', async () => {
 
   let call = 0;
   oai.__testOverride({
-    chat: { completions: { create: async (req) => {
+    chat: { completions: { create: async (_req) => {
       call += 1;
       if (call === 1) {
         return {

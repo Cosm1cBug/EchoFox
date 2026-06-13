@@ -37,7 +37,6 @@
 
 const fs   = require('node:fs');
 const path = require('node:path');
-const zlib = require('node:zlib');
 const { spawn } = require('node:child_process');
 
 const logger  = require('../core/logger').child({ mod: 'backup' });

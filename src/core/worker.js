@@ -39,7 +39,7 @@ const { startDashboard } = require('../dashboard/server');
 const { startGC }        = require('../lib/tempManager');
 const { wrapSocketSend } = require('../middleware/sendQueue');
 const { wrapWithPresence } = require('../middleware/presence');
-const { getWsAgent, applyExtraCAsToProcess } = require('../lib/network');
+const { getWsAgent } = require('../lib/network');
 const { startMemoryGuard } = require('../lib/memoryGuard');
 const leakDetector       = require('../lib/leakDetector');
 const alertEngine          = require('../services/alertEngine');
@@ -365,9 +365,6 @@ async function start(retry = 0) {
     if (!payload?.messages?.length) return;
     
     metrics.incReceived(payload.messages.length);
-
-    const isHistory = payload.type === 'append' || payload.type === 'prepend';
-    const isRealTime = payload.type === 'notify';
 
     for (const m of payload.messages) {
       const jid = m?.key?.remoteJid;

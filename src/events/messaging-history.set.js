@@ -22,7 +22,7 @@ const logger = require('../core/logger');
 
 const log = logger.child({ mod: 'messaging-history.set' });
 
-module.exports = async ({ sock, store, payload }) => {
+module.exports = async ({ sock: _sock, store, payload }) => {
   if (!payload) return;
 
   const { chats = [], contacts = [], messages = [], isLatest } = payload;

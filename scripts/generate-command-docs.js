@@ -44,7 +44,7 @@ function staticMeta(src) {
   const pickArray = (key) => {
     const m = src.match(new RegExp(`['"\`]?${key}['"\`]?\\s*:\\s*\\[([^\\]]*)\\]`));
     if (!m) return [];
-    return [...m[1].matchAll(/['"\`]([^'"\`]+)['"\`]/g)].map((mm) => mm[1]);
+    return [...m[1].matchAll(/['"`]([^'"`]+)['"`]/g)].map((mm) => mm[1]);
   };
   return {
     name:     pick('name'),

@@ -38,7 +38,7 @@ function escapeHtml(s) {
  * Per https://core.telegram.org/bots/api#markdownv2-style.
  */
 function escapeMarkdownV2(s) {
-  return String(s == null ? '' : s).replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+  return String(s == null ? '' : s).replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 }
 
 /**

@@ -88,7 +88,7 @@ async function chat({ chatJid, userJid, text, optIn, providerName, modelName, pe
   const toolTrace  = [];
   let rounds = 0;
   let finalContent = '';
-  let workingHistory = history.slice();   // local copy we mutate per round
+  const workingHistory = history.slice();   // local copy we mutate per round
 
   while (rounds < MAX_TOOL_ROUNDS) {
     rounds += 1;

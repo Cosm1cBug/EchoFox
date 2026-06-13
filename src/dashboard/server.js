@@ -10,7 +10,6 @@ const rateLimit = require('express-rate-limit');
 const path    = require('node:path');
 const fs      = require('node:fs');
 const { spawnSync } = require('node:child_process');
-const { config } = require('../lib/configLoader');
 const metrics    = require('../services/metrics');
 
 const logger = require('../core/logger').child({ mod: 'dashboard' });
@@ -410,6 +409,20 @@ function startDashboard(port, store, config) {
       const now = Date.now();
       const seen = new Set();
 
+      // Arrow assigned to a const is NOT a function declaration, so the
+      // `no-inner-declarations` ESLint rule doesn't apply — and it correctly
+      // closes over lines/now/seen which are scoped to this route handler.
+      const emit = (_prefix, m, type, help) => {
+        for (const [k, v] of Object.entries(m || {})) {
+          if (seen.has(k)) continue;
+          seen.add(k);
+          const name = `echofox_${k}`;
+          lines.push(`# HELP ${name} ${help || 'store-backed metric'}`);
+          lines.push(`# TYPE ${name} ${type}`);
+          lines.push(`${name} ${Number(v) || 0} ${now}`);
+        }
+      };
+
       emit('counter', snap.counters, 'counter', 'EchoFox counter');
       emit('gauge',   snap.gauges,   'gauge',   'EchoFox gauge');
 
@@ -421,16 +434,6 @@ function startDashboard(port, store, config) {
     }
   });
 
-  function emit(prefix, m, type, help) {
-    for (const [k, v] of Object.entries(m || {})) {
-        if (seen.has(k)) continue;
-          seen.add(k);
-          const name = `echofox_${k}`;
-          lines.push(`# HELP ${name} ${help || 'store-backed metric'}`);
-          lines.push(`# TYPE ${name} ${type}`);
-          lines.push(`${name} ${Number(v) || 0} ${now}`);
-    }
-  }
   // ── v1.2.0 AI routes ──────────────────────────────────────────────────
   app.get('/api/ai/stats', async (req, res, next) => {
     try {

@@ -78,11 +78,6 @@ async function saveIndicatorsToFile(pulse) {
     return pulseFilePath;  // Return the path of the saved IOC file
 }
 
-// Introduce a delay (in ms) between operations
-function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 // Exponential Backoff Delay
 function exponentialDelay(attempt, baseDelay = 5000) {
     return new Promise(resolve => setTimeout(resolve, baseDelay * Math.pow(2, attempt)));
@@ -112,24 +107,24 @@ async function sendWithRetry(sock, userId, message, retries = 3) {
 
 // Main function to send pulses to all subscribers
 async function sendPulses(sock) {
-    let subscribers = await loadSubscribers();  // Load the list of subscribers
+    const subscribers = await loadSubscribers();  // Load the list of subscribers
     if (subscribers.length === 0) {
         //console.log("[AlienVault] - No subscribers. Skipping pulse sending.");
         return;  // Exit if there are no subscribers
     }
 
-    let pulses = await fetchPulses();  // Fetch pulses from the AlienVault API
+    const pulses = await fetchPulses();  // Fetch pulses from the AlienVault API
     if (!pulses || pulses.results.length === 0) return;  // Exit if there was an error fetching the pulses
 
-    let sentPulses = await loadSentPulses();  // Load the list of sent pulses
-    let newPulses = pulses.results.filter(pulse => !sentPulses.includes(pulse.id));  // Filter out already sent pulses
+    const sentPulses = await loadSentPulses();  // Load the list of sent pulses
+    const newPulses = pulses.results.filter(pulse => !sentPulses.includes(pulse.id));  // Filter out already sent pulses
 
     if (newPulses.length === 0) {
         return;  // Exit if there are no new pulses to send
     }
 
     // Iterate over each pulse and send it to all subscribers
-    for (let pulse of newPulses) {
+    for (const pulse of newPulses) {
         let pulseMessage = `\`</> AlienVault Pulse Notification </>\`\n\n`;
             pulseMessage += `*Name*: ${pulse.name}\n`;
             pulseMessage += `*ID*: ${pulse.id}\n`;
@@ -146,7 +141,7 @@ async function sendPulses(sock) {
         saveSentPulses(sentPulses);
 
         // Send the pulse message and IOC file to each subscriber
-        for (let userId of subscribers) {
+        for (const userId of subscribers) {
             await sendWithRetry(sock, userId, pulseMessage);  // Send pulse message
 
             // Send the IOC file for this pulse

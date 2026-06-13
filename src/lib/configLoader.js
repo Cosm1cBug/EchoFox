@@ -60,7 +60,7 @@ function loadRaw() {
 }
 
 function translateLegacy(raw) {
-  let o = raw && typeof raw === 'object' && raw.config ? raw.config : raw;
+  const o = raw && typeof raw === 'object' && raw.config ? raw.config : raw;
   if (!o || typeof o !== 'object') return {};
 
   const NEW_KEYS = ['bot', 'features', 'channels', 'apis', 'sticker', 'runtime'];

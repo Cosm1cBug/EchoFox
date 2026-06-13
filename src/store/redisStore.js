@@ -863,7 +863,7 @@ function makeRedisStore(url, logger, groupCache) {
         return raw.map((s) => JSON.parse(s));
       } catch (e) { logger.warn({err:e}, 'edits query failed'); return []; }
     },
-    async updateMessageBody(jid, messageId, message, ts) {
+    async updateMessageBody(jid, messageId, message, _ts) {
       try {
         const buf = Buffer.from(proto.Message.encode(message).finish());
         await client.set(`msg:${jid}:${messageId}`, buf, 'EX', 604800);

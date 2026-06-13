@@ -50,7 +50,7 @@ module.exports = {
       return ctx.reply(`🚫 Text too long (${text.length} chars). Max is ${maxChars}.`);
     }
 
-    let lang = (args[0] || DEFAULT_LANG).toLowerCase();
+    const lang = (args[0] || DEFAULT_LANG).toLowerCase();
     if (!SUPPORTED_LANGS.has(lang)) {
       return ctx.reply(`Unsupported language *${lang}*. Try: en, hi, es, fr, de, ja, ko, ml, ta…`);
     }

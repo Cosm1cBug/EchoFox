@@ -12,6 +12,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.3] — 2026-06-13
+
+> **CI hotfix release.** v1.4.2 introduced 3 ESLint errors in
+> `src/dashboard/server.js` (when an `emit()` helper was moved out
+> of its closure to silence `no-inner-declarations`) and surfaced
+> 28 pre-existing lint warnings. v1.4.3 cleans all of them up,
+> commits the dashboard `package-lock.json` (so `release.yml`'s
+> `npm ci` step works), and re-applies the TruffleHog
+> `secret-scanning.yml` fix that didn't make it onto main in v1.4.2.
+
+### Fixed
+
+- **`src/dashboard/server.js`** — restored the `emit()` helper inside
+  the `/metrics` route handler (where it correctly closes over
+  `seen`/`lines`/`now`). Rewrote as an arrow assigned to a `const`
+  so the `no-inner-declarations` ESLint rule doesn't apply.
+  Was producing 6 `no-undef` ESLint errors blocking CI.
+- **28 pre-existing ESLint warnings** cleaned up across the tree
+  (most predated v1.4.0 but the previous `ci.yml` wasn't actually
+  enforcing `--max-warnings 0`):
+  - `scripts/generate-command-docs.js` — 3 useless backtick escapes
+    in a regex char class
+  - `src/__tests__/integration/ai.test.js` — unused `req` arg → `_req`
+  - `src/core/worker.js` — removed unused `applyExtraCAsToProcess`
+    import + dead `isHistory`/`isRealTime` flag computations
+  - `src/dashboard/server.js` — removed unused `config` import
+  - `src/events/{message-receipt,messages.reaction,messages.update,messaging-history.set}.js`
+    — unused `sock` destructured param → `sock: _sock`
+  - `src/events/messages.update.js` — also removed unused
+    `getContentType` import
+  - `src/lib/alienvault-pulse.js` — removed unused `delay()` function
+  - `src/lib/backupEngine.js` — removed unused `zlib` import
+  - `src/services/telegram/transport.js` — removed unnecessary
+    `\[` escape inside the MarkdownV2 char class
+  - `src/services/thehackersnewsService.js` — removed unused top-level
+    `axios` import (the file uses `axiosWithBreaker` instead)
+  - `src/store/redisStore.js` — unused `ts` arg in `updateMessageBody`
+    → `_ts`
+- **`dashboard/package-lock.json`** — uncommented out of `.gitignore`
+  and committed. `release.yml`'s `cd dashboard && npm ci` step
+  was failing because there was no lockfile to install against.
+- **`.github/workflows/secret-scanning.yml`** — re-applied the
+  TruffleHog fix that was in the v1.4.2 bundle but never landed
+  on `main` (probably skipped during the Copy-Item). Split into
+  three event paths:
+    - `pull_request` → diff PR head vs PR base
+    - `push` → diff `github.event.before` → `github.sha`
+      (the commit range that was just pushed)
+    - `workflow_dispatch` OR first-push-to-branch → full repo scan
+
+### Why CI is healthy now
+
+| Gate | Before v1.4.3 | After v1.4.3 |
+|---|---|---|
+| `npm run lint` | ❌ 6 errors + 28 warnings | ✅ 0 errors, 0 warnings |
+| `npm test` | ✅ 147/147 | ✅ 147/147 |
+| `npm run headers:check` | ✅ 140 files | ✅ 140 files |
+| Dashboard `tsc --noEmit` | ✅ | ✅ |
+| `npm ci` in `dashboard/` | ❌ no lockfile | ✅ committed |
+| TruffleHog secret scan | ❌ `base == head` on push | ✅ event-conditional |
+| All 7 workflows `actionlint` | ✅ | ✅ |
+
+### Migration notes
+
+- Drop-in upgrade from v1.4.2. No schema changes, no config changes,
+  no env-var changes.
+- `dashboard/package-lock.json` will now appear in your `git status`
+  the first time you `cd dashboard && npm install` after pulling.
+  Commit it (or rebase past it) — it's tracked now.
+
+---
+
 ## [1.4.2] — 2026-06-12
 
 > **Self-healing for Signal protocol decryption errors + CI/CD bug fixes.**

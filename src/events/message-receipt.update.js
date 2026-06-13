@@ -35,7 +35,7 @@ function deriveStatus(r) {
   return RECEIPT_STATUS.SENT;
 }
 
-module.exports = async function onMessageReceipt({ sock, store, payload }) {
+module.exports = async function onMessageReceipt({ sock: _sock, store, payload }) {
   if (!Array.isArray(payload)) return;
 
   for (const upd of payload) {

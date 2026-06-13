@@ -44,7 +44,7 @@ function makeBatcher({
   onDrop,
 }) {
   if (!flush) throw new Error('backpressure: flush() required');
-  let buffer = [];
+  const buffer = [];
   let timer  = null;
   let flushing = false;
   let pendingFlush = null;

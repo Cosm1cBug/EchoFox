@@ -21,7 +21,7 @@
 
 const logger = require('../core/logger').child({ mod: 'msg.reaction' });
 
-module.exports = async function onMessageReaction({ sock, store, payload }) {
+module.exports = async function onMessageReaction({ sock: _sock, store, payload }) {
   if (!Array.isArray(payload)) return;
 
   for (const r of payload) {

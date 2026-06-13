@@ -65,4 +65,4 @@ dashboard/*.tsbuildinfo
 
 # Lockfiles ─────────────────────────────────────────────────────────────────
 # package-lock.json
-dashboard/package-lock.json
+# dashboard/package-lock.json

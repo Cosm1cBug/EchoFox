@@ -44,7 +44,7 @@ async function resolveDirect(url) {
   const m = HREF_RE.exec(html) || ALT_RE.exec(html);
   if (!m) throw new Error('could not extract download link from page');
   const direct = m[1];
-  const name   = (NAME_RE.exec(html) || [, 'mediafire-file'])[1].trim();
+  const name   = (NAME_RE.exec(html) || ['mediafire-file'])[1].trim();
   const sizeM  = SIZE_RE.exec(html);
   return {
     direct,

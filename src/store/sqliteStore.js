@@ -745,7 +745,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     },
     async listContacts({ limit = 100, offset = 0 } = {}) {
       try { return stmts.contactList.all(limit, offset); }
-      catch (e) { logger.warn({ err: e, jid }, 'listContacts failed'); return []; }
+      catch (e) { logger.warn({ err: e }, 'listContacts failed'); return []; }
     },
     async countContacts() {
       try { return stmts.contactCount.get()?.n || 0; }

@@ -12,6 +12,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.6] — 2026-06-14
+
+> **Docs deploy hotfix.** The `docs.yml` workflow was failing with
+> `Cannot find package 'vitepress'` because vitepress wasn't a
+> declared dependency — `npx vitepress` was trying to install it
+> just-in-time, which produces an ESM resolution race on GitHub's
+> Actions runners.
+
+### Fixed
+
+- Added `vitepress: ^1.6.4` to `devDependencies` in `package.json`
+  so `npm ci` installs it properly. `npx vitepress` no longer has
+  to download it just-in-time.
+- Bumped `.github/workflows/docs.yml` Node version from 20 → 22.
+  VitePress 1.6.x requires Node 22 per its `engines` field (the build
+  succeeds on Node 20 but emits an `EBADENGINE` warning).
+- Replaced `npx vitepress build docs` with `npm run docs:build`
+  (cleaner, uses the locally-installed binary directly).
+
+### Added
+
+- Three new convenience scripts in `package.json`:
+  - `npm run docs:build` — build the VitePress site
+  - `npm run docs:dev` — local hot-reload dev server
+  - `npm run docs:preview` — preview the built site
+
+### Migration notes
+
+- Drop-in upgrade from v1.4.5. `npm install` once after pulling to
+  install the new vitepress dep.
+
+---
+
 ## [1.4.4] — 2026-06-13
 
 > **Second CI hotfix.** v1.4.3 fixed the lint + dashboard lockfile issues

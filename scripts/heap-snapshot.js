@@ -23,9 +23,9 @@
  *   against two snapshots taken N hours apart.
  */
 
-const fs   = require('node:fs');
+const fs = require('node:fs');
 const path = require('node:path');
-const v8   = require('node:v8');
+const v8 = require('node:v8');
 
 const args = process.argv.slice(2);
 const outArg = args.find((a) => a.startsWith('--out='));

@@ -22,26 +22,29 @@
  *   CIDR matching install `proxy-from-env` later.
  */
 
-const fs    = require('node:fs');
-const path  = require('node:path');
+const fs = require('node:fs');
+const path = require('node:path');
 const https = require('node:https');
-const tls   = require('node:tls');
+const tls = require('node:tls');
 
 const { config } = require('./configLoader');
-const logger     = require('../core/logger').child({ mod: 'network' });
+const logger = require('../core/logger').child({ mod: 'network' });
 
 let _extraCAs = null;
-let _httpAgent  = null;
+let _httpAgent = null;
 let _httpsAgent = null;
 let _socksAgent = null;
-let _wsAgent    = null;
-let _axios      = null;
+let _wsAgent = null;
+let _axios = null;
 
 // ─── Extra CA bundle loading ─────────────────────────────────────────────
 function loadExtraCAs() {
   if (_extraCAs !== null) return _extraCAs;
   const p = config.network?.extraCaCertPath;
-  if (!p) { _extraCAs = []; return _extraCAs; }
+  if (!p) {
+    _extraCAs = [];
+    return _extraCAs;
+  }
   try {
     const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
     const pem = fs.readFileSync(abs, 'utf8');
@@ -79,9 +82,12 @@ function getProxyAgents() {
     try {
       const { SocksProxyAgent } = require('socks-proxy-agent');
       _socksAgent = new SocksProxyAgent(net.socksProxy);
-      logger.info({ proxy: net.socksProxy.replace(/\/\/[^@]*@/, '//***@') }, 'SOCKS proxy agent created');
+      logger.info(
+        { proxy: net.socksProxy.replace(/\/\/[^@]*@/, '//***@') },
+        'SOCKS proxy agent created',
+      );
       // SOCKS works for both http and https
-      _httpAgent  = _socksAgent;
+      _httpAgent = _socksAgent;
       _httpsAgent = _socksAgent;
       return { httpAgent: _httpAgent, httpsAgent: _httpsAgent, socksAgent: _socksAgent };
     } catch (e) {
@@ -93,11 +99,14 @@ function getProxyAgents() {
   if (net.httpsProxy || net.httpProxy) {
     try {
       const { HttpsProxyAgent } = require('https-proxy-agent');
-      const { HttpProxyAgent }  = require('http-proxy-agent');
+      const { HttpProxyAgent } = require('http-proxy-agent');
 
       if (net.httpsProxy) {
         _httpsAgent = new HttpsProxyAgent(net.httpsProxy, { ca });
-        logger.info({ proxy: net.httpsProxy.replace(/\/\/[^@]*@/, '//***@') }, 'HTTPS proxy agent created');
+        logger.info(
+          { proxy: net.httpsProxy.replace(/\/\/[^@]*@/, '//***@') },
+          'HTTPS proxy agent created',
+        );
       } else if (ca) {
         // No proxy but have extra CAs → still build a stock https agent with CAs
         _httpsAgent = new https.Agent({ ca });
@@ -105,10 +114,16 @@ function getProxyAgents() {
 
       if (net.httpProxy) {
         _httpAgent = new HttpProxyAgent(net.httpProxy);
-        logger.info({ proxy: net.httpProxy.replace(/\/\/[^@]*@/, '//***@') }, 'HTTP proxy agent created');
+        logger.info(
+          { proxy: net.httpProxy.replace(/\/\/[^@]*@/, '//***@') },
+          'HTTP proxy agent created',
+        );
       }
     } catch (e) {
-      logger.error({ err: e }, 'HTTP(S) proxy agents failed to load — install `https-proxy-agent` and `http-proxy-agent`');
+      logger.error(
+        { err: e },
+        'HTTP(S) proxy agents failed to load — install `https-proxy-agent` and `http-proxy-agent`',
+      );
     }
   } else if (ca) {
     // No proxy at all, but we still need a CA-aware agent for axios
@@ -152,7 +167,7 @@ function configuredAxios() {
     headers: { 'User-Agent': net.userAgent || 'EchoFox/0.4' },
     httpAgent,
     httpsAgent,
-    proxy: false,                              // ← we use agents directly; tell axios to skip
+    proxy: false, // ← we use agents directly; tell axios to skip
   });
   return _axios;
 }
@@ -172,7 +187,11 @@ function applyExtraCAsToProcess() {
   tls.createSecureContext = function patchedCreate(opts = {}) {
     const ctx = origCreate.call(tls, opts);
     for (const cert of extras) {
-      try { ctx.context.addCACert(cert); } catch (_e) { /* dup or fmt */ }
+      try {
+        ctx.context.addCACert(cert);
+      } catch (_e) {
+        /* dup or fmt */
+      }
     }
     return ctx;
   };

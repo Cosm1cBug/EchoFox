@@ -29,17 +29,22 @@ function _getClient() {
   return _client;
 }
 
-function _resetClientForTests() { _client = null; _override = null; }
-function __testOverride(client) { _override = client; }
+function _resetClientForTests() {
+  _client = null;
+  _override = null;
+}
+function __testOverride(client) {
+  _override = client;
+}
 
 function _toolsToOllama(tools = []) {
   if (!tools.length) return undefined;
   return tools.map((t) => ({
     type: 'function',
     function: {
-      name:        t.name,
+      name: t.name,
       description: t.description,
-      parameters:  t.parameters,
+      parameters: t.parameters,
     },
   }));
 }
@@ -50,14 +55,14 @@ function _historyToOllama(system, history) {
   for (const t of history) {
     if (t.role === 'tool') {
       out.push({
-        role:    'tool',
+        role: 'tool',
         content: typeof t.content === 'string' ? t.content : JSON.stringify(t.content),
         ...(t.toolId ? { tool_call_id: t.toolId } : {}),
       });
     } else if (t.role === 'assistant' && t.toolCalls && t.toolCalls.length) {
       out.push({
-        role:       'assistant',
-        content:    t.content || '',
+        role: 'assistant',
+        content: t.content || '',
         tool_calls: t.toolCalls.map((tc) => ({
           function: { name: tc.name, arguments: tc.args || {} },
         })),
@@ -72,9 +77,9 @@ function _historyToOllama(system, history) {
 async function chat({ system, history = [], tools = [], model, maxTokens, temperature }) {
   const client = _getClient();
   const req = {
-    model:    model || config.ai?.providers?.local?.model || config.ai?.model || 'llama3.2',
+    model: model || config.ai?.providers?.local?.model || config.ai?.model || 'llama3.2',
     messages: _historyToOllama(system, history),
-    stream:   false,
+    stream: false,
     options: {
       num_predict: Number(maxTokens) || Number(config.ai?.maxTokens) || 800,
       ...(typeof temperature === 'number' ? { temperature } : {}),
@@ -89,21 +94,21 @@ async function chat({ system, history = [], tools = [], model, maxTokens, temper
   let toolCalls;
   if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
     toolCalls = msg.tool_calls.map((tc, i) => ({
-      id:   tc.id || `ollama_${i}_${Date.now()}`,
+      id: tc.id || `ollama_${i}_${Date.now()}`,
       name: tc.function?.name,
       args: tc.function?.arguments || {},
     }));
   }
 
   return {
-    content:   msg.content || '',
+    content: msg.content || '',
     toolCalls,
     usage: {
-      promptTokens:     r.prompt_eval_count || 0,
-      completionTokens: r.eval_count        || 0,
+      promptTokens: r.prompt_eval_count || 0,
+      completionTokens: r.eval_count || 0,
     },
     finishReason: r.done_reason || (r.done ? 'stop' : undefined),
-    model:        r.model || req.model,
+    model: r.model || req.model,
   };
 }
 

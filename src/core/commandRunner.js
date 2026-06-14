@@ -23,10 +23,10 @@
 const { LRUCache } = require('lru-cache');
 const logger = require('./logger').child({ mod: 'runner' });
 const { makeRateLimiter } = require('../middleware/rateLimit');
-const { config }   = require('../lib/configLoader');
-const metrics      = require('../services/metrics');
-const alertEngine  = require('../services/alertEngine');
-const telegram     = require('../services/telegram');
+const { config } = require('../lib/configLoader');
+const metrics = require('../services/metrics');
+const alertEngine = require('../services/alertEngine');
+const telegram = require('../services/telegram');
 const { isUserFacingError, shouldCountAsFailure } = require('../lib/errors');
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -52,7 +52,7 @@ function warmupMultiplier() {
 // Global limiter — consumes warmupMultiplier() tokens per call so warmup
 // proportionally throttles bot-wide throughput.
 const globalLimiter = makeRateLimiter({
-  capacity:     Math.max(config.processing.globalRateLimit * 4, 20),
+  capacity: Math.max(config.processing.globalRateLimit * 4, 20),
   refillPerSec: config.processing.globalRateLimit,
 });
 
@@ -60,9 +60,9 @@ function checkCooldown(sender, cmd) {
   if (!cmd.cooldown || cmd.cooldown <= 0) return 0;
   const mult = warmupMultiplier();
   const effectiveMs = cmd.cooldown * 1000 * mult;
-  const key  = `${sender}|${cmd.name}`;
+  const key = `${sender}|${cmd.name}`;
   const last = cooldowns.get(key);
-  const now  = Date.now();
+  const now = Date.now();
   if (last && now - last < effectiveMs) {
     return Math.ceil((effectiveMs - (now - last)) / 1000);
   }
@@ -74,10 +74,12 @@ function withTimeout(promise, ms, cmdName) {
   let t;
   const timeout = new Promise((_, reject) => {
     t = setTimeout(
-      () => reject(Object.assign(
-        new Error(`Command '${cmdName}' timed out after ${ms} ms`),
-        { code: 'ETIMEDOUT' },
-      )),
+      () =>
+        reject(
+          Object.assign(new Error(`Command '${cmdName}' timed out after ${ms} ms`), {
+            code: 'ETIMEDOUT',
+          }),
+        ),
       ms,
     );
   });
@@ -92,18 +94,25 @@ async function postCrashToChannel(sock, cmd, ctx, err) {
     `*Cmd:* \`${cmd.name}\`  *Cat:* \`${cmd.category || '?'}\`\n` +
     `*From:* ${ctx.sender}  *Chat:* ${ctx.chat}\n` +
     `*Text:* ${(ctx.body || '').slice(0, 200)}\n\n` +
-    '```\n' + (err.stack || err.message || String(err)).slice(0, 1500) + '\n```';
-  try { await sock.sendMessage(ch, { text: txt }); }
-  catch (_e) { /* don't crash the runner because the log channel is down */ }
+    '```\n' +
+    (err.stack || err.message || String(err)).slice(0, 1500) +
+    '\n```';
+  try {
+    await sock.sendMessage(ch, { text: txt });
+  } catch (_e) {
+    /* don't crash the runner because the log channel is down */
+  }
 
   // v1.3.0 — also mirror to Telegram errLogs (no-op if telegram disabled)
   try {
     telegram.forward('errLogs', {
-      level:  'error',
+      level: 'error',
       source: `cmd:${cmd.name}`,
-      text:   `Command crashed: ${cmd.name} (cat:${cmd.category || '?'})\nFrom ${ctx.sender} in ${ctx.chat}\n\n${(err.stack || err.message || String(err)).slice(0, 2500)}`,
+      text: `Command crashed: ${cmd.name} (cat:${cmd.category || '?'})\nFrom ${ctx.sender} in ${ctx.chat}\n\n${(err.stack || err.message || String(err)).slice(0, 2500)}`,
     });
-  } catch (_e) { /* ignore — telegram bridge must never crash the runner */ }
+  } catch (_e) {
+    /* ignore — telegram bridge must never crash the runner */
+  }
 }
 
 async function run({ sock, cmd, m, ctx, handlerArgs }) {
@@ -121,9 +130,7 @@ async function run({ sock, cmd, m, ctx, handlerArgs }) {
     return ctx.reply(`⌛ Wait ${wait}s before using *${cmd.name}* again.`);
   }
 
-  const timeoutMs = (cmd.timeout && cmd.timeout > 0)
-    ? cmd.timeout * 1000
-    : DEFAULT_TIMEOUT_MS;
+  const timeoutMs = cmd.timeout && cmd.timeout > 0 ? cmd.timeout * 1000 : DEFAULT_TIMEOUT_MS;
 
   const t0 = Date.now();
   try {
@@ -132,27 +139,37 @@ async function run({ sock, cmd, m, ctx, handlerArgs }) {
     alertEngine.record(cmd.name, 'success');
     logger.debug({ cmd: cmd.name, ms: Date.now() - t0, sender: ctx.sender }, 'command ok');
   } catch (err) {
-    const isTimeout    = err.code === 'ETIMEDOUT';
-    const userFacing   = isUserFacingError(err);
+    const isTimeout = err.code === 'ETIMEDOUT';
+    const userFacing = isUserFacingError(err);
     const countFailure = shouldCountAsFailure(err);
 
     // Outcome category for metrics + alerts
-    const outcome = isTimeout ? 'timeout'
-                  : countFailure ? 'failure'
-                  : 'handled';
+    const outcome = isTimeout ? 'timeout' : countFailure ? 'failure' : 'handled';
 
     metrics.incCommand(cmd.name, outcome === 'handled' ? 'success' : outcome);
     alertEngine.record(cmd.name, outcome === 'handled' ? 'success' : outcome);
 
     // User-facing errors get a clean reply, no stack log, no ❌
     if (userFacing) {
-      logger.debug({ cmd: cmd.name, sender: ctx.sender, msg: err.message }, 'command rejected user input');
-      try { await ctx.reply(err.message || 'Bad input'); } catch {}
+      logger.debug(
+        { cmd: cmd.name, sender: ctx.sender, msg: err.message },
+        'command rejected user input',
+      );
+      try {
+        await ctx.reply(err.message || 'Bad input');
+      } catch {}
       return;
     }
 
     logger.error(
-      { err, cmd: cmd.name, sender: ctx.sender, ms: Date.now() - t0, timeout: isTimeout, kind: err.kind || 'bug' },
+      {
+        err,
+        cmd: cmd.name,
+        sender: ctx.sender,
+        ms: Date.now() - t0,
+        timeout: isTimeout,
+        kind: err.kind || 'bug',
+      },
       'command threw',
     );
 
@@ -167,11 +184,14 @@ async function run({ sock, cmd, m, ctx, handlerArgs }) {
       userMsg = `💥 *${cmd.name}* crashed: ${(err.message || String(err)).slice(0, 200)}`;
     }
 
-    try { await ctx.react('❌'); } catch {}
-    try { await ctx.reply(userMsg); } catch {}
+    try {
+      await ctx.react('❌');
+    } catch {}
+    try {
+      await ctx.reply(userMsg);
+    } catch {}
     if (countFailure) postCrashToChannel(sock, cmd, ctx, err).catch(() => {});
   }
-
 }
 
 module.exports = { run };

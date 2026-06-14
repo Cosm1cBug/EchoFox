@@ -44,7 +44,7 @@
  *       so they're safe even if the tracker table is wiped.
  */
 
-const fs   = require('node:fs');
+const fs = require('node:fs');
 const path = require('node:path');
 const logger = require('../core/logger').child({ mod: 'migrations' });
 
@@ -53,7 +53,8 @@ const MIGRATIONS_ROOT = path.join(__dirname, '..', 'store', 'migrations');
 function _list(backend) {
   const dir = path.join(MIGRATIONS_ROOT, backend.toLowerCase());
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir)
+  return fs
+    .readdirSync(dir)
     .filter((f) => f.endsWith('.js'))
     .map((f) => {
       const m = f.match(/^(\d+)_(.+)\.js$/);
@@ -72,7 +73,7 @@ function _load(file) {
   delete require.cache[require.resolve(file)];
   const mod = require(file);
   if (typeof mod.version !== 'number') throw new Error(`${file}: missing numeric version`);
-  if (typeof mod.up !== 'function')    throw new Error(`${file}: missing up()`);
+  if (typeof mod.up !== 'function') throw new Error(`${file}: missing up()`);
   return mod;
 }
 
@@ -89,7 +90,10 @@ const adapters = {
     },
     applied(ctx) {
       return new Set(
-        ctx.db.prepare('SELECT version FROM _migrations').all().map((r) => r.version),
+        ctx.db
+          .prepare('SELECT version FROM _migrations')
+          .all()
+          .map((r) => r.version),
       );
     },
     async run(ctx, mig) {
@@ -98,11 +102,12 @@ const adapters = {
         if (maybePromise && typeof maybePromise.then === 'function') {
           throw new Error(
             `SQLite migration ${mig.version} returned a Promise — sqlite ` +
-            'migrations must complete synchronously inside the transaction. ' +
-            'Use better-sqlite3 sync methods only (db.exec, prepare().run, ...).'
+              'migrations must complete synchronously inside the transaction. ' +
+              'Use better-sqlite3 sync methods only (db.exec, prepare().run, ...).',
           );
         }
-        ctx.db.prepare('INSERT INTO _migrations(version,slug,applied_at) VALUES(?,?,?)')
+        ctx.db
+          .prepare('INSERT INTO _migrations(version,slug,applied_at) VALUES(?,?,?)')
           .run(mig.version, mig.slug, Math.floor(Date.now() / 1000));
       });
       tx();
@@ -125,11 +130,12 @@ const adapters = {
       const client = await ctx.pool.connect();
       try {
         await client.query('BEGIN');
-        await mig.up({ ...ctx, pool: client });   // pass client so migration shares tx
-        await client.query(
-          'INSERT INTO _migrations(version,slug,applied_at) VALUES($1,$2,$3)',
-          [mig.version, mig.slug, Math.floor(Date.now() / 1000)],
-        );
+        await mig.up({ ...ctx, pool: client }); // pass client so migration shares tx
+        await client.query('INSERT INTO _migrations(version,slug,applied_at) VALUES($1,$2,$3)', [
+          mig.version,
+          mig.slug,
+          Math.floor(Date.now() / 1000),
+        ]);
         await client.query('COMMIT');
       } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
@@ -147,7 +153,10 @@ const adapters = {
       await Mig.createIndex({ version: 1 }, { unique: true });
     },
     async applied(ctx) {
-      const docs = await ctx.conn.collection('_migrations').find({}, { projection: { version: 1 } }).toArray();
+      const docs = await ctx.conn
+        .collection('_migrations')
+        .find({}, { projection: { version: 1 } })
+        .toArray();
       return new Set(docs.map((d) => d.version));
     },
     async run(ctx, mig) {
@@ -163,7 +172,9 @@ const adapters = {
   },
 
   redis: {
-    async ensure(_ctx) { /* keyspace is schemaless */ },
+    async ensure(_ctx) {
+      /* keyspace is schemaless */
+    },
     async applied(ctx) {
       const arr = await ctx.client.zrange('_migrations', 0, -1, 'WITHSCORES');
       const set = new Set();
@@ -172,7 +183,11 @@ const adapters = {
     },
     async run(ctx, mig) {
       await mig.up(ctx);
-      await ctx.client.zadd('_migrations', mig.version, `v${mig.version}_${mig.slug}_${Date.now()}`);
+      await ctx.client.zadd(
+        '_migrations',
+        mig.version,
+        `v${mig.version}_${mig.slug}_${Date.now()}`,
+      );
     },
   },
 };
@@ -209,19 +224,24 @@ async function runMigrations(backend, ctx) {
   for (const meta of pending) {
     const t0 = Date.now();
     let mig;
-    try { mig = _load(meta.file); }
-    catch (err) {
+    try {
+      mig = _load(meta.file);
+    } catch (err) {
       logger.fatal({ err, file: meta.file }, 'migration file invalid');
       throw err;
     }
     try {
       await adapter.run({ ...ctx, logger }, { ...mig, version: meta.version, slug: meta.slug });
-      logger.info({ version: meta.version, slug: meta.slug, ms: Date.now() - t0 },
-        '✅ migration applied');
+      logger.info(
+        { version: meta.version, slug: meta.slug, ms: Date.now() - t0 },
+        '✅ migration applied',
+      );
       appliedNow.push({ version: meta.version, slug: meta.slug });
     } catch (err) {
-      logger.fatal({ err, version: meta.version, slug: meta.slug },
-        '🔥 migration failed — aborting boot');
+      logger.fatal(
+        { err, version: meta.version, slug: meta.slug },
+        '🔥 migration failed — aborting boot',
+      );
       throw err;
     }
   }

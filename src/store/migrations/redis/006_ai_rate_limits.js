@@ -19,6 +19,10 @@ module.exports = {
   version: 6,
   description: 'AI persistent rate-limit counters (v1.3.0) — Redis schemaless, no-op marker',
 
-  async up(_ctx)   { /* nothing to do */ },
-  async down(_ctx) { /* intentionally a no-op */ },
+  async up(_ctx) {
+    /* nothing to do */
+  },
+  async down(_ctx) {
+    /* intentionally a no-op */
+  },
 };

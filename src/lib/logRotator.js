@@ -26,7 +26,7 @@
  *   is decoupled from pino internals (works across pino major versions).
  */
 
-const fs   = require('node:fs');
+const fs = require('node:fs');
 const path = require('node:path');
 
 function dateStamp(d = new Date(), tz) {
@@ -39,7 +39,10 @@ function dateStamp(d = new Date(), tz) {
   }
   // Intl-based — robust against DST.
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   }).formatToParts(d);
   const y = parts.find((p) => p.type === 'year')?.value;
   const m = parts.find((p) => p.type === 'month')?.value;
@@ -59,7 +62,7 @@ function msUntilNextMidnight(tz) {
       return probe.getTime() - now.getTime();
     }
   }
-  return 24 * 60 * 60 * 1000;  // fallback: 24h
+  return 24 * 60 * 60 * 1000; // fallback: 24h
 }
 
 function makeDailyFileStream({ dir, prefix = 'echofox', tz }) {
@@ -74,11 +77,15 @@ function makeDailyFileStream({ dir, prefix = 'echofox', tz }) {
     const date = dateStamp(new Date(), tz);
     if (date === currentDate && currentStream) return currentStream;
     if (currentStream) {
-      try { currentStream.end(); } catch {}
+      try {
+        currentStream.end();
+      } catch {}
     }
     const file = path.join(dir, `${prefix}-${date}.log`);
     currentStream = fs.createWriteStream(file, { flags: 'a', encoding: 'utf8' });
-    currentStream.on('error', () => { /* swallow — stdout is source of truth */ });
+    currentStream.on('error', () => {
+      /* swallow — stdout is source of truth */
+    });
     currentDate = date;
     bytesWrittenToday = 0;
 
@@ -97,10 +104,14 @@ function makeDailyFileStream({ dir, prefix = 'echofox', tz }) {
         const s = open();
         s.write(chunk);
         bytesWrittenToday += chunk.length;
-      } catch { /* never throw from logger path */ }
+      } catch {
+        /* never throw from logger path */
+      }
     },
     end() {
-      try { if (currentStream) currentStream.end(); } catch {}
+      try {
+        if (currentStream) currentStream.end();
+      } catch {}
       if (rotateTimer) clearTimeout(rotateTimer);
     },
     getStats() {

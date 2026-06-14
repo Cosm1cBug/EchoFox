@@ -29,7 +29,12 @@ module.exports = async ({ u }) => {
     const reactions = ev?.reactions || [];
     for (const r of reactions) {
       try {
-        await store.recordNewsletterReaction(newsletterId, messageId, r.code || r.emoji, r.count ?? 1);
+        await store.recordNewsletterReaction(
+          newsletterId,
+          messageId,
+          r.code || r.emoji,
+          r.count ?? 1,
+        );
         count++;
       } catch (err) {
         logger.debug({ err, newsletterId, messageId }, 'recordNewsletterReaction failed');

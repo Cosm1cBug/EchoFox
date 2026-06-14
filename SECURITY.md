@@ -22,12 +22,12 @@ To help us triage quickly, please include:
 
 ### What to expect
 
-| Timeline | Action |
-|---|---|
-| Within 48 hours | Acknowledgement of receipt |
-| Within 7 days | Initial assessment and triage severity |
-| Within 30 days | Patch released (for critical/high) or mitigation guidance |
-| After fix | Public advisory + CVE if applicable |
+| Timeline        | Action                                                    |
+| --------------- | --------------------------------------------------------- |
+| Within 48 hours | Acknowledgement of receipt                                |
+| Within 7 days   | Initial assessment and triage severity                    |
+| Within 30 days  | Patch released (for critical/high) or mitigation guidance |
+| After fix       | Public advisory + CVE if applicable                       |
 
 We follow [coordinated disclosure](https://en.wikipedia.org/wiki/Coordinated_vulnerability_disclosure): please give us a reasonable time to fix the issue before publishing details.
 
@@ -35,11 +35,11 @@ We follow [coordinated disclosure](https://en.wikipedia.org/wiki/Coordinated_vul
 
 ## Supported Versions
 
-| Version | Supported |
-|---|---|
-| 1.x (latest) | ✅ |
-| 0.x (alpha/beta pre-releases) | ⚠️ best-effort, upgrade recommended |
-| Original 6.x architecture (pre-fork) | ❌ no support |
+| Version                              | Supported                           |
+| ------------------------------------ | ----------------------------------- |
+| 1.x (latest)                         | ✅                                  |
+| 0.x (alpha/beta pre-releases)        | ⚠️ best-effort, upgrade recommended |
+| Original 6.x architecture (pre-fork) | ❌ no support                       |
 
 ---
 
@@ -68,4 +68,4 @@ We thank everyone who responsibly discloses security issues to us. With your per
 
 ### Hall of Fame
 
-*Nobody yet — be the first!*
+_Nobody yet — be the first!_

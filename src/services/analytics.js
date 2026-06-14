@@ -72,7 +72,9 @@ function flush() {
     db.transaction((rows) => {
       for (const r of rows) stmts.upsertMsg.run(r.jid, r.day, r.mtype, r.n);
     })(batch);
-  } catch (e) { logger.warn({ err: e }, 'analytics flush failed'); }
+  } catch (e) {
+    logger.warn({ err: e }, 'analytics flush failed');
+  }
 }
 
 function today() {
@@ -85,8 +87,11 @@ async function recordMessage(ctx) {
 }
 
 async function trackCommandUsage(jid, cmd) {
-  try { stmts.upsertCmd.run(jid, cmd, Math.floor(Date.now() / 1000)); }
-  catch (e) { logger.warn({ err: e }, 'cmd usage upsert failed'); }
+  try {
+    stmts.upsertCmd.run(jid, cmd, Math.floor(Date.now() / 1000));
+  } catch (e) {
+    logger.warn({ err: e }, 'cmd usage upsert failed');
+  }
 }
 
 function getLeaderboard(days = 7) {
@@ -95,7 +100,9 @@ function getLeaderboard(days = 7) {
 
 function close() {
   flush();
-  try { db.close(); } catch {}
+  try {
+    db.close();
+  } catch {}
 }
 
 module.exports = { recordMessage, trackCommandUsage, getLeaderboard, close };

@@ -18,7 +18,10 @@ const { runtime: humanDuration } = require('../../lib/Func');
 function formatBytes(bytes) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let i = 0;
-  while (Math.abs(bytes) >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+  while (Math.abs(bytes) >= 1024 && i < units.length - 1) {
+    bytes /= 1024;
+    i++;
+  }
   return `${bytes.toFixed(2)} ${units[i]}`;
 }
 

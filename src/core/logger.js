@@ -23,22 +23,31 @@ const pino = require('pino');
 const isProd = process.env.NODE_ENV === 'production';
 
 let _config = null;
-try { _config = require('../lib/configLoader').config; }
-catch { /* config not ready — defaults to off */ }
+try {
+  _config = require('../lib/configLoader').config;
+} catch {
+  /* config not ready — defaults to off */
+}
 
 const _privacyOn = !!_config?.privacy?.minimiseLogs;
 const _logFileEnabled = !!_config?.runtime?.logFile?.enabled;
 const _tz = _config?.bot?.timezone;
 
-const REDACT_PATHS = _privacyOn ? [
-  'msg.message.conversation',
-  'msg.message.extendedTextMessage.text',
-  'msg.message.imageMessage.caption',
-  'msg.message.videoMessage.caption',
-  'msg.message.documentMessage.fileName',
-  '*.body', '*.text', '*.caption',
-  'body', 'text', 'caption',
-] : [];
+const REDACT_PATHS = _privacyOn
+  ? [
+      'msg.message.conversation',
+      'msg.message.extendedTextMessage.text',
+      'msg.message.imageMessage.caption',
+      'msg.message.videoMessage.caption',
+      'msg.message.documentMessage.fileName',
+      '*.body',
+      '*.text',
+      '*.caption',
+      'body',
+      'text',
+      'caption',
+    ]
+  : [];
 
 // Build the optional file-rotator stream and a pino multistream destination.
 let destination;
@@ -46,15 +55,12 @@ if (_logFileEnabled) {
   try {
     const { makeDailyFileStream } = require('../lib/logRotator');
     const fileStream = makeDailyFileStream({
-      dir:    _config.runtime.logFile.dir    || './logs',
+      dir: _config.runtime.logFile.dir || './logs',
       prefix: _config.runtime.logFile.prefix || 'echofox',
-      tz:     _tz,
+      tz: _tz,
     });
     // pino-multi-stream is built into pino since v7: pass an array.
-    destination = pino.multistream([
-      { stream: process.stdout },
-      { stream: fileStream },
-    ]);
+    destination = pino.multistream([{ stream: process.stdout }, { stream: fileStream }]);
   } catch (err) {
     // Fall back to stdout-only if rotator fails to initialise
     console.warn('[logger] log file rotator failed:', err.message);
@@ -65,9 +71,11 @@ const baseOpts = {
   level: process.env.LOG_LEVEL || (isProd ? 'info' : 'debug'),
   base: { app: 'echofox' },
   timestamp: pino.stdTimeFunctions.isoTime,
-  ...(REDACT_PATHS.length ? {
-    redact: { paths: REDACT_PATHS, censor: '[redacted by privacy.minimiseLogs]' },
-  } : {}),
+  ...(REDACT_PATHS.length
+    ? {
+        redact: { paths: REDACT_PATHS, censor: '[redacted by privacy.minimiseLogs]' },
+      }
+    : {}),
 };
 
 let logger;

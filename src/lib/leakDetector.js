@@ -25,20 +25,20 @@
  */
 
 const { config } = require('./configLoader');
-const logger     = require('../core/logger').child({ mod: 'leak-detector' });
+const logger = require('../core/logger').child({ mod: 'leak-detector' });
 
-let _timer  = null;
-let _samples = [];   // [{ ts, heapUsedMB }]
+let _timer = null;
+let _samples = []; // [{ ts, heapUsedMB }]
 let _alerted = false;
 
 function _trend() {
   if (_samples.length < 4) return null;
   const mid = Math.floor(_samples.length / 2);
   const firstHalf = _samples.slice(0, mid);
-  const lastHalf  = _samples.slice(mid);
-  const firstMax  = Math.max(...firstHalf.map((s) => s.heapUsedMB));
-  const lastMin   = Math.min(...lastHalf.map((s) => s.heapUsedMB));
-  const growthMB  = lastMin - firstMax;
+  const lastHalf = _samples.slice(mid);
+  const firstMax = Math.max(...firstHalf.map((s) => s.heapUsedMB));
+  const lastMin = Math.min(...lastHalf.map((s) => s.heapUsedMB));
+  const growthMB = lastMin - firstMax;
   const growthPct = firstMax > 0 ? (growthMB / firstMax) * 100 : 0;
   return { firstMax, lastMin, growthMB, growthPct, samples: _samples.length };
 }
@@ -53,11 +53,16 @@ function _maybeAlert(metrics) {
   if (triggered && !_alerted) {
     _alerted = true;
     logger.warn({ ...t, threshold }, '🔥 monotonic heap growth detected — possible leak');
-    try { metrics.inc?.('leak_alerts_total'); metrics.setGauge?.('leak_suspected', 1); } catch {}
+    try {
+      metrics.inc?.('leak_alerts_total');
+      metrics.setGauge?.('leak_suspected', 1);
+    } catch {}
   } else if (!triggered && _alerted) {
     _alerted = false;
     logger.info(t, 'heap growth recovered');
-    try { metrics.setGauge?.('leak_suspected', 0); } catch {}
+    try {
+      metrics.setGauge?.('leak_suspected', 0);
+    } catch {}
   }
 }
 
@@ -68,12 +73,9 @@ function start(opts = {}) {
     return { stop };
   }
 
-  const interval = opts.sampleIntervalMs
-    ?? config.runtime?.leakDetection?.sampleIntervalMs
-    ?? 10 * 60 * 1000;            // 10 minutes
-  const windowSize = opts.windowSize
-    ?? config.runtime?.leakDetection?.windowSize
-    ?? 144;                       // 24h at 10min/sample
+  const interval =
+    opts.sampleIntervalMs ?? config.runtime?.leakDetection?.sampleIntervalMs ?? 10 * 60 * 1000; // 10 minutes
+  const windowSize = opts.windowSize ?? config.runtime?.leakDetection?.windowSize ?? 144; // 24h at 10min/sample
 
   const metrics = require('../services/metrics');
 
@@ -95,17 +97,32 @@ function start(opts = {}) {
 }
 
 function stop() {
-  if (_timer) { clearInterval(_timer); _timer = null; }
+  if (_timer) {
+    clearInterval(_timer);
+    _timer = null;
+  }
   _samples = [];
   _alerted = false;
 }
 
 // Exposed for tests
-function _samplesForTest() { return _samples.slice(); }
+function _samplesForTest() {
+  return _samples.slice();
+}
 function _injectSampleForTest(heapUsedMB) {
   _samples.push({ ts: Date.now(), heapUsedMB });
   if (_samples.length > 1000) _samples.shift();
 }
-function _resetForTests() { _samples = []; _alerted = false; }
+function _resetForTests() {
+  _samples = [];
+  _alerted = false;
+}
 
-module.exports = { start, stop, _trend: () => _trend(), _samplesForTest, _injectSampleForTest, _resetForTests };
+module.exports = {
+  start,
+  stop,
+  _trend: () => _trend(),
+  _samplesForTest,
+  _injectSampleForTest,
+  _resetForTests,
+};

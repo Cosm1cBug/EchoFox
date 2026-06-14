@@ -22,10 +22,10 @@ async function fetchNewPulses(lastTs) {
     }
 
     const { data } = await axiosWithBreaker('alienvault', {
-      method:  'GET',
-      url:     ALIENVAULT_API,
+      method: 'GET',
+      url: ALIENVAULT_API,
       headers: { 'X-OTX-API-KEY': apiKey },
-      params:  { modified_since: lastTs ? new Date(lastTs).toISOString() : undefined },
+      params: { modified_since: lastTs ? new Date(lastTs).toISOString() : undefined },
       timeout: 15000,
     });
 
@@ -41,13 +41,16 @@ async function fetchNewPulses(lastTs) {
 }
 
 function formatPulse(pulse) {
-  const name   = pulse.name || '(unnamed pulse)';
+  const name = pulse.name || '(unnamed pulse)';
   const author = pulse.author_name ? `by ${pulse.author_name}` : '';
-  const tlp    = pulse.tlp ? `TLP: ${pulse.tlp.toUpperCase()}` : '';
-  const tags   = (pulse.tags || []).slice(0, 6).map((t) => `#${t}`).join(' ');
-  const descr  = (pulse.description || '').trim().slice(0, 600);
-  const iocs   = Array.isArray(pulse.indicators) ? pulse.indicators.length : 0;
-  const link   = pulse.id ? `https://otx.alienvault.com/pulse/${pulse.id}` : '';
+  const tlp = pulse.tlp ? `TLP: ${pulse.tlp.toUpperCase()}` : '';
+  const tags = (pulse.tags || [])
+    .slice(0, 6)
+    .map((t) => `#${t}`)
+    .join(' ');
+  const descr = (pulse.description || '').trim().slice(0, 600);
+  const iocs = Array.isArray(pulse.indicators) ? pulse.indicators.length : 0;
+  const link = pulse.id ? `https://otx.alienvault.com/pulse/${pulse.id}` : '';
 
   return [
     `🛡️ *${name}*`,
@@ -56,7 +59,9 @@ function formatPulse(pulse) {
     tags ? `\n${tags}` : '',
     `\nIOCs: ${iocs}`,
     link ? `\n${link}` : '',
-  ].filter(Boolean).join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 async function sendPulse(sock, jid, pulse) {
@@ -64,10 +69,7 @@ async function sendPulse(sock, jid, pulse) {
     await sock.sendMessage(jid, { text: formatPulse(pulse) });
     logger.info({ jid, pulse: pulse.id || pulse.name }, 'pulse sent');
   } catch (err) {
-    logger.error(
-      { jid, pulse: pulse.id || pulse.name, err: err.message },
-      'sendPulse failed',
-    );
+    logger.error({ jid, pulse: pulse.id || pulse.name, err: err.message }, 'sendPulse failed');
   }
 }
 
@@ -94,9 +96,11 @@ async function checkAndDeliver(sock) {
       }
 
       if (pulses.length > 5) {
-        await sock.sendMessage(jid, {
-          text: `ℹ️ +${pulses.length - 5} more pulses since last check (skipped to avoid flooding).`,
-        }).catch(() => {});
+        await sock
+          .sendMessage(jid, {
+            text: `ℹ️ +${pulses.length - 5} more pulses since last check (skipped to avoid flooding).`,
+          })
+          .catch(() => {});
       }
 
       await store.updateSubscriberTimestamp('alienvault', jid, newTs);

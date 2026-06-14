@@ -20,7 +20,7 @@
  *   Run:  node --test src/__tests__/integration/messages.test.js
  */
 
-const test   = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const { makeMockSock, makeMockMessage, makeMockStore } = require('../helpers/mockSock');
 
@@ -41,8 +41,12 @@ function makeRegistry(cmds) {
   return {
     commands: map,
     aliases,
-    resolve(name) { return map.get(name) || map.get(aliases.get(name)) || null; },
-    all() { return [...map.values()]; },
+    resolve(name) {
+      return map.get(name) || map.get(aliases.get(name)) || null;
+    },
+    all() {
+      return [...map.values()];
+    },
   };
 }
 
@@ -51,10 +55,14 @@ test('known command → cmd.start invoked with ctx', async () => {
   const store = makeMockStore();
   let called = null;
   const commands = makeRegistry([
-    { name: 'ping', alias: ['p'], start: async (_s, _m, { ctx, args }) => {
-      called = { sender: ctx.sender, args };
-      await ctx.reply('pong');
-    } },
+    {
+      name: 'ping',
+      alias: ['p'],
+      start: async (_s, _m, { ctx, args }) => {
+        called = { sender: ctx.sender, args };
+        await ctx.reply('pong');
+      },
+    },
   ]);
   const m = makeMockMessage({ text: '.ping hello world', sender: '999@s.whatsapp.net' });
 
@@ -73,7 +81,7 @@ test('unknown command → fuzzy suggest', async () => {
     { name: 'menu', start: async () => {} },
     { name: 'ping', start: async () => {} },
   ]);
-  const m = makeMockMessage({ text: '.pingg' });    // typo
+  const m = makeMockMessage({ text: '.pingg' }); // typo
   await handleMessage({ sock, m, commands, store, logger: sock.logger });
   assert.match(sock.lastSent.content.text, /did you mean.*ping/i);
 });
@@ -81,10 +89,8 @@ test('unknown command → fuzzy suggest', async () => {
 test('admin prefix from non-admin → rejected', async () => {
   const sock = makeMockSock();
   const store = makeMockStore();
-  const commands = makeRegistry([
-    { name: 'eval', admin: true, start: async () => {} },
-  ]);
-  const m = makeMockMessage({ text: '$eval 1+1' });   // admin prefix
+  const commands = makeRegistry([{ name: 'eval', admin: true, start: async () => {} }]);
+  const m = makeMockMessage({ text: '$eval 1+1' }); // admin prefix
   await handleMessage({ sock, m, commands, store, logger: sock.logger });
   assert.match(sock.lastSent.content.text, /admin-only|reserved for admins/i);
 });
@@ -93,7 +99,12 @@ test('UserError → friendly reply, no ❌ reaction, no errLogs', async () => {
   const sock = makeMockSock();
   const store = makeMockStore();
   const commands = makeRegistry([
-    { name: 'bad', start: async () => { throw new UserError('Usage: .bad <x>'); } },
+    {
+      name: 'bad',
+      start: async () => {
+        throw new UserError('Usage: .bad <x>');
+      },
+    },
   ]);
   const m = makeMockMessage({ text: '.bad' });
   await handleMessage({ sock, m, commands, store, logger: sock.logger });
@@ -107,7 +118,12 @@ test('UpstreamError → user-friendly upstream message', async () => {
   const sock = makeMockSock();
   const store = makeMockStore();
   const commands = makeRegistry([
-    { name: 'fetchy', start: async () => { throw new UpstreamError('500', { upstream: 'piped' }); } },
+    {
+      name: 'fetchy',
+      start: async () => {
+        throw new UpstreamError('500', { upstream: 'piped' });
+      },
+    },
   ]);
   const m = makeMockMessage({ text: '.fetchy' });
   await handleMessage({ sock, m, commands, store, logger: sock.logger });
@@ -118,7 +134,12 @@ test('plain Error → ❌ reaction + crash reply', async () => {
   const sock = makeMockSock();
   const store = makeMockStore();
   const commands = makeRegistry([
-    { name: 'kaboom', start: async () => { throw new Error('inner detail'); } },
+    {
+      name: 'kaboom',
+      start: async () => {
+        throw new Error('inner detail');
+      },
+    },
   ]);
   const m = makeMockMessage({ text: '.kaboom' });
   await handleMessage({ sock, m, commands, store, logger: sock.logger });
@@ -137,12 +158,11 @@ test('no prefix → no reply (just exits)', async () => {
   assert.equal(sock.calls.sendMessage, 0);
 });
 
-
 // ─── v0.4.7: subscription command flow tests ─────────────────────────────
 const { setStore, __resetForTests } = require('../../store/instance');
 
 function setupSubscriptionTest() {
-  const sock  = makeMockSock();
+  const sock = makeMockSock();
   const store = makeMockStore();
   __resetForTests();
   setStore(store);
@@ -152,11 +172,11 @@ function setupSubscriptionTest() {
 function fakeM(_text, jid = '999@s.whatsapp.net') {
   return {
     isPrivate: true,
-    chat:      jid,
-    sender:    jid,
-    from:      jid,
-    key:       { remoteJid: jid, id: 'msg-' + Date.now() },
-    pushName:  'TestUser',
+    chat: jid,
+    sender: jid,
+    from: jid,
+    key: { remoteJid: jid, id: 'msg-' + Date.now() },
+    pushName: 'TestUser',
   };
 }
 
@@ -266,32 +286,35 @@ test('thehackersnews: topic parsing deduplicates + caps at 10', async () => {
   const { sock, store } = setupSubscriptionTest();
   const cmd = require('../../commands/general/thehackersnews');
 
-  await cmd.start(sock, fakeM('on  Malware MALWARE malware ransomware'),
-    { text: 'on  Malware MALWARE malware ransomware' });
+  await cmd.start(sock, fakeM('on  Malware MALWARE malware ransomware'), {
+    text: 'on  Malware MALWARE malware ransomware',
+  });
   const meta = await store.getSubscriberMeta('thehackersnews', '999@s.whatsapp.net');
   assert.deepEqual(meta, { topics: ['malware', 'ransomware'] });
 
-  await cmd.start(sock, fakeM('on a b c d e f g h i j k l m n o'),
-    { text: 'on a b c d e f g h i j k l m n o' });
+  await cmd.start(sock, fakeM('on a b c d e f g h i j k l m n o'), {
+    text: 'on a b c d e f g h i j k l m n o',
+  });
   const meta2 = await store.getSubscriberMeta('thehackersnews', '999@s.whatsapp.net');
   assert.equal(meta2.topics.length, 10);
 });
-
 
 test('.rss: add → list → remove', async () => {
   const { sock, store } = setupSubscriptionTest();
   const cmd = require('../../commands/general/rss');
 
-  await cmd.start(sock, fakeM('add https://example.com/feed.xml malware'),
-    { text: 'add https://example.com/feed.xml malware' });
+  await cmd.start(sock, fakeM('add https://example.com/feed.xml malware'), {
+    text: 'add https://example.com/feed.xml malware',
+  });
   assert.match(sock.lastSent.content.text, /Subscribed/);
 
   await cmd.start(sock, fakeM('list'), { text: 'list' });
   assert.match(sock.lastSent.content.text, /example\.com\/feed\.xml/);
   assert.match(sock.lastSent.content.text, /malware/);
 
-  await cmd.start(sock, fakeM('remove https://example.com/feed.xml'),
-    { text: 'remove https://example.com/feed.xml' });
+  await cmd.start(sock, fakeM('remove https://example.com/feed.xml'), {
+    text: 'remove https://example.com/feed.xml',
+  });
   assert.match(sock.lastSent.content.text, /Removed last feed/);
   assert.equal(await store.isSubscriber('rss', '999@s.whatsapp.net'), false);
 });
@@ -300,10 +323,12 @@ test('.rss: re-adding same URL updates topic filter in place', async () => {
   const { sock, store } = setupSubscriptionTest();
   const cmd = require('../../commands/general/rss');
 
-  await cmd.start(sock, fakeM('add https://x/feed malware'),
-    { text: 'add https://x/feed malware' });
-  await cmd.start(sock, fakeM('add https://x/feed cloud-security'),
-    { text: 'add https://x/feed cloud-security' });
+  await cmd.start(sock, fakeM('add https://x/feed malware'), {
+    text: 'add https://x/feed malware',
+  });
+  await cmd.start(sock, fakeM('add https://x/feed cloud-security'), {
+    text: 'add https://x/feed cloud-security',
+  });
   const meta = await store.getSubscriberMeta('rss', '999@s.whatsapp.net');
   assert.equal(meta.feeds.length, 1, 'no duplicate row');
   assert.deepEqual(meta.feeds[0].topics, ['cloud-security']);
@@ -320,8 +345,7 @@ test('.github: releases → list → remove', async () => {
   const { sock, store } = setupSubscriptionTest();
   const cmd = require('../../commands/general/github');
 
-  await cmd.start(sock, fakeM('releases nodejs/node'),
-    { text: 'releases nodejs/node' });
+  await cmd.start(sock, fakeM('releases nodejs/node'), { text: 'releases nodejs/node' });
   assert.match(sock.lastSent.content.text, /Subscribed/);
   assert.match(sock.lastSent.content.text, /nodejs\/node/);
 
@@ -329,8 +353,7 @@ test('.github: releases → list → remove', async () => {
   assert.match(sock.lastSent.content.text, /nodejs\/node/);
   assert.match(sock.lastSent.content.text, /releases/);
 
-  await cmd.start(sock, fakeM('remove nodejs/node'),
-    { text: 'remove nodejs/node' });
+  await cmd.start(sock, fakeM('remove nodejs/node'), { text: 'remove nodejs/node' });
   assert.equal(await store.isSubscriber('github', '999@s.whatsapp.net'), false);
 });
 
@@ -350,15 +373,17 @@ test('.vtwatch: add hash → list → remove', async () => {
   const { sock, store } = setupSubscriptionTest();
   const cmd = require('../../commands/general/vtwatch');
 
-  await cmd.start(sock, fakeM('add hash:44d88612fea8a8f36de82e1278abb02f'),
-    { text: 'add hash:44d88612fea8a8f36de82e1278abb02f' });
+  await cmd.start(sock, fakeM('add hash:44d88612fea8a8f36de82e1278abb02f'), {
+    text: 'add hash:44d88612fea8a8f36de82e1278abb02f',
+  });
   assert.match(sock.lastSent.content.text, /Watching/);
 
   await cmd.start(sock, fakeM('list'), { text: 'list' });
   assert.match(sock.lastSent.content.text, /hash:44d88/);
 
-  await cmd.start(sock, fakeM('remove hash:44d88612fea8a8f36de82e1278abb02f'),
-    { text: 'remove hash:44d88612fea8a8f36de82e1278abb02f' });
+  await cmd.start(sock, fakeM('remove hash:44d88612fea8a8f36de82e1278abb02f'), {
+    text: 'remove hash:44d88612fea8a8f36de82e1278abb02f',
+  });
   assert.equal(await store.isSubscriber('vtwatch', '999@s.whatsapp.net'), false);
 });
 

@@ -23,7 +23,7 @@
  */
 
 const { config } = require('../lib/configLoader');
-const logger     = require('../core/logger').child({ mod: 'msg.delete' });
+const logger = require('../core/logger').child({ mod: 'msg.delete' });
 
 module.exports = async function onMessagesDelete({ sock, store, payload }) {
   if (!payload) return;
@@ -45,7 +45,7 @@ module.exports = async function onMessagesDelete({ sock, store, payload }) {
   let keys = [];
   if (Array.isArray(payload.keys)) keys = payload.keys;
   else if (Array.isArray(payload)) keys = payload;
-  else if (payload.key)            keys = [payload.key];
+  else if (payload.key) keys = [payload.key];
   else if (payload.remoteJid && payload.id) keys = [payload];
 
   for (const k of keys) {
@@ -60,11 +60,19 @@ module.exports = async function onMessagesDelete({ sock, store, payload }) {
 
   // Optional ops-channel notification
   if (keys.length && config.channels.botLogs) {
-    const summary = keys.slice(0, 5).map((k) =>
-      `\`${k.remoteJid?.split('@')[0] || '?'}\`/\`${k.id}\``).join(', ');
+    const summary = keys
+      .slice(0, 5)
+      .map((k) => `\`${k.remoteJid?.split('@')[0] || '?'}\`/\`${k.id}\``)
+      .join(', ');
     const more = keys.length > 5 ? ` and ${keys.length - 5} more` : '';
-    sock.sendMessage(config.channels.botLogs, {
-      text: `🗑 ${keys.length} message(s) deleted: ${summary}${more}`,
-    }, { skipPresence: true }).catch(() => {});
+    sock
+      .sendMessage(
+        config.channels.botLogs,
+        {
+          text: `🗑 ${keys.length} message(s) deleted: ${summary}${more}`,
+        },
+        { skipPresence: true },
+      )
+      .catch(() => {});
   }
 };

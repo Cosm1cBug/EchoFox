@@ -22,10 +22,10 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 12s
-    user: "1001:1001"
+    user: '1001:1001'
 
     ports:
-      - "127.0.0.1:3000:3000"   # bind to localhost; expose via reverse proxy
+      - '127.0.0.1:3000:3000' # bind to localhost; expose via reverse proxy
 
     volumes:
       - echofox-session:/app/src/@session
@@ -35,10 +35,10 @@ services:
       # - ./src/config.js:/app/src/config.js:ro
 
     environment:
-      NODE_ENV:  production
+      NODE_ENV: production
       LOG_LEVEL: info
-      PORT:      3000
-      TZ:        ${TZ:-Asia/Kolkata}
+      PORT: 3000
+      TZ: ${TZ:-Asia/Kolkata}
       # Examples — uncomment and set what you need:
       # ECHOFOX_BOT_PREFIX:        "."
       # ECHOFOX_BOT_ADMINPREFIX:   "$"
@@ -47,17 +47,17 @@ services:
       # ECHOFOX_APIS_ALIENVAULT_APIKEY: "${OTX_KEY}"
 
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/healthz"]
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3000/healthz']
       interval: 30s
-      timeout:  5s
+      timeout: 5s
       start_period: 45s
       retries: 3
 
     logging:
       driver: json-file
       options:
-        max-size: "10m"
-        max-file: "5"
+        max-size: '10m'
+        max-file: '5'
 
     # Resource ceilings (uncomment for hostile environments)
     # deploy:
@@ -73,15 +73,15 @@ services:
     image: prom/prometheus:v2.55.1
     container_name: echofox-prometheus
     restart: unless-stopped
-    profiles: ["observability"]
-    user: "65534:65534"
+    profiles: ['observability']
+    user: '65534:65534'
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
       - --storage.tsdb.retention.size=512MB
       - --web.enable-lifecycle
     ports:
-      - "127.0.0.1:9090:9090"
+      - '127.0.0.1:9090:9090'
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -94,16 +94,16 @@ services:
     image: grafana/grafana:11.3.0
     container_name: echofox-grafana
     restart: unless-stopped
-    profiles: ["observability"]
-    user: "472:472"
+    profiles: ['observability']
+    user: '472:472'
     environment:
-      GF_SECURITY_ADMIN_USER:     ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-changeme}
-      GF_USERS_ALLOW_SIGN_UP:     "false"
-      GF_ANALYTICS_REPORTING_ENABLED: "false"
-      GF_AUTH_ANONYMOUS_ENABLED:  "false"
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
     ports:
-      - "127.0.0.1:3001:3000"
+      - '127.0.0.1:3001:3000'
     volumes:
       - grafana-data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro

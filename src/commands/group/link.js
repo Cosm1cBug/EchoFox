@@ -23,11 +23,13 @@ module.exports = {
   cooldown: 10,
 
   async start(sock, m, { ctx, metadata }) {
-    const botId = sock.user?.id ? `${sock.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net` : null;
-    const me     = metadata?.participants?.find((p) => p.id === botId);
+    const botId = sock.user?.id
+      ? `${sock.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net`
+      : null;
+    const me = metadata?.participants?.find((p) => p.id === botId);
     const caller = metadata?.participants?.find((p) => p.id === ctx.sender);
 
-    if (!me?.admin)     return ctx.reply('🚫 I need to be an admin to fetch the invite link.');
+    if (!me?.admin) return ctx.reply('🚫 I need to be an admin to fetch the invite link.');
     if (!caller?.admin) return ctx.reply('🔒 Only group admins can request the invite link.');
 
     try {

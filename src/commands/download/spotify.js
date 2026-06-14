@@ -23,13 +23,17 @@
  * See DISCLAIMER.md.
  */
 
-const fs   = require('node:fs');
-const os   = require('node:os');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 let ytdl;
-try { ytdl = require('@distube/ytdl-core'); } catch { ytdl = null; }
+try {
+  ytdl = require('@distube/ytdl-core');
+} catch {
+  ytdl = null;
+}
 
 const SPOTIFY_URL = /^https?:\/\/(open\.|play\.)?spotify\.com\/track\/[a-zA-Z0-9]+/;
 const TEMP_TTL_MS = 60 * 60 * 1000;
@@ -38,13 +42,13 @@ const MAX_DURATION = 12 * 60;
 async function resolveSpotify(url) {
   const r = await axiosWithBreaker('spotify-oembed', {
     method: 'GET',
-    url:    'https://open.spotify.com/oembed',
+    url: 'https://open.spotify.com/oembed',
     params: { url },
     timeout: 10_000,
     headers: { 'User-Agent': 'EchoFox/0.4' },
   });
   return {
-    title:     r.data?.title,
+    title: r.data?.title,
     thumbnail: r.data?.thumbnail_url,
   };
 }
@@ -52,28 +56,34 @@ async function resolveSpotify(url) {
 async function searchPiped(query) {
   const r = await axiosWithBreaker('piped', {
     method: 'GET',
-    url:    'https://pipedapi.kavin.rocks/search',
+    url: 'https://pipedapi.kavin.rocks/search',
     params: { q: query, filter: 'music_songs' },
     timeout: 15_000,
   });
   const item = (r.data?.items || []).find((i) => i.type === 'stream' || i.url);
   if (!item) return null;
-  const url = item.url?.startsWith('http')
-    ? item.url
-    : `https://www.youtube.com${item.url}`;
+  const url = item.url?.startsWith('http') ? item.url : `https://www.youtube.com${item.url}`;
   return { url, title: item.title || query, duration: item.duration || 0 };
 }
 
 function downloadAudio(url, outPath, lengthSeconds) {
   return new Promise((resolve, reject) => {
     if (lengthSeconds > MAX_DURATION) {
-      return reject(new Error(`track is ${Math.floor(lengthSeconds / 60)} min — limit is ${MAX_DURATION / 60} min`));
+      return reject(
+        new Error(
+          `track is ${Math.floor(lengthSeconds / 60)} min — limit is ${MAX_DURATION / 60} min`,
+        ),
+      );
     }
-    const stream = ytdl(url, { filter: 'audioonly', quality: 'highestaudio', highWaterMark: 1 << 25 });
+    const stream = ytdl(url, {
+      filter: 'audioonly',
+      quality: 'highestaudio',
+      highWaterMark: 1 << 25,
+    });
     const out = fs.createWriteStream(outPath);
     stream.pipe(out);
     out.on('finish', () => resolve(outPath));
-    out.on('error',  reject);
+    out.on('error', reject);
     stream.on('error', reject);
   });
 }
@@ -110,7 +120,7 @@ module.exports = {
     if (!meta?.title) throw new Error('Could not parse Spotify metadata');
 
     let yt;
-    
+
     try {
       yt = await searchPiped(meta.title);
     } catch (e) {
@@ -130,11 +140,15 @@ module.exports = {
       const stat = fs.statSync(out);
       if (stat.size < 1024) throw new Error('downloaded file is empty');
 
-      await sock.sendMessage(ctx.from, {
-        audio: { url: out },
-        mimetype: 'audio/mpeg',
-        fileName: `${meta.title.replace(/[\\/:*?"<>|]/g, '_')}.mp3`,
-      }, { quoted: m });
+      await sock.sendMessage(
+        ctx.from,
+        {
+          audio: { url: out },
+          mimetype: 'audio/mpeg',
+          fileName: `${meta.title.replace(/[\\/:*?"<>|]/g, '_')}.mp3`,
+        },
+        { quoted: m },
+      );
 
       await ctx.react('✅');
     } finally {

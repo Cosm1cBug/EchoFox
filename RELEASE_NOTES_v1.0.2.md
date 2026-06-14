@@ -14,6 +14,7 @@ deeper audit + ESLint analysis after v1.0.1 shipped.
 
 **Everyone on v1.0.0 or v1.0.1.** All four bugs trigger in common
 production paths:
+
 - v1.0.1's `dashboard.enabled: true` (the default) → bot crashes at boot
 - Any non-default auth backend → crashes at startup
 - Any Baileys reconnect (happens regularly) → worker crashes
@@ -25,3 +26,4 @@ production paths:
 git pull
 npm install         # no new deps; just for safety
 npm start
+```

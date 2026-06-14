@@ -15,15 +15,15 @@ bot: {
 },
 ```
 
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `name` | string | `'EchoFox'` | Display name shown in help, menu, notifications |
-| `prefix` | string | `'.'` | User command prefix |
-| `adminPrefix` | string | `'$'` | Admin-only command prefix (admins gated via `config.admins`) |
-| `sessionName` | string | `'@session'` | Subdirectory under auth path |
-| `timezone` | IANA tz | `'Asia/Kolkata'` | Used for timestamp formatting in logs + replies |
-| `language` | ISO 639-1 | `'en'` | Default locale for replies (per-group overrides via `groupSettings`) |
-| `public` | boolean | `true` | If `false`, only admins (`config.admins`) can run commands |
+| Field         | Type      | Default          | Notes                                                                |
+| ------------- | --------- | ---------------- | -------------------------------------------------------------------- |
+| `name`        | string    | `'EchoFox'`      | Display name shown in help, menu, notifications                      |
+| `prefix`      | string    | `'.'`            | User command prefix                                                  |
+| `adminPrefix` | string    | `'$'`            | Admin-only command prefix (admins gated via `config.admins`)         |
+| `sessionName` | string    | `'@session'`     | Subdirectory under auth path                                         |
+| `timezone`    | IANA tz   | `'Asia/Kolkata'` | Used for timestamp formatting in logs + replies                      |
+| `language`    | ISO 639-1 | `'en'`           | Default locale for replies (per-group overrides via `groupSettings`) |
+| `public`      | boolean   | `true`           | If `false`, only admins (`config.admins`) can run commands           |
 
 ## Public vs private mode
 

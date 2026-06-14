@@ -25,12 +25,12 @@ the `echofox-session` volume.
 
 ## Image variants
 
-| Tag | What it is | When to use |
-|---|---|---|
-| `ghcr.io/cosm1cbug/echofox:latest`  | Latest tagged release | Production. Recommended. |
-| `ghcr.io/cosm1cbug/echofox:v0.x.y`  | Specific version      | Pin for reproducible deploys. |
-| `ghcr.io/cosm1cbug/echofox:main`    | Latest `main` branch  | Pre-release testing. May break. |
-| `cosm1cbug/echofox:*` (Docker Hub)  | Mirror of GHCR        | If GHCR is blocked on your network. |
+| Tag                                | What it is            | When to use                         |
+| ---------------------------------- | --------------------- | ----------------------------------- |
+| `ghcr.io/cosm1cbug/echofox:latest` | Latest tagged release | Production. Recommended.            |
+| `ghcr.io/cosm1cbug/echofox:v0.x.y` | Specific version      | Pin for reproducible deploys.       |
+| `ghcr.io/cosm1cbug/echofox:main`   | Latest `main` branch  | Pre-release testing. May break.     |
+| `cosm1cbug/echofox:*` (Docker Hub) | Mirror of GHCR        | If GHCR is blocked on your network. |
 
 Multi-arch: every tag ships **`linux/amd64`** and **`linux/arm64`** (works
 on Raspberry Pi 4/5, Apple Silicon, AWS Graviton, etc.).
@@ -41,10 +41,10 @@ on Raspberry Pi 4/5, Apple Silicon, AWS Graviton, etc.).
 
 There are exactly **two** directories you must persist:
 
-| Mount point | What's inside | What happens if you lose it |
-|---|---|---|
-| `/app/src/@session`       | WhatsApp pairing credentials (Baileys auth files) | Bot logs out; you must re-scan QR. |
-| `/app/src/store/runtime`  | SQLite DBs: message store, analytics, user directory | Bot loses message-retry cache, stats, user history. Non-fatal. |
+| Mount point              | What's inside                                        | What happens if you lose it                                    |
+| ------------------------ | ---------------------------------------------------- | -------------------------------------------------------------- |
+| `/app/src/@session`      | WhatsApp pairing credentials (Baileys auth files)    | Bot logs out; you must re-scan QR.                             |
+| `/app/src/store/runtime` | SQLite DBs: message store, analytics, user directory | Bot loses message-retry cache, stats, user history. Non-fatal. |
 
 Use named volumes (recommended) or bind mounts:
 
@@ -98,17 +98,17 @@ If both are present, **environment variables win** (override config.js).
 
 ### Mapping cheat-sheet
 
-| `config.js` path            | Env variable                          |
-|---|---|
-| `bot.prefix`                | `ECHOFOX_BOT_PREFIX`                  |
-| `bot.adminPrefix`           | `ECHOFOX_BOT_ADMINPREFIX`             |
-| `bot.public`                | `ECHOFOX_BOT_PUBLIC`                  |
-| `features.readMessages`     | `ECHOFOX_FEATURES_READMESSAGES`       |
-| `apis.omdb.apiKey`          | `ECHOFOX_APIS_OMDB_APIKEY`            |
-| `apis.virustotal.apiKey`    | `ECHOFOX_APIS_VIRUSTOTAL_APIKEY`      |
-| `runtime.logLevel`          | `ECHOFOX_RUNTIME_LOGLEVEL`            |
-| `runtime.port`              | `ECHOFOX_RUNTIME_PORT`                |
-| `channels.botLogs`          | `ECHOFOX_CHANNELS_BOTLOGS`            |
+| `config.js` path         | Env variable                     |
+| ------------------------ | -------------------------------- |
+| `bot.prefix`             | `ECHOFOX_BOT_PREFIX`             |
+| `bot.adminPrefix`        | `ECHOFOX_BOT_ADMINPREFIX`        |
+| `bot.public`             | `ECHOFOX_BOT_PUBLIC`             |
+| `features.readMessages`  | `ECHOFOX_FEATURES_READMESSAGES`  |
+| `apis.omdb.apiKey`       | `ECHOFOX_APIS_OMDB_APIKEY`       |
+| `apis.virustotal.apiKey` | `ECHOFOX_APIS_VIRUSTOTAL_APIKEY` |
+| `runtime.logLevel`       | `ECHOFOX_RUNTIME_LOGLEVEL`       |
+| `runtime.port`           | `ECHOFOX_RUNTIME_PORT`           |
+| `channels.botLogs`       | `ECHOFOX_CHANNELS_BOTLOGS`       |
 
 `admins[]` and `channels.*` are simple strings; nested arrays like
 `admins=["jid1","jid2"]` are not yet supported via env vars — use Option A
@@ -210,6 +210,7 @@ docker logs --tail=80 echofox
 ```
 
 Common culprits:
+
 - Config validation failed → look for `❌ EchoFox configuration is invalid`
 - Port 3000 busy on the host → change with `-p 127.0.0.1:8080:3000`
 - Missing `--init` flag → use `init: true` in compose or `--init` in docker run

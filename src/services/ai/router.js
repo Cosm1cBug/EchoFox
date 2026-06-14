@@ -37,35 +37,44 @@ const { getStore } = require('../../store/instance');
 // ─── rate-limit counters: store-backed (v1.3.0+) with in-memory fallback ──
 // If the active store lacks AI rate methods we transparently fall back
 // to the v1.2.0 in-memory Maps so the bot still works.
-const _userHour = new Map();   // key: `${userJid}|${hourBucket}` -> count
-const _chatDay  = new Map();   // key: `${chatJid}|${dayBucket}`  -> count
+const _userHour = new Map(); // key: `${userJid}|${hourBucket}` -> count
+const _chatDay = new Map(); // key: `${chatJid}|${dayBucket}`  -> count
 
-function _hourBucket(now = Date.now()) { return Math.floor(now / (60 * 60 * 1000)); }
-function _dayBucket(now = Date.now())  { return Math.floor(now / (24 * 60 * 60 * 1000)); }
+function _hourBucket(now = Date.now()) {
+  return Math.floor(now / (60 * 60 * 1000));
+}
+function _dayBucket(now = Date.now()) {
+  return Math.floor(now / (24 * 60 * 60 * 1000));
+}
 
 // Periodic prune for the in-memory fallback path AND a defensive prune on
 // the persistent store (sqlite/postgres only — mongo TTL + redis EXPIRE
 // handle themselves). 10-minute cadence.
-const _pruneTimer = setInterval(() => {
-  // in-memory prune
-  const h = _hourBucket();
-  const d = _dayBucket();
-  for (const k of _userHour.keys()) {
-    const hb = Number(k.split('|')[1]);
-    if (hb < h - 1) _userHour.delete(k);
-  }
-  for (const k of _chatDay.keys()) {
-    const db = Number(k.split('|')[1]);
-    if (db < d - 1) _chatDay.delete(k);
-  }
-  // store prune (best-effort)
-  try {
-    const store = getStore();
-    if (store && typeof store.pruneAiRate === 'function') {
-      Promise.resolve(store.pruneAiRate()).catch(() => {});
+const _pruneTimer = setInterval(
+  () => {
+    // in-memory prune
+    const h = _hourBucket();
+    const d = _dayBucket();
+    for (const k of _userHour.keys()) {
+      const hb = Number(k.split('|')[1]);
+      if (hb < h - 1) _userHour.delete(k);
     }
-  } catch (_) { /* getStore throws before lifecycle.selectStore — fine */ }
-}, 10 * 60 * 1000);
+    for (const k of _chatDay.keys()) {
+      const db = Number(k.split('|')[1]);
+      if (db < d - 1) _chatDay.delete(k);
+    }
+    // store prune (best-effort)
+    try {
+      const store = getStore();
+      if (store && typeof store.pruneAiRate === 'function') {
+        Promise.resolve(store.pruneAiRate()).catch(() => {});
+      }
+    } catch (_) {
+      /* getStore throws before lifecycle.selectStore — fine */
+    }
+  },
+  10 * 60 * 1000,
+);
 if (typeof _pruneTimer.unref === 'function') _pruneTimer.unref();
 
 async function _peekUserStore(jid) {
@@ -74,7 +83,9 @@ async function _peekUserStore(jid) {
     if (store && typeof store.getAiRateUser === 'function') {
       return await store.getAiRateUser(jid, _hourBucket());
     }
-  } catch (_) { /* fall through to memory */ }
+  } catch (_) {
+    /* fall through to memory */
+  }
   return _userHour.get(`${jid}|${_hourBucket()}`) || 0;
 }
 async function _peekChatStore(jid) {
@@ -83,7 +94,9 @@ async function _peekChatStore(jid) {
     if (store && typeof store.getAiRateChat === 'function') {
       return await store.getAiRateChat(jid, _dayBucket());
     }
-  } catch (_) { /* fall through to memory */ }
+  } catch (_) {
+    /* fall through to memory */
+  }
   return _chatDay.get(`${jid}|${_dayBucket()}`) || 0;
 }
 async function _bumpUserStore(jid) {
@@ -92,7 +105,9 @@ async function _bumpUserStore(jid) {
     if (store && typeof store.incrAiRateUser === 'function') {
       return await store.incrAiRateUser(jid, _hourBucket());
     }
-  } catch (_) { /* fall through */ }
+  } catch (_) {
+    /* fall through */
+  }
   const k = `${jid}|${_hourBucket()}`;
   const n = (_userHour.get(k) || 0) + 1;
   _userHour.set(k, n);
@@ -104,7 +119,9 @@ async function _bumpChatStore(jid) {
     if (store && typeof store.incrAiRateChat === 'function') {
       return await store.incrAiRateChat(jid, _dayBucket());
     }
-  } catch (_) { /* fall through */ }
+  } catch (_) {
+    /* fall through */
+  }
   const k = `${jid}|${_dayBucket()}`;
   const n = (_chatDay.get(k) || 0) + 1;
   _chatDay.set(k, n);
@@ -126,8 +143,8 @@ async function shouldRespond(ctx) {
   const text = String(ctx.text || '').trim();
   if (!text) return { respond: false, reason: 'empty' };
 
-  const userPrefix  = (typeof config.bot?.prefix      === 'string') ? config.bot.prefix      : '.';
-  const adminPrefix = (typeof config.bot?.adminPrefix === 'string') ? config.bot.adminPrefix : '$';
+  const userPrefix = typeof config.bot?.prefix === 'string' ? config.bot.prefix : '.';
+  const adminPrefix = typeof config.bot?.adminPrefix === 'string' ? config.bot.adminPrefix : '$';
   if (text.startsWith(userPrefix) || text.startsWith(adminPrefix)) {
     return { respond: false, reason: 'is_command' };
   }
@@ -139,7 +156,9 @@ async function shouldRespond(ctx) {
     if (store && typeof store.getAiChatOptIn === 'function') {
       optIn = await store.getAiChatOptIn(ctx.chatJid);
     }
-  } catch (e) { logger.warn({ err: e }, 'getAiChatOptIn failed'); }
+  } catch (e) {
+    logger.warn({ err: e }, 'getAiChatOptIn failed');
+  }
 
   let decided = false;
   if (optIn && typeof optIn.enabled === 'boolean') {
@@ -162,7 +181,7 @@ async function shouldRespond(ctx) {
 
   // rate limits ─────────────────────────────────────────────────
   const perUser = Number(aiCfg.rateLimitPerUserPerHour || 0);
-  const perChat = Number(aiCfg.rateLimitPerChatPerDay  || 0);
+  const perChat = Number(aiCfg.rateLimitPerChatPerDay || 0);
 
   if (perUser > 0 && (await _peekUserStore(ctx.userJid)) >= perUser) {
     metrics.incAiRateLimit();
@@ -187,8 +206,20 @@ async function shouldRespond(ctx) {
  * Returns a promise but callers may ignore it (fire-and-forget is fine).
  */
 async function noteSent({ chatJid, userJid }) {
-  if (userJid) { try { await _bumpUserStore(userJid); } catch (_) { /* ignore */ } }
-  if (chatJid) { try { await _bumpChatStore(chatJid); } catch (_) { /* ignore */ } }
+  if (userJid) {
+    try {
+      await _bumpUserStore(userJid);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  if (chatJid) {
+    try {
+      await _bumpChatStore(chatJid);
+    } catch (_) {
+      /* ignore */
+    }
+  }
 }
 
 function _resetForTests() {

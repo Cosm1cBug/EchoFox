@@ -28,6 +28,10 @@ module.exports = {
   version: 4,
   description: 'extended event persistence — Redis is schemaless, no-op marker',
 
-  async up(_ctx) { /* nothing to do */ },
-  async down(_ctx) { /* intentionally a no-op */ },
+  async up(_ctx) {
+    /* nothing to do */
+  },
+  async down(_ctx) {
+    /* intentionally a no-op */
+  },
 };

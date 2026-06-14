@@ -37,9 +37,7 @@ function resolve(channelKey) {
 function listRoutes() {
   if (!config.telegram?.enabled) return [];
   const r = config.telegram?.routing || {};
-  return KNOWN_KEYS
-    .map((k) => ({ key: k, chatId: r[k] }))
-    .filter((x) => x.chatId);
+  return KNOWN_KEYS.map((k) => ({ key: k, chatId: r[k] })).filter((x) => x.chatId);
 }
 
 module.exports = { resolve, listRoutes, KNOWN_KEYS };

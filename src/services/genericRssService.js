@@ -29,7 +29,7 @@ const logger = require('../core/logger').child({ mod: 'rss-service' });
 
 const SERVICE = 'rss';
 const CHECK_INTERVAL = config.apis?.rss?.checkIntervalMin || 30;
-const MAX_ARTICLES   = config.apis?.rss?.maxArticlesPerFeed || 5;
+const MAX_ARTICLES = config.apis?.rss?.maxArticlesPerFeed || 5;
 
 const parser = new xml2js.Parser({ explicitArray: false });
 
@@ -38,40 +38,52 @@ function normaliseCategories(item) {
   if (Array.isArray(item.category)) cats = item.category;
   else if (typeof item.category === 'string') cats = [item.category];
   // Some feeds use <category term="..."> attribute (Atom)
-  cats = cats.map((c) => (c && typeof c === 'object' ? (c._ || c.$?.term || '') : c));
-  return cats.map((c) => String(c || '').trim().toLowerCase()).filter(Boolean);
+  cats = cats.map((c) => (c && typeof c === 'object' ? c._ || c.$?.term || '' : c));
+  return cats
+    .map((c) =>
+      String(c || '')
+        .trim()
+        .toLowerCase(),
+    )
+    .filter(Boolean);
 }
 
 async function fetchFeed(url) {
-    try {
-        const { data } = await axiosWithBreaker(`rss:${new URL(url).hostname}`, {
-            method:       'GET',
-            url,
-            timeout:      15000,
-            responseType: 'text',
-            headers:      { 'User-Agent': 'EchoFox/1.0 (RSS subscription)' },
-        });
-        const result = await parser.parseStringPromise(data);
-        // RSS 2.0
-        let items = result?.rss?.channel?.item;
-        // Atom
-        if (!items) items = result?.feed?.entry;
-        if (!items) return [];
-        const arr = Array.isArray(items) ? items : [items];
-        return arr.slice(0, MAX_ARTICLES).map((item) => ({
-            title: item.title?._ || item.title || '(untitled)',
-            link:  typeof item.link === 'string' ? item.link : (item.link?.$?.href || item.link?.[0]?.$?.href || item.guid?._ || item.guid || ''),
-            pubDate: item.pubDate || item.published || item.updated || null,
-            categories: normaliseCategories(item),
-        })).filter((a) => a.link);
-        } catch (err) {
-            if (isOpenBreakerError(err)) {
-            logger.warn({ url }, 'rss breaker open — skipping this cycle');
-            return [];
-        }
-        logger.warn({ url, err: err.message }, 'rss fetch failed');
-        return [];
+  try {
+    const { data } = await axiosWithBreaker(`rss:${new URL(url).hostname}`, {
+      method: 'GET',
+      url,
+      timeout: 15000,
+      responseType: 'text',
+      headers: { 'User-Agent': 'EchoFox/1.0 (RSS subscription)' },
+    });
+    const result = await parser.parseStringPromise(data);
+    // RSS 2.0
+    let items = result?.rss?.channel?.item;
+    // Atom
+    if (!items) items = result?.feed?.entry;
+    if (!items) return [];
+    const arr = Array.isArray(items) ? items : [items];
+    return arr
+      .slice(0, MAX_ARTICLES)
+      .map((item) => ({
+        title: item.title?._ || item.title || '(untitled)',
+        link:
+          typeof item.link === 'string'
+            ? item.link
+            : item.link?.$?.href || item.link?.[0]?.$?.href || item.guid?._ || item.guid || '',
+        pubDate: item.pubDate || item.published || item.updated || null,
+        categories: normaliseCategories(item),
+      }))
+      .filter((a) => a.link);
+  } catch (err) {
+    if (isOpenBreakerError(err)) {
+      logger.warn({ url }, 'rss breaker open — skipping this cycle');
+      return [];
     }
+    logger.warn({ url, err: err.message }, 'rss fetch failed');
+    return [];
+  }
 }
 
 function matchesTopics(article, topics) {
@@ -83,8 +95,11 @@ function matchesTopics(article, topics) {
 
 async function sendArticle(sock, jid, article, feedUrl) {
   const host = (() => {
-    try { return new URL(feedUrl).hostname.replace(/^www\./, ''); }
-    catch { return 'rss'; }
+    try {
+      return new URL(feedUrl).hostname.replace(/^www\./, '');
+    } catch {
+      return 'rss';
+    }
   })();
   try {
     await sock.sendMessage(jid, {
@@ -104,7 +119,7 @@ async function checkAndDeliver(sock) {
     if (!subscribers.length) return;
 
     for (const { jid, meta } of subscribers) {
-      const feeds = (meta && Array.isArray(meta.feeds)) ? meta.feeds : [];
+      const feeds = meta && Array.isArray(meta.feeds) ? meta.feeds : [];
       for (const feed of feeds) {
         if (!feed?.url) continue;
         const articles = await fetchFeed(feed.url);

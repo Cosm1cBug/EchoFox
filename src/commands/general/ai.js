@@ -42,13 +42,17 @@ const HELP = [
 async function _statusReply(ctx, chatJid, config) {
   const store = getStore();
   let opt = null;
-  try { opt = await store?.getAiChatOptIn?.(chatJid); } catch (_) { /* ignore */ }
+  try {
+    opt = await store?.getAiChatOptIn?.(chatJid);
+  } catch (_) {
+    /* ignore */
+  }
 
   const eff = {
-    enabled:   opt?.enabled ?? (config.ai?.optInDefault === 'on'),
-    persona:   opt?.persona  || config.ai?.persona  || 'threat-intel',
-    provider:  opt?.provider || config.ai?.defaultProvider || 'openai',
-    model:     opt?.model    || config.ai?.model    || 'gpt-4o-mini',
+    enabled: opt?.enabled ?? config.ai?.optInDefault === 'on',
+    persona: opt?.persona || config.ai?.persona || 'threat-intel',
+    provider: opt?.provider || config.ai?.defaultProvider || 'openai',
+    model: opt?.model || config.ai?.model || 'gpt-4o-mini',
   };
 
   const globalEnabled = !!config.ai?.enabled;
@@ -64,8 +68,12 @@ async function _statusReply(ctx, chatJid, config) {
   if (typeof config.ai?.costCapPerDayUsd === 'number') {
     try {
       const used = await ai.cost.todayTotalUsd();
-      lines.push(`*Cost today:*       $${used.toFixed(6)} / $${Number(config.ai.costCapPerDayUsd).toFixed(2)}`);
-    } catch (_) { /* ignore */ }
+      lines.push(
+        `*Cost today:*       $${used.toFixed(6)} / $${Number(config.ai.costCapPerDayUsd).toFixed(2)}`,
+      );
+    } catch (_) {
+      /* ignore */
+    }
   }
   return ctx.reply(lines.join('\n'));
 }
@@ -93,21 +101,25 @@ module.exports = {
     }
 
     if (sub === 'on' || sub === 'off') {
-      const prev = await store.getAiChatOptIn(chatJid) || {};
+      const prev = (await store.getAiChatOptIn(chatJid)) || {};
       await store.setAiChatOptIn(chatJid, {
         enabled: sub === 'on',
-        persona:  prev.persona  || null,
+        persona: prev.persona || null,
         provider: prev.provider || null,
-        model:    prev.model    || null,
+        model: prev.model || null,
       });
-      return ctx.reply(sub === 'on'
-        ? '✅ AI replies *enabled* in this chat. Just send messages — no prefix needed.'
-        : '🛑 AI replies *disabled* in this chat. Use `.ai on` to re-enable.');
+      return ctx.reply(
+        sub === 'on'
+          ? '✅ AI replies *enabled* in this chat. Just send messages — no prefix needed.'
+          : '🛑 AI replies *disabled* in this chat. Use `.ai on` to re-enable.',
+      );
     }
 
     if (sub === 'clear') {
       const ok = await ai.clearMemory(chatJid);
-      return ctx.reply(ok ? '🧹 Conversation memory cleared for this chat.' : '⚠️ Failed to clear memory.');
+      return ctx.reply(
+        ok ? '🧹 Conversation memory cleared for this chat.' : '⚠️ Failed to clear memory.',
+      );
     }
 
     if (sub === 'persona') {
@@ -115,7 +127,7 @@ module.exports = {
       if (!['threat-intel', 'general', 'custom'].includes(arg1)) {
         return ctx.reply('❌ Unknown persona. Pick: `threat-intel`, `general`, `custom`.');
       }
-      const prev = await store.getAiChatOptIn(chatJid) || {};
+      const prev = (await store.getAiChatOptIn(chatJid)) || {};
       await store.setAiChatOptIn(chatJid, { ...prev, persona: arg1 });
       return ctx.reply(`✅ Persona set to *${arg1}* for this chat.`);
     }
@@ -125,14 +137,14 @@ module.exports = {
       if (!['openai', 'gemini', 'anthropic', 'local'].includes(arg1)) {
         return ctx.reply('❌ Unknown provider. Pick: `openai`, `gemini`, `anthropic`, `local`.');
       }
-      const prev = await store.getAiChatOptIn(chatJid) || {};
+      const prev = (await store.getAiChatOptIn(chatJid)) || {};
       await store.setAiChatOptIn(chatJid, { ...prev, provider: arg1 });
       return ctx.reply(`✅ Provider set to *${arg1}* for this chat.`);
     }
 
     if (sub === 'model') {
       if (!arg1) return ctx.reply('Usage: `.ai model <model-name>`');
-      const prev = await store.getAiChatOptIn(chatJid) || {};
+      const prev = (await store.getAiChatOptIn(chatJid)) || {};
       await store.setAiChatOptIn(chatJid, { ...prev, model: arg1 });
       return ctx.reply(`✅ Model set to *${arg1}* for this chat.`);
     }

@@ -112,12 +112,19 @@ module.exports = {
     `);
 
     // In-place column additions (idempotent — PRAGMA-checked)
-    const cols = db.prepare(`PRAGMA table_info(messages)`).all().map((c) => c.name);
+    const cols = db
+      .prepare(`PRAGMA table_info(messages)`)
+      .all()
+      .map((c) => c.name);
     if (!cols.includes('deleted_at')) {
-      try { db.exec(`ALTER TABLE messages ADD COLUMN deleted_at INTEGER`); } catch {}
+      try {
+        db.exec(`ALTER TABLE messages ADD COLUMN deleted_at INTEGER`);
+      } catch {}
     }
     if (!cols.includes('status')) {
-      try { db.exec(`ALTER TABLE messages ADD COLUMN status INTEGER NOT NULL DEFAULT 0`); } catch {}
+      try {
+        db.exec(`ALTER TABLE messages ADD COLUMN status INTEGER NOT NULL DEFAULT 0`);
+      } catch {}
     }
   },
 

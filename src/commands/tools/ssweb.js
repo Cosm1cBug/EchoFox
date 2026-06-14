@@ -27,7 +27,8 @@ module.exports = {
   async start(sock, m, { ctx, text }) {
     const url = (text || '').trim();
     if (!url) return ctx.reply('Usage: `.ssweb <url>`');
-    if (!URL_RE.test(url)) return ctx.reply('That doesn\'t look like a valid URL (must start with http:// or https://).');
+    if (!URL_RE.test(url))
+      return ctx.reply("That doesn't look like a valid URL (must start with http:// or https://).");
 
     await ctx.react('📸');
 
@@ -35,10 +36,10 @@ module.exports = {
     try {
       const api = `https://api.vreden.my.id/api/ssweb?url=${encodeURIComponent(url)}&type=desktop`;
       const res = await axiosWithBreaker('ssweb', {
-        method:       'GET',
-        url:          api,
+        method: 'GET',
+        url: api,
         responseType: 'arraybuffer',
-        timeout:      40_000,
+        timeout: 40_000,
       });
       buf = Buffer.from(res.data);
       if (!buf.length) throw new Error('empty response');
@@ -49,10 +50,14 @@ module.exports = {
       throw new Error(`Screenshot service failed: ${err.message}`);
     }
 
-    await sock.sendMessage(ctx.from, {
-      image: buf,
-      mimetype: 'image/png',
-      caption: `📸 ${url}`,
-    }, { quoted: m });
+    await sock.sendMessage(
+      ctx.from,
+      {
+        image: buf,
+        mimetype: 'image/png',
+        caption: `📸 ${url}`,
+      },
+      { quoted: m },
+    );
   },
 };

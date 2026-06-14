@@ -71,7 +71,7 @@ docker buildx build \
 
 ---
 
-## Pushing to Docker Hub *and* GHCR in one command
+## Pushing to Docker Hub _and_ GHCR in one command
 
 ```bash
 docker buildx build \

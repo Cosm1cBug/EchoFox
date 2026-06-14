@@ -6,15 +6,15 @@ and docs deployment. This page is the one-stop reference.
 
 ## At a glance
 
-| Workflow | File | Trigger |
-|---|---|---|
-| **CI** | `.github/workflows/ci.yml` | push / PR to `main` or `develop` |
-| **Security** | `.github/workflows/security.yml` | push / PR to `main` + weekly cron |
-| **Secret Scanning** | `.github/workflows/secret-scanning.yml` | push / PR + manual |
-| **Docker** | `.github/workflows/docker.yml` | **v* tag push** + weekly cron + manual |
-| **npm publish** | `.github/workflows/npm-publish.yml` | **v* tag push** + manual |
-| **Release** | `.github/workflows/release.yml` | **v* tag push** OR version-bump on `main` |
-| **Docs** | `.github/workflows/docs.yml` | push to `main` touching `docs/**` |
+| Workflow            | File                                    | Trigger                                    |
+| ------------------- | --------------------------------------- | ------------------------------------------ |
+| **CI**              | `.github/workflows/ci.yml`              | push / PR to `main` or `develop`           |
+| **Security**        | `.github/workflows/security.yml`        | push / PR to `main` + weekly cron          |
+| **Secret Scanning** | `.github/workflows/secret-scanning.yml` | push / PR + manual                         |
+| **Docker**          | `.github/workflows/docker.yml`          | **v\* tag push** + weekly cron + manual    |
+| **npm publish**     | `.github/workflows/npm-publish.yml`     | **v\* tag push** + manual                  |
+| **Release**         | `.github/workflows/release.yml`         | **v\* tag push** OR version-bump on `main` |
+| **Docs**            | `.github/workflows/docs.yml`            | push to `main` touching `docs/**`          |
 
 ## CI
 
@@ -31,7 +31,7 @@ A PR cannot merge to `main` if any of these fail.
 
 ## Release
 
-A v* tag push (e.g. `git push origin v1.4.0`) runs:
+A v\* tag push (e.g. `git push origin v1.4.0`) runs:
 
 1. `npm ci` + `npm test` + `npm run headers:check` — these gate the
    release; any failure aborts.
@@ -62,11 +62,11 @@ Builds and pushes to **two registries** simultaneously:
 
 **v1.4.0** added four image tags per build for clear pinning:
 
-| Tag | Meaning |
-|---|---|
-| `:1.4.0` | exact version (immutable) |
-| `:1.4` | major.minor (auto-updates with patches) |
-| `:latest` | always points to the newest stable release |
+| Tag            | Meaning                                     |
+| -------------- | ------------------------------------------- |
+| `:1.4.0`       | exact version (immutable)                   |
+| `:1.4`         | major.minor (auto-updates with patches)     |
+| `:latest`      | always points to the newest stable release  |
 | `:sha-abc1234` | immutable per-commit tag (debug / rollback) |
 
 Triggers: any `v*` tag push, weekly Monday cron for base-image
@@ -120,12 +120,12 @@ git push origin v1.4.0
 
 ## Required secrets
 
-| Secret | Used by | Optional? |
-|---|---|---|
-| `GITHUB_TOKEN` | release.yml, docker.yml | auto-injected |
-| `DOCKERHUB_USERNAME` | docker.yml | yes (skip Docker Hub push if missing) |
-| `DOCKERHUB_TOKEN` | docker.yml | yes |
-| `NPM_TOKEN` | npm-publish.yml | yes (skip npm publish if missing) |
+| Secret               | Used by                 | Optional?                             |
+| -------------------- | ----------------------- | ------------------------------------- |
+| `GITHUB_TOKEN`       | release.yml, docker.yml | auto-injected                         |
+| `DOCKERHUB_USERNAME` | docker.yml              | yes (skip Docker Hub push if missing) |
+| `DOCKERHUB_TOKEN`    | docker.yml              | yes                                   |
+| `NPM_TOKEN`          | npm-publish.yml         | yes (skip npm publish if missing)     |
 
 ## Observability hooks
 

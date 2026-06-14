@@ -17,16 +17,18 @@
  *     • startDashboard() at boot-time if missing  (auto, see server.js)
  */
 
-const fs       = require('node:fs');
-const path     = require('node:path');
+const fs = require('node:fs');
+const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const ROOT       = path.resolve(__dirname, '..');
-const DASH_SRC   = path.join(ROOT, 'dashboard');
-const DASH_DIST  = path.join(DASH_SRC, 'dist');
-const SERVE_DIR  = path.join(ROOT, 'src', 'dashboard', 'react');
+const ROOT = path.resolve(__dirname, '..');
+const DASH_SRC = path.join(ROOT, 'dashboard');
+const DASH_DIST = path.join(DASH_SRC, 'dist');
+const SERVE_DIR = path.join(ROOT, 'src', 'dashboard', 'react');
 
-function log(msg) { console.log(`[build-dashboard] ${msg}`); }
+function log(msg) {
+  console.log(`[build-dashboard] ${msg}`);
+}
 
 function fail(msg, code = 1) {
   console.error(`[build-dashboard] ERROR: ${msg}`);
@@ -41,7 +43,9 @@ if (!fs.existsSync(path.join(DASH_SRC, 'package.json'))) {
 if (!fs.existsSync(path.join(DASH_SRC, 'node_modules'))) {
   log('installing dashboard deps (one-time)…');
   const install = spawnSync('npm', ['install', '--no-audit', '--no-fund'], {
-    cwd: DASH_SRC, stdio: 'inherit', shell: process.platform === 'win32',
+    cwd: DASH_SRC,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
   });
   if (install.status !== 0) fail('npm install in dashboard/ failed', install.status);
 }
@@ -49,7 +53,9 @@ if (!fs.existsSync(path.join(DASH_SRC, 'node_modules'))) {
 // ─── 2. Run vite build ───────────────────────────────────────────────────
 log('running vite build…');
 const build = spawnSync('npx', ['vite', 'build'], {
-  cwd: DASH_SRC, stdio: 'inherit', shell: process.platform === 'win32',
+  cwd: DASH_SRC,
+  stdio: 'inherit',
+  shell: process.platform === 'win32',
 });
 if (build.status !== 0) fail('vite build failed', build.status);
 

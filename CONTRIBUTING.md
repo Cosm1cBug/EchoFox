@@ -62,7 +62,7 @@ module.exports = {
   name: 'echo',
   alias: ['e'],
   desc: 'Echoes whatever text you send',
-  category: 'misc',              // (optional — defaults to folder name)
+  category: 'misc', // (optional — defaults to folder name)
 
   async start(sock, m, { ctx, args }) {
     if (!args.length) return ctx.reply('Usage: .echo <text>');
@@ -75,20 +75,20 @@ Save it, send `.echo hello world` — bot replies. **No restart needed** (hot-re
 
 ### The full command contract
 
-| Field | Type | Required | Default | Meaning |
-|---|---|---|---|---|
-| `name`          | string             | ✅ |     | Primary trigger word (lowercase) |
-| `alias`         | string[]           |    | `[]` | Alternative trigger words |
-| `desc`          | string             |    | `""` | One-line description (shown in `.menu`) |
-| `category`      | string             |    | folder name | Used to group in `.menu` |
-| `admin`         | boolean            |    | `false` | Only admins (config.admins) can run |
-| `group`         | boolean            |    | `false` | Group chats only |
-| `needsMetadata` | boolean            |    | `false` | Pre-fetch `metadata` arg for you |
-| `requires`      | string[]           |    | `[]` | Config paths that must be non-empty (e.g. `'apis.omdb.apiKey'`); auto-skip command if missing |
-| `noLimit`       | boolean            |    | `false` | Exempt from rate limiting |
-| `cooldown`      | number (seconds)   |    | `0`  | Per-user delay between consecutive uses |
-| `timeout`       | number (seconds)   |    | `60` | Per-invocation timeout |
-| `start`         | async function     | ✅ |     | The handler |
+| Field           | Type             | Required | Default     | Meaning                                                                                       |
+| --------------- | ---------------- | -------- | ----------- | --------------------------------------------------------------------------------------------- |
+| `name`          | string           | ✅       |             | Primary trigger word (lowercase)                                                              |
+| `alias`         | string[]         |          | `[]`        | Alternative trigger words                                                                     |
+| `desc`          | string           |          | `""`        | One-line description (shown in `.menu`)                                                       |
+| `category`      | string           |          | folder name | Used to group in `.menu`                                                                      |
+| `admin`         | boolean          |          | `false`     | Only admins (config.admins) can run                                                           |
+| `group`         | boolean          |          | `false`     | Group chats only                                                                              |
+| `needsMetadata` | boolean          |          | `false`     | Pre-fetch `metadata` arg for you                                                              |
+| `requires`      | string[]         |          | `[]`        | Config paths that must be non-empty (e.g. `'apis.omdb.apiKey'`); auto-skip command if missing |
+| `noLimit`       | boolean          |          | `false`     | Exempt from rate limiting                                                                     |
+| `cooldown`      | number (seconds) |          | `0`         | Per-user delay between consecutive uses                                                       |
+| `timeout`       | number (seconds) |          | `60`        | Per-invocation timeout                                                                        |
+| `start`         | async function   | ✅       |             | The handler                                                                                   |
 
 ### Handler context
 
@@ -100,20 +100,20 @@ async start(sock, m, ctx) { … }
 - `m` — the raw Baileys message, with **legacy convenience fields glued on** (`m.sender`, `m.from`, `m.isGroup`, `m.isPrivate`, `m.reply`, `m.react`, `m.body`, `m.mtype`, `m.quoted`, `m.mentions`, …)
 - `ctx` — handler context (see below)
 
-| Key | Meaning |
-|---|---|
+| Key            | Meaning                                                                                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `ctx.ctx`      | Clean parsed message (preferred for new code): `.id, .chat, .sender, .pushName, .timestamp, .isGroup, .isPrivate, .mtype, .body, .mentions, .quoted, .reply(), .react()` |
-| `ctx.metadata` | Group metadata if `needsMetadata: true`, else `null` |
-| `ctx.body`     | Raw message text |
-| `ctx.args`     | Args after the command name (`['hello', 'world']`) |
-| `ctx.arg`      | Same but lowercased |
-| `ctx.text`     | `args.join(' ')` |
-| `ctx.prefix`   | The prefix that matched (`.` or `$`) |
-| `ctx.command`  | This command's name |
-| `ctx.commands` | The full `CommandRegistry` |
-| `ctx.config`   | Frozen config object |
-| `ctx.logger`   | Pino child logger |
-| `ctx.isAdmin`  | `true` if `m.sender` is in `config.admins` |
+| `ctx.metadata` | Group metadata if `needsMetadata: true`, else `null`                                                                                                                     |
+| `ctx.body`     | Raw message text                                                                                                                                                         |
+| `ctx.args`     | Args after the command name (`['hello', 'world']`)                                                                                                                       |
+| `ctx.arg`      | Same but lowercased                                                                                                                                                      |
+| `ctx.text`     | `args.join(' ')`                                                                                                                                                         |
+| `ctx.prefix`   | The prefix that matched (`.` or `$`)                                                                                                                                     |
+| `ctx.command`  | This command's name                                                                                                                                                      |
+| `ctx.commands` | The full `CommandRegistry`                                                                                                                                               |
+| `ctx.config`   | Frozen config object                                                                                                                                                     |
+| `ctx.logger`   | Pino child logger                                                                                                                                                        |
+| `ctx.isAdmin`  | `true` if `m.sender` is in `config.admins`                                                                                                                               |
 
 ### Best practices
 

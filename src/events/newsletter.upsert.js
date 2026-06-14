@@ -30,13 +30,13 @@ module.exports = async ({ u }) => {
     if (!id) continue;
     try {
       await store.upsertNewsletter(id, {
-        name:         n.name ?? n.subject,
-        description:  n.description,
-        picture_url:  n.picture?.url ?? n.pictureUrl,
+        name: n.name ?? n.subject,
+        description: n.description,
+        picture_url: n.picture?.url ?? n.pictureUrl,
         verification: n.verification ?? n.verifiedName,
-        subscribers:  n.subscribers ?? n.subscribersCount,
-        raw:          n,
-        created_at:   n.creation ?? n.created_at,
+        subscribers: n.subscribers ?? n.subscribersCount,
+        raw: n,
+        created_at: n.creation ?? n.created_at,
       });
       count++;
     } catch (err) {

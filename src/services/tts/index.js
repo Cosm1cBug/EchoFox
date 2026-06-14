@@ -26,10 +26,10 @@ const { config } = require('../../lib/configLoader');
 const logger = require('../../core/logger').child({ mod: 'tts' });
 
 const PROVIDERS = {
-  edge:   () => require('./providers/edge'),
+  edge: () => require('./providers/edge'),
   google: () => require('./providers/google'),
-  piper:  () => require('./providers/piper'),
-  coqui:  () => require('./providers/coqui'),
+  piper: () => require('./providers/piper'),
+  coqui: () => require('./providers/coqui'),
 };
 
 function getProvider(name) {

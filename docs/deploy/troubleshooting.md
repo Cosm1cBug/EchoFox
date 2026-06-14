@@ -29,19 +29,19 @@ If the `issuer` line names **anything other than** DigiCert / Cloudflare / Let's
 
 ### Fixes (pick one)
 
-| Situation | Fix |
-|---|---|
-| Corporate proxy you control | Export the proxy's root CA → drop it into `/usr/local/share/ca-certificates/` → `sudo update-ca-certificates` (Linux). Set `NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt`. |
-| Antivirus on the host | Disable HTTPS scanning for `*.whatsapp.com` and `*.whatsapp.net` in your AV's settings. |
-| Restrictive ISP / hotel WiFi | Use mobile hotspot or a VPN (Mullvad, ProtonVPN, Tailscale). |
-| Node ≥ 22, want to use the OS trust store | `NODE_OPTIONS=--use-system-ca npm start` |
-| Local dev VM, accept the risk | `NODE_TLS_REJECT_UNAUTHORIZED=0 npm run dev` ⚠️ **dev only — never in prod** |
+| Situation                                 | Fix                                                                                                                                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Corporate proxy you control               | Export the proxy's root CA → drop it into `/usr/local/share/ca-certificates/` → `sudo update-ca-certificates` (Linux). Set `NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt`. |
+| Antivirus on the host                     | Disable HTTPS scanning for `*.whatsapp.com` and `*.whatsapp.net` in your AV's settings.                                                                                              |
+| Restrictive ISP / hotel WiFi              | Use mobile hotspot or a VPN (Mullvad, ProtonVPN, Tailscale).                                                                                                                         |
+| Node ≥ 22, want to use the OS trust store | `NODE_OPTIONS=--use-system-ca npm start`                                                                                                                                             |
+| Local dev VM, accept the risk             | `NODE_TLS_REJECT_UNAUTHORIZED=0 npm run dev` ⚠️ **dev only — never in prod**                                                                                                         |
 
 ---
 
 ## "Waiting for this message" / decryption stuck
 
-If you upgraded from an older fork that *wasn't* the EchoFox v0.1.0+ rewrite,
+If you upgraded from an older fork that _wasn't_ the EchoFox v0.1.0+ rewrite,
 your old store's `getMessage` may be returning the wrong shape.
 
 **Verify:** start with a clean session.
@@ -91,12 +91,12 @@ this in violation of WhatsApp's ToS will continue to result in bans.
 
 You're missing build tools for native modules.
 
-| OS | Fix |
-|---|---|
-| Debian / Ubuntu | `sudo apt install -y build-essential python3` |
-| Fedora / RHEL   | `sudo dnf groupinstall "Development Tools" && sudo dnf install python3` |
-| Alpine          | `apk add --no-cache python3 make g++ gcc libc-dev` |
-| macOS           | `xcode-select --install` |
+| OS              | Fix                                                                                |
+| --------------- | ---------------------------------------------------------------------------------- |
+| Debian / Ubuntu | `sudo apt install -y build-essential python3`                                      |
+| Fedora / RHEL   | `sudo dnf groupinstall "Development Tools" && sudo dnf install python3`            |
+| Alpine          | `apk add --no-cache python3 make g++ gcc libc-dev`                                 |
+| macOS           | `xcode-select --install`                                                           |
 | Windows         | Install **Visual Studio Build Tools** with "Desktop development with C++" workload |
 
 In Docker, this is already handled by the builder stage.
@@ -112,6 +112,7 @@ NODE_ENV=development npm start
 ```
 
 For Docker, pipe through pino-pretty on the host:
+
 ```bash
 docker logs -f echofox 2>&1 | npx pino-pretty
 ```
@@ -146,6 +147,7 @@ curl -s http://localhost:3000/metrics | grep -E "eventloop_lag|resident_memory"
 ```
 
 Targets to stay under:
+
 - `nodejs_eventloop_lag_p99_seconds` < 0.05
 - `process_resident_memory_bytes` < 300 MB for a single bot with < 5 k chats
 

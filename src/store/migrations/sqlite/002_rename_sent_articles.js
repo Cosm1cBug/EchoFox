@@ -21,10 +21,13 @@ module.exports = {
   description: 'rename thehackersnews_sent_articles → service_sent_items',
 
   up({ db }) {
-    const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all().map((r) => r.name);
+    const tables = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table'`)
+      .all()
+      .map((r) => r.name);
     const oldExists = tables.includes('thehackersnews_sent_articles');
     const newExists = tables.includes('service_sent_items');
-    if (newExists) return;          // already migrated
+    if (newExists) return; // already migrated
     if (!oldExists) {
       // Fresh install: just create with new name (inline DDL also does this)
       db.exec(`
@@ -43,5 +46,7 @@ module.exports = {
     db.exec(`ALTER TABLE service_sent_items RENAME COLUMN article_url TO item_url;`);
   },
 
-  down(_ctx) { /* intentionally a no-op — we don't roll back renames */ },
+  down(_ctx) {
+    /* intentionally a no-op — we don't roll back renames */
+  },
 };

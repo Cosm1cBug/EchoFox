@@ -12,11 +12,14 @@
   "rules": {
     "no-console": "off",
     "no-empty": ["error", { "allowEmptyCatch": true }],
-    "no-unused-vars": ["warn", {
-      "argsIgnorePattern": "^_",
-      "varsIgnorePattern": "^_",
-      "caughtErrorsIgnorePattern": "^_"
-    }],
+    "no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }
+    ],
     "no-prototype-builtins": "off",
     "no-async-promise-executor": "warn",
     "no-undef": "error",

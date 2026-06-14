@@ -22,13 +22,19 @@
 const { extractMessageContent, getContentType } = require('@whiskeysockets/baileys');
 
 const ZONE_FORMATTER = new Intl.DateTimeFormat('en-IN', {
-  dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata',
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'Asia/Kolkata',
 });
 
 function humanBytes(b) {
   if (!b) return '—';
-  const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
-  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  while (b >= 1024 && i < u.length - 1) {
+    b /= 1024;
+    i++;
+  }
   return `${b.toFixed(1)} ${u[i]}`;
 }
 
@@ -47,17 +53,18 @@ module.exports = {
     const innerType = getContentType(inner);
 
     // The actual media payload inside a viewOnceMessage{V2}
-    const mediaMsg = inner?.viewOnceMessage?.message
-                  || inner?.viewOnceMessageV2?.message
-                  || inner?.viewOnceMessageV2Extension?.message
-                  || (innerType?.startsWith('view') ? inner[innerType]?.message : null);
+    const mediaMsg =
+      inner?.viewOnceMessage?.message ||
+      inner?.viewOnceMessageV2?.message ||
+      inner?.viewOnceMessageV2Extension?.message ||
+      (innerType?.startsWith('view') ? inner[innerType]?.message : null);
 
     if (!mediaMsg) {
       return ctx.reply('↩️ Reply to a *view-once* media message with this command.');
     }
 
-    const mediaType = getContentType(mediaMsg);                  // imageMessage / videoMessage / audioMessage
-    const media     = mediaMsg[mediaType];
+    const mediaType = getContentType(mediaMsg); // imageMessage / videoMessage / audioMessage
+    const media = mediaMsg[mediaType];
     if (!mediaType || !media) {
       return ctx.reply('⚠️ That message does not contain image / video / audio media.');
     }
@@ -66,14 +73,14 @@ module.exports = {
 
     let buf;
     try {
-      buf = await ctx.downloadMsg();   // works because ctx wires up the quoted/current detection
+      buf = await ctx.downloadMsg(); // works because ctx wires up the quoted/current detection
     } catch (err) {
       throw new Error(`Could not download media: ${err.message}`);
     }
 
-    const kind = mediaType.replace('Message', '');               // image / video / audio
+    const kind = mediaType.replace('Message', ''); // image / video / audio
     const tsRaw = Number(media.mediaKeyTimestamp || media.fileEncSha256Timestamp || ctx.timestamp);
-    const ts    = tsRaw ? ZONE_FORMATTER.format(new Date(tsRaw * 1000)) : '—';
+    const ts = tsRaw ? ZONE_FORMATTER.format(new Date(tsRaw * 1000)) : '—';
 
     const caption =
       `🔓 *Anti View-Once*\n` +
@@ -84,16 +91,26 @@ module.exports = {
       `*Sender:*  @${ctx.sender.split('@')[0]}`;
 
     const payload =
-      kind === 'image' ? { image: buf, caption, mimetype: media.mimetype || 'image/jpeg' } :
-      kind === 'video' ? { video: buf, caption, mimetype: media.mimetype || 'video/mp4' } :
-      kind === 'audio' ? { audio: buf, mimetype: media.mimetype || 'audio/ogg', ptt: !!media.ptt } :
-                         { document: buf, mimetype: media.mimetype || 'application/octet-stream',
-                           fileName: `viewonce.${kind}` };
+      kind === 'image'
+        ? { image: buf, caption, mimetype: media.mimetype || 'image/jpeg' }
+        : kind === 'video'
+          ? { video: buf, caption, mimetype: media.mimetype || 'video/mp4' }
+          : kind === 'audio'
+            ? { audio: buf, mimetype: media.mimetype || 'audio/ogg', ptt: !!media.ptt }
+            : {
+                document: buf,
+                mimetype: media.mimetype || 'application/octet-stream',
+                fileName: `viewonce.${kind}`,
+              };
 
-    await sock.sendMessage(ctx.from, {
-      ...payload,
-      mentions: [ctx.sender],
-    }, { quoted: m });
+    await sock.sendMessage(
+      ctx.from,
+      {
+        ...payload,
+        mentions: [ctx.sender],
+      },
+      { quoted: m },
+    );
 
     // Audio messages don't carry captions — send the info separately
     if (kind === 'audio') {

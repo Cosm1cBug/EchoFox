@@ -24,7 +24,7 @@ const { config, __testOverride } = require('../../lib/configLoader');
 
 function _fmtUsd(n) {
   if (typeof n !== 'number' || isNaN(n)) return '$0.000000';
-  if (n >= 1)  return `$${n.toFixed(4)}`;
+  if (n >= 1) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(6)}`;
 }
 
@@ -46,8 +46,8 @@ module.exports = {
       if (!rows.length) return ctx.reply('📊 No AI usage recorded yet.');
       const totalCost = rows.reduce((s, r) => s + Number(r.cost_usd || 0), 0);
       const totalPrompt = rows.reduce((s, r) => s + Number(r.prompt_tokens || 0), 0);
-      const totalComp   = rows.reduce((s, r) => s + Number(r.completion_tokens || 0), 0);
-      const totalCalls  = rows.reduce((s, r) => s + Number(r.calls || 0), 0);
+      const totalComp = rows.reduce((s, r) => s + Number(r.completion_tokens || 0), 0);
+      const totalCalls = rows.reduce((s, r) => s + Number(r.calls || 0), 0);
       const lines = [
         `📊 *AI usage* — last ${days} day(s)`,
         `*Total spend:* ${_fmtUsd(totalCost)}`,
@@ -78,17 +78,22 @@ module.exports = {
       const action = (args[1] || 'get').toLowerCase();
       if (action === 'get') {
         const used = await ai.cost.todayTotalUsd();
-        return ctx.reply([
-          `💰 *AI daily cost cap*`,
-          `*Cap:*  ${_fmtUsd(Number(config.ai?.costCapPerDayUsd) || 0)}`,
-          `*Used today:* ${_fmtUsd(used)}`,
-        ].join('\n'));
+        return ctx.reply(
+          [
+            `💰 *AI daily cost cap*`,
+            `*Cap:*  ${_fmtUsd(Number(config.ai?.costCapPerDayUsd) || 0)}`,
+            `*Used today:* ${_fmtUsd(used)}`,
+          ].join('\n'),
+        );
       }
       if (action === 'set') {
         const v = Number(args[2]);
-        if (!isFinite(v) || v < 0) return ctx.reply('Usage: `$ai limit set <usd>` (e.g. `$ai limit set 10`)');
+        if (!isFinite(v) || v < 0)
+          return ctx.reply('Usage: `$ai limit set <usd>` (e.g. `$ai limit set 10`)');
         __testOverride({ ai: { ...(config.ai || {}), costCapPerDayUsd: v } });
-        return ctx.reply(`✅ Cost cap set to ${_fmtUsd(v)} (in-memory; edit config.js for persistence).`);
+        return ctx.reply(
+          `✅ Cost cap set to ${_fmtUsd(v)} (in-memory; edit config.js for persistence).`,
+        );
       }
       return ctx.reply('Usage: `$ai limit get` or `$ai limit set <usd>`');
     }
@@ -98,13 +103,15 @@ module.exports = {
       return ctx.reply(`✅ AI globally ${sub === 'enable' ? 'enabled' : 'disabled'} (in-memory).`);
     }
 
-    return ctx.reply([
-      '🤖 *AI admin*',
-      '`$ai stats [days]`',
-      '`$ai chats`',
-      '`$ai limit get`',
-      '`$ai limit set <usd>`',
-      '`$ai enable` / `$ai disable`',
-    ].join('\n'));
+    return ctx.reply(
+      [
+        '🤖 *AI admin*',
+        '`$ai stats [days]`',
+        '`$ai chats`',
+        '`$ai limit get`',
+        '`$ai limit set <usd>`',
+        '`$ai enable` / `$ai disable`',
+      ].join('\n'),
+    );
   },
 };

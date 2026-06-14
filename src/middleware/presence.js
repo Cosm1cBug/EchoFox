@@ -53,7 +53,7 @@ function classifySend(content, opts) {
   // Pure-media (no caption) — sticker/image/video by themselves
   if (content?.sticker) return { kind: null, textLen: 0 };
   const textyMedia = content?.image || content?.video || content?.document;
-  const caption    = content?.caption || '';
+  const caption = content?.caption || '';
   if (textyMedia && !caption) return { kind: null, textLen: 0 };
 
   // Anything with body text
@@ -67,11 +67,11 @@ function wrapWithPresence(sock, config) {
   sock._presenceWrapped = true;
 
   const cfg = config.antiBan || {};
-  const enabled        = cfg.typingIndicator !== false;
-  const shortChars     = Math.max(1, cfg.shortReplyChars   ?? 40);
-  const delayMin       = Math.max(0, cfg.typingDelayMs?.min ?? 800);
-  const delayMax       = Math.max(delayMin, cfg.typingDelayMs?.max ?? 2500);
-  const pauseAfter     = cfg.pauseAfterSend !== false;
+  const enabled = cfg.typingIndicator !== false;
+  const shortChars = Math.max(1, cfg.shortReplyChars ?? 40);
+  const delayMin = Math.max(0, cfg.typingDelayMs?.min ?? 800);
+  const delayMax = Math.max(delayMin, cfg.typingDelayMs?.max ?? 2500);
+  const pauseAfter = cfg.pauseAfterSend !== false;
 
   if (!enabled) {
     logger.info('presence-on-send disabled by config.antiBan.typingIndicator=false');
@@ -80,7 +80,7 @@ function wrapWithPresence(sock, config) {
 
   const original = sock.sendMessage.bind(sock);
 
-  sock.sendMessage = async function(jid, content, options = {}) {
+  sock.sendMessage = async function (jid, content, options = {}) {
     const { kind, textLen } = classifySend(content, options);
     const shouldShow = kind !== null && (kind === 'recording' || textLen > shortChars);
 

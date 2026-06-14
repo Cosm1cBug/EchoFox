@@ -121,7 +121,9 @@ module.exports = {
 
     // Extend chats + contacts via ALTER (idempotent — try/catch each column)
     const safeAlter = (sql) => {
-      try { db.exec(sql); } catch (e) {
+      try {
+        db.exec(sql);
+      } catch (e) {
         if (!/duplicate column name/i.test(e.message)) throw e;
       }
     };

@@ -26,3 +26,4 @@ Drop-in upgrade from v1.4.0:
 
 ```bash
 git pull && npm install
+```

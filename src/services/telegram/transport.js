@@ -23,8 +23,12 @@ const { config } = require('../../lib/configLoader');
 
 let _override = null;
 
-function __testOverride(fn) { _override = fn; }
-function _resetForTests()    { _override = null; }
+function __testOverride(fn) {
+  _override = fn;
+}
+function _resetForTests() {
+  _override = null;
+}
 
 function escapeHtml(s) {
   return String(s == null ? '' : s)
@@ -80,7 +84,7 @@ async function sendMessage({ chatId, text, parseMode = 'HTML' }) {
     text,
     disable_web_page_preview: true,
   };
-  if (parseMode === 'HTML')        payload.parse_mode = 'HTML';
+  if (parseMode === 'HTML') payload.parse_mode = 'HTML';
   else if (parseMode === 'MarkdownV2') payload.parse_mode = 'MarkdownV2';
   // 'plain' => no parse_mode
 

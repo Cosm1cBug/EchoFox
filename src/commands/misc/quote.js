@@ -27,8 +27,8 @@ module.exports = {
   async start(sock, m, { ctx }) {
     try {
       const { data } = await axiosWithBreaker('zenquotes', {
-        method:  'GET',
-        url:     'https://zenquotes.io/api/random',
+        method: 'GET',
+        url: 'https://zenquotes.io/api/random',
         timeout: 8000,
       });
       const q = Array.isArray(data) ? data[0] : data;

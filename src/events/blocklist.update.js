@@ -25,7 +25,7 @@ module.exports = async ({ u }) => {
   for (const jid of list) {
     if (!jid) continue;
     try {
-      if (type === 'add')         await store.addToBlocklist(jid);
+      if (type === 'add') await store.addToBlocklist(jid);
       else if (type === 'remove') await store.removeFromBlocklist(jid);
     } catch (err) {
       logger.debug({ err, jid, type }, 'blocklist mutation failed');

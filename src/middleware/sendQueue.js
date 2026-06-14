@@ -17,8 +17,7 @@ const PQueue = require('p-queue').default;
 function wrapSocketSend(sock, { concurrency = 4 } = {}) {
   const q = new PQueue({ concurrency });
   const original = sock.sendMessage.bind(sock);
-  sock.sendMessage = (jid, content, options) =>
-    q.add(() => original(jid, content, options));
+  sock.sendMessage = (jid, content, options) => q.add(() => original(jid, content, options));
   sock.sendMessage.queueSize = () => q.size + q.pending;
   return sock.sendMessage;
 }

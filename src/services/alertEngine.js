@@ -33,18 +33,18 @@
  */
 
 const { LRUCache } = require('lru-cache');
-const logger  = require('../core/logger').child({ mod: 'alerts' });
+const logger = require('../core/logger').child({ mod: 'alerts' });
 const metrics = require('./metrics');
 const telegram = require('./telegram');
 const { config } = require('../lib/configLoader');
 const { getStore } = require('../store/instance');
 
-const WINDOW_MINUTES_DEFAULT     = 60;
-const MIN_INVOCATIONS_DEFAULT    = 10;
-const FAILURE_RATE_DEFAULT       = 0.30;
-const SWEEP_INTERVAL_MS_DEFAULT  = 30_000;
+const WINDOW_MINUTES_DEFAULT = 60;
+const MIN_INVOCATIONS_DEFAULT = 10;
+const FAILURE_RATE_DEFAULT = 0.3;
+const SWEEP_INTERVAL_MS_DEFAULT = 30_000;
 
-let _state = null;     // { buckets, active, subscribers, opts, sweepTimer, sock }
+let _state = null; // { buckets, active, subscribers, opts, sweepTimer, sock }
 
 function _ensure() {
   if (_state) return _state;
@@ -55,16 +55,16 @@ function _ensure() {
 /** Initialise (call once at boot). Passing sock enables errLogs posts. */
 function init(opts = {}) {
   const o = {
-    windowMinutes:        opts.windowMinutes        ?? WINDOW_MINUTES_DEFAULT,
-    minInvocations:       opts.minInvocations       ?? MIN_INVOCATIONS_DEFAULT,
+    windowMinutes: opts.windowMinutes ?? WINDOW_MINUTES_DEFAULT,
+    minInvocations: opts.minInvocations ?? MIN_INVOCATIONS_DEFAULT,
     failureRateThreshold: opts.failureRateThreshold ?? FAILURE_RATE_DEFAULT,
-    sweepIntervalMs:      opts.sweepIntervalMs      ?? SWEEP_INTERVAL_MS_DEFAULT,
+    sweepIntervalMs: opts.sweepIntervalMs ?? SWEEP_INTERVAL_MS_DEFAULT,
   };
   _state = {
     opts: o,
     // command → bucket map. Each bucket = { minute: epochMin, success, failure, timeout }
     cmds: new LRUCache({ max: 1000, ttl: o.windowMinutes * 60_000 * 2 }),
-    active: new Map(),   // command → { since, rate, invocations }
+    active: new Map(), // command → { since, rate, invocations }
     subscribers: new Set(),
     sweepTimer: null,
     sock: opts.sock || null,
@@ -83,8 +83,12 @@ function attachSock(sock, channelJid) {
   st.channelJid = channelJid || '';
 }
 
-function subscribe(fn)   { _ensure().subscribers.add(fn); }
-function unsubscribe(fn) { _ensure().subscribers.delete(fn); }
+function subscribe(fn) {
+  _ensure().subscribers.add(fn);
+}
+function unsubscribe(fn) {
+  _ensure().subscribers.delete(fn);
+}
 
 function stop() {
   if (!_state) return;
@@ -119,7 +123,9 @@ function getRate(cmdName) {
   const list = st.cmds.get(cmdName) || [];
   const minuteNow = Math.floor(Date.now() / 60_000);
   const oldest = minuteNow - st.opts.windowMinutes + 1;
-  let success = 0, failure = 0, timeout = 0;
+  let success = 0,
+    failure = 0,
+    timeout = 0;
   for (const b of list) {
     if (b.minute < oldest) continue;
     success += b.success;
@@ -127,7 +133,7 @@ function getRate(cmdName) {
     timeout += b.timeout;
   }
   const invocations = success + failure + timeout;
-  const fails       = failure + timeout;
+  const fails = failure + timeout;
   return {
     invocations,
     failures: fails,
@@ -139,32 +145,40 @@ function getActiveAlerts() {
   const st = _ensure();
   return [...st.active.entries()].map(([command, info]) => ({
     command,
-    rate:        info.rate,
+    rate: info.rate,
     invocations: info.invocations,
-    since:       info.since,
+    since: info.since,
   }));
 }
 
 function _evaluate(cmdName) {
   const st = _ensure();
   const { invocations, failures, rate } = getRate(cmdName);
-  const meetsMin   = invocations >= st.opts.minInvocations;
-  const exceedsRt  = rate >= st.opts.failureRateThreshold;
+  const meetsMin = invocations >= st.opts.minInvocations;
+  const exceedsRt = rate >= st.opts.failureRateThreshold;
   const isCurrentlyActive = st.active.has(cmdName);
 
   if (meetsMin && exceedsRt && !isCurrentlyActive) {
     const info = { rate, invocations, failures, since: Math.floor(Date.now() / 1000) };
     st.active.set(cmdName, info);
-    try { metrics.inc?.('command_alerts_triggered_total'); } catch {}
-    logger.warn({ cmd: cmdName, rate: rate.toFixed(2), invocations, failures },
-      '🚨 command failure-rate alert TRIGGERED');
+    try {
+      metrics.inc?.('command_alerts_triggered_total');
+    } catch {}
+    logger.warn(
+      { cmd: cmdName, rate: rate.toFixed(2), invocations, failures },
+      '🚨 command failure-rate alert TRIGGERED',
+    );
     _notify('triggered', cmdName, info);
   } else if ((!meetsMin || !exceedsRt) && isCurrentlyActive) {
     const info = st.active.get(cmdName);
     st.active.delete(cmdName);
-    try { metrics.inc?.('command_alerts_cleared_total'); } catch {}
-    logger.info({ cmd: cmdName, rate: rate.toFixed(2), invocations },
-      '✅ command failure-rate alert CLEARED');
+    try {
+      metrics.inc?.('command_alerts_cleared_total');
+    } catch {}
+    logger.info(
+      { cmd: cmdName, rate: rate.toFixed(2), invocations },
+      '✅ command failure-rate alert CLEARED',
+    );
     _notify('cleared', cmdName, info);
   } else if (isCurrentlyActive) {
     // Update the in-place rate snapshot
@@ -182,7 +196,8 @@ function _sweep() {
 
   // v1.4.0 — evaluate built-in extra rules
   Promise.resolve(_evaluateBuiltinRules()).catch((e) =>
-    logger.warn({ err: e }, 'builtin rule sweep failed'));
+    logger.warn({ err: e }, 'builtin rule sweep failed'),
+  );
 }
 
 // ─── v1.4.0: built-in extra rules ────────────────────────────────────────
@@ -200,7 +215,7 @@ const RULE_KEY_TG_FAIL = '__telegram_failure_rate';
 function _ruleOnCooldown(st, ruleKey, cooldownMinutes) {
   st.cooldowns = st.cooldowns || new Map();
   const last = st.cooldowns.get(ruleKey) || 0;
-  return (Date.now() - last) < (Number(cooldownMinutes) || 60) * 60 * 1000;
+  return Date.now() - last < (Number(cooldownMinutes) || 60) * 60 * 1000;
 }
 function _ruleMarkFired(st, ruleKey) {
   st.cooldowns = st.cooldowns || new Map();
@@ -219,9 +234,8 @@ async function _evaluateBuiltinRules() {
       if (cap > 0) {
         const store = getStore();
         const day = new Date().toISOString().slice(0, 10);
-        const used = typeof store?.getAiUsageDayTotal === 'function'
-          ? await store.getAiUsageDayTotal(day)
-          : 0;
+        const used =
+          typeof store?.getAiUsageDayTotal === 'function' ? await store.getAiUsageDayTotal(day) : 0;
         const pct = used / cap;
         const isFiring = pct >= Number(rAi.threshold);
         const wasActive = st.active.has(RULE_KEY_AI_COST);
@@ -229,22 +243,31 @@ async function _evaluateBuiltinRules() {
         if (isFiring && !wasActive && !_ruleOnCooldown(st, RULE_KEY_AI_COST, rAi.cooldownMinutes)) {
           const info = {
             since: Math.floor(Date.now() / 1000),
-            pct, used, cap, threshold: Number(rAi.threshold),
+            pct,
+            used,
+            cap,
+            threshold: Number(rAi.threshold),
           };
           st.active.set(RULE_KEY_AI_COST, info);
           _ruleMarkFired(st, RULE_KEY_AI_COST);
-          try { metrics.inc?.('command_alerts_triggered_total'); } catch {}
+          try {
+            metrics.inc?.('command_alerts_triggered_total');
+          } catch {}
           logger.warn({ pct: pct.toFixed(2), used, cap }, '🚨 AI cost rule TRIGGERED');
           _notify('triggered', RULE_KEY_AI_COST, info);
         } else if (!isFiring && wasActive) {
           const info = st.active.get(RULE_KEY_AI_COST);
           st.active.delete(RULE_KEY_AI_COST);
-          try { metrics.inc?.('command_alerts_cleared_total'); } catch {}
+          try {
+            metrics.inc?.('command_alerts_cleared_total');
+          } catch {}
           logger.info({ pct: pct.toFixed(2) }, '✅ AI cost rule CLEARED');
           _notify('cleared', RULE_KEY_AI_COST, info);
         }
       }
-    } catch (e) { logger.warn({ err: e }, 'aiCostPct evaluator failed'); }
+    } catch (e) {
+      logger.warn({ err: e }, 'aiCostPct evaluator failed');
+    }
   }
 
   // ── telegramFailureRate ───────────────────────────────────────────
@@ -252,10 +275,8 @@ async function _evaluateBuiltinRules() {
   if (rTg?.enabled && Number(rTg.threshold) > 0) {
     try {
       const store = getStore();
-      const stats = typeof store?.getStats === 'function'
-        ? await store.getStats()
-        : {};
-      const sends    = Number(stats.telegram_forwards_total) || 0;
+      const stats = typeof store?.getStats === 'function' ? await store.getStats() : {};
+      const sends = Number(stats.telegram_forwards_total) || 0;
       const failures = Number(stats.telegram_send_failures_total) || 0;
       const minSends = Number(rTg.minSends) || 10;
 
@@ -267,22 +288,34 @@ async function _evaluateBuiltinRules() {
         if (isFiring && !wasActive && !_ruleOnCooldown(st, RULE_KEY_TG_FAIL, rTg.cooldownMinutes)) {
           const info = {
             since: Math.floor(Date.now() / 1000),
-            rate, sends, failures, threshold: Number(rTg.threshold),
+            rate,
+            sends,
+            failures,
+            threshold: Number(rTg.threshold),
           };
           st.active.set(RULE_KEY_TG_FAIL, info);
           _ruleMarkFired(st, RULE_KEY_TG_FAIL);
-          try { metrics.inc?.('command_alerts_triggered_total'); } catch {}
-          logger.warn({ rate: rate.toFixed(2), sends, failures }, '🚨 Telegram failure-rate rule TRIGGERED');
+          try {
+            metrics.inc?.('command_alerts_triggered_total');
+          } catch {}
+          logger.warn(
+            { rate: rate.toFixed(2), sends, failures },
+            '🚨 Telegram failure-rate rule TRIGGERED',
+          );
           _notify('triggered', RULE_KEY_TG_FAIL, info);
         } else if (!isFiring && wasActive) {
           const info = st.active.get(RULE_KEY_TG_FAIL);
           st.active.delete(RULE_KEY_TG_FAIL);
-          try { metrics.inc?.('command_alerts_cleared_total'); } catch {}
+          try {
+            metrics.inc?.('command_alerts_cleared_total');
+          } catch {}
           logger.info({ rate: rate.toFixed(2) }, '✅ Telegram failure-rate rule CLEARED');
           _notify('cleared', RULE_KEY_TG_FAIL, info);
         }
       }
-    } catch (e) { logger.warn({ err: e }, 'telegramFailureRate evaluator failed'); }
+    } catch (e) {
+      logger.warn({ err: e }, 'telegramFailureRate evaluator failed');
+    }
   }
 }
 
@@ -292,24 +325,29 @@ function _notify(kind, command, info) {
 
   // 1. subscribers (in-process listeners, e.g. dashboard SSE in the future)
   for (const fn of st.subscribers) {
-    try { fn({ kind, command, info }); } catch {}
+    try {
+      fn({ kind, command, info });
+    } catch {}
   }
 
   // 2. errLogs channel (if available)
   if (!st.sock || !st.channelJid) return;
-  const msg = kind === 'triggered'
-    ? `🚨 *Command alert — TRIGGERED*\n*Cmd:* \`${command}\`\n*Failure rate:* ${(info.rate * 100).toFixed(0)}% over last 1h\n*Invocations:* ${info.invocations}`
-    : `✅ *Command alert — CLEARED*\n*Cmd:* \`${command}\`\n*Invocations in window:* ${info?.invocations || 0}`;
+  const msg =
+    kind === 'triggered'
+      ? `🚨 *Command alert — TRIGGERED*\n*Cmd:* \`${command}\`\n*Failure rate:* ${(info.rate * 100).toFixed(0)}% over last 1h\n*Invocations:* ${info.invocations}`
+      : `✅ *Command alert — CLEARED*\n*Cmd:* \`${command}\`\n*Invocations in window:* ${info?.invocations || 0}`;
   st.sock.sendMessage(st.channelJid, { text: msg }, { skipPresence: true }).catch(() => {});
 
   // v1.3.0 — also mirror to Telegram errLogs (no-op if telegram disabled)
   try {
     telegram.forward('errLogs', {
-      level:  kind === 'triggered' ? 'error' : 'info',
+      level: kind === 'triggered' ? 'error' : 'info',
       source: `alert:${command}`,
-      text:   msg,
+      text: msg,
     });
-  } catch (_e) { /* never crash the alert engine */ }
+  } catch (_e) {
+    /* never crash the alert engine */
+  }
 }
 
 module.exports = {
@@ -321,5 +359,5 @@ module.exports = {
   subscribe,
   unsubscribe,
   stop,
-  _evaluateBuiltinRules,   // v1.4.0 — exposed for tests
+  _evaluateBuiltinRules, // v1.4.0 — exposed for tests
 };

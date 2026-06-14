@@ -28,7 +28,9 @@ module.exports = async ({ u }) => {
     const newsletterId = ev?.id || ev?.jid || ev?.newsletter_id;
     if (!newsletterId) continue;
     const settings = { ...ev };
-    delete settings.id; delete settings.jid; delete settings.newsletter_id;
+    delete settings.id;
+    delete settings.jid;
+    delete settings.newsletter_id;
     try {
       await store.updateNewsletterSettings(newsletterId, settings);
       count++;

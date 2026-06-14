@@ -36,14 +36,14 @@ function setStore(store) {
 
 function getStore() {
   if (!_store) {
-    throw new Error(
-      'store singleton not set — getStore() called before lifecycle.selectStore()'
-    );
+    throw new Error('store singleton not set — getStore() called before lifecycle.selectStore()');
   }
   return _store;
 }
 
 /** Test-only: clear the singleton between test cases. */
-function __resetForTests() { _store = null; }
+function __resetForTests() {
+  _store = null;
+}
 
 module.exports = { setStore, getStore, __resetForTests };

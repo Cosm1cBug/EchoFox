@@ -24,9 +24,9 @@ module.exports = async ({ store, u }) => {
     if (!c?.id) continue;
     try {
       await store.updateChat?.(c.id, {
-        pinned:      c.pinned,
+        pinned: c.pinned,
         muted_until: c.mute ?? null,
-        archived:    c.archived,
+        archived: c.archived,
       });
       count++;
     } catch (err) {

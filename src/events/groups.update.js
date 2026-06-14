@@ -34,8 +34,7 @@ module.exports = async function onGroupsUpdate({ sock, store, u }) {
       const fresh = await sock.groupMetadata(update.id);
       await store.saveGroupMetadata(update.id, fresh);
     } catch (e) {
-      logger.debug({ err: e, jid: update.id },
-        'group metadata refresh failed after groups.update');
+      logger.debug({ err: e, jid: update.id }, 'group metadata refresh failed after groups.update');
     }
 
     // ── 2. Log structured change details ─────────────────────────────

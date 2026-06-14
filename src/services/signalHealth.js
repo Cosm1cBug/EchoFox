@@ -44,16 +44,16 @@
  *   These are static for v1.4.2 — can be lifted to config in a later
  *   release if anyone needs to tune them.
  */
-const logger  = require('../core/logger').child({ mod: 'signal-health' });
+const logger = require('../core/logger').child({ mod: 'signal-health' });
 const metrics = require('./metrics');
 
-const FAILURE_THRESHOLD     = 3;
-const FAILURE_WINDOW_MS     = 5  * 60 * 1000;
-const RECOVERY_COOLDOWN_MS  = 30 * 60 * 1000;
+const FAILURE_THRESHOLD = 3;
+const FAILURE_WINDOW_MS = 5 * 60 * 1000;
+const RECOVERY_COOLDOWN_MS = 30 * 60 * 1000;
 const MAP_PRUNE_INTERVAL_MS = 10 * 60 * 1000;
 
 // jid -> { count, firstFailureTs, lastFailureTs }
-const _failures  = new Map();
+const _failures = new Map();
 // jid -> lastRecoveryTs
 const _recoveries = new Map();
 
@@ -114,11 +114,11 @@ async function record(sock, logObj) {
   metrics.incDecryptionFailure();
 
   const rawJid =
-        logObj.author
-     || logObj.key?.participant
-     || logObj.key?.participantAlt
-     || logObj.key?.remoteJid
-     || '';
+    logObj.author ||
+    logObj.key?.participant ||
+    logObj.key?.participantAlt ||
+    logObj.key?.remoteJid ||
+    '';
   const jid = _normaliseJid(rawJid);
   if (!jid) return { matched: true, jid: '', count: 0 };
 
@@ -126,7 +126,7 @@ async function record(sock, logObj) {
   const cur = _failures.get(jid);
 
   // Outside the counting window? reset.
-  if (!cur || (now - cur.firstFailureTs) > FAILURE_WINDOW_MS) {
+  if (!cur || now - cur.firstFailureTs > FAILURE_WINDOW_MS) {
     _failures.set(jid, { count: 1, firstFailureTs: now, lastFailureTs: now });
     return { matched: true, jid, count: 1, willRecover: false };
   }
@@ -140,7 +140,7 @@ async function record(sock, logObj) {
 
   // Threshold hit — check cooldown
   const lastRec = _recoveries.get(jid) || 0;
-  if ((now - lastRec) < RECOVERY_COOLDOWN_MS) {
+  if (now - lastRec < RECOVERY_COOLDOWN_MS) {
     return { matched: true, jid, count: cur.count, willRecover: false, onCooldown: true };
   }
 
@@ -166,12 +166,21 @@ async function _triggerRecovery(sock, jid, cur) {
     }
 
     metrics.incDecryptionRecovery();
-    logger.warn({ jid, failuresInWindow: cur.count },
-      '🩹 signal-health: session reset for sender after consecutive decryption failures');
+    logger.warn(
+      { jid, failuresInWindow: cur.count },
+      '🩹 signal-health: session reset for sender after consecutive decryption failures',
+    );
     return { matched: true, jid, count: cur.count, willRecover: true, recovered: true };
   } catch (e) {
     logger.warn({ err: e, jid }, 'signal-health: deleteSession failed');
-    return { matched: true, jid, count: cur.count, willRecover: true, recovered: false, error: e.message };
+    return {
+      matched: true,
+      jid,
+      count: cur.count,
+      willRecover: true,
+      recovered: false,
+      error: e.message,
+    };
   }
 }
 
@@ -181,10 +190,10 @@ async function _triggerRecovery(sock, jid, cur) {
 const _pruneTimer = setInterval(() => {
   const now = Date.now();
   for (const [jid, v] of _failures) {
-    if ((now - v.lastFailureTs) > FAILURE_WINDOW_MS) _failures.delete(jid);
+    if (now - v.lastFailureTs > FAILURE_WINDOW_MS) _failures.delete(jid);
   }
   for (const [jid, ts] of _recoveries) {
-    if ((now - ts) > RECOVERY_COOLDOWN_MS) _recoveries.delete(jid);
+    if (now - ts > RECOVERY_COOLDOWN_MS) _recoveries.delete(jid);
   }
 }, MAP_PRUNE_INTERVAL_MS);
 if (typeof _pruneTimer.unref === 'function') _pruneTimer.unref();
@@ -192,11 +201,11 @@ if (typeof _pruneTimer.unref === 'function') _pruneTimer.unref();
 function snapshot() {
   return {
     trackedFailureJids: _failures.size,
-    cooldownJids:       _recoveries.size,
+    cooldownJids: _recoveries.size,
     thresholds: {
-      failureThreshold:     FAILURE_THRESHOLD,
-      failureWindowMs:      FAILURE_WINDOW_MS,
-      recoveryCooldownMs:   RECOVERY_COOLDOWN_MS,
+      failureThreshold: FAILURE_THRESHOLD,
+      failureWindowMs: FAILURE_WINDOW_MS,
+      recoveryCooldownMs: RECOVERY_COOLDOWN_MS,
     },
   };
 }

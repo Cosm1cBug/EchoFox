@@ -16,19 +16,75 @@
  * voices, free, no setup. Switch via config.tts.provider.
  */
 
-const fs   = require('node:fs');
+const fs = require('node:fs');
 const path = require('node:path');
-const os   = require('node:os');
+const os = require('node:os');
 const translate = require('google-translate-api-x');
 const tts = require('../../services/tts');
 const { config } = require('../../lib/configLoader');
 
 const DEFAULT_LANG = 'en';
 const SUPPORTED_LANGS = new Set([
-  'af','ar','bn','bs','ca','cs','cy','da','de','el','en','eo','es','et','fi','fr',
-  'gu','hi','hr','hu','hy','id','is','it','ja','jw','km','kn','ko','la','lv','mk',
-  'ml','mr','my','ne','nl','no','pl','pt','ro','ru','si','sk','sq','sr','su','sv',
-  'sw','ta','te','th','tl','tr','uk','ur','vi','zh','zh-cn','zh-tw',
+  'af',
+  'ar',
+  'bn',
+  'bs',
+  'ca',
+  'cs',
+  'cy',
+  'da',
+  'de',
+  'el',
+  'en',
+  'eo',
+  'es',
+  'et',
+  'fi',
+  'fr',
+  'gu',
+  'hi',
+  'hr',
+  'hu',
+  'hy',
+  'id',
+  'is',
+  'it',
+  'ja',
+  'jw',
+  'km',
+  'kn',
+  'ko',
+  'la',
+  'lv',
+  'mk',
+  'ml',
+  'mr',
+  'my',
+  'ne',
+  'nl',
+  'no',
+  'pl',
+  'pt',
+  'ro',
+  'ru',
+  'si',
+  'sk',
+  'sq',
+  'sr',
+  'su',
+  'sv',
+  'sw',
+  'ta',
+  'te',
+  'th',
+  'tl',
+  'tr',
+  'uk',
+  'ur',
+  'vi',
+  'zh',
+  'zh-cn',
+  'zh-tw',
 ]);
 
 module.exports = {
@@ -75,14 +131,22 @@ module.exports = {
       const outPath = path.join(tmpDir, `tts-${Date.now()}.mp3`);
       fs.writeFileSync(outPath, audio);
 
-      await sock.sendMessage(ctx.from, {
-        audio: { url: outPath },
-        mimetype: 'audio/mpeg',
-        ptt: true,                                  // send as voice note
-      }, { quoted: m });
+      await sock.sendMessage(
+        ctx.from,
+        {
+          audio: { url: outPath },
+          mimetype: 'audio/mpeg',
+          ptt: true, // send as voice note
+        },
+        { quoted: m },
+      );
 
       // Cleanup async
-      setTimeout(() => { try { fs.rmSync(outPath, { force: true }); } catch {} }, 60_000).unref();
+      setTimeout(() => {
+        try {
+          fs.rmSync(outPath, { force: true });
+        } catch {}
+      }, 60_000).unref();
 
       await ctx.react('✅');
     } catch (err) {

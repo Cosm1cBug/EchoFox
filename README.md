@@ -17,7 +17,8 @@
 
 ## ✨ Features
 
-### Core 
+### Core
+
 - 🔌 **Baileys 7.x** with the recommended retry, group-metadata, and signal-key caches wired in
 - 🧩 **Folder-based command registry** with hot-reload, alias resolution, and auto-skip of commands missing API keys
 - 📦 **Pluggable store backend** — SQLite (default), Postgres, MongoDB, or Redis
@@ -32,7 +33,8 @@
 - 🌐 **Dual prefix** — `.` for users, `$` for admins
 - 🧪 **Zod-validated config** with legacy support
 
-### AI service 
+### AI service
+
 - 🤖 **4 LLM providers** out of the box: **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **local Ollama**
 - 🛠️ **12 intel-focused tools** — VirusTotal, AlienVault OTX, GitHub releases/advisories, Wikipedia, SSRF-guarded `fetch_url`, plus 5 read-only WhatsApp store queries
 - 🎭 **Personas** — `threat-intel` (default, security-focused) / `general` / `custom`
@@ -40,14 +42,16 @@
 - ✋ **Per-chat opt-in** — no surprise replies; users explicitly enable with `.ai on`
 - 💰 **Hard daily USD cost cap** with per-provider pricing table; rate limits **30/user/hour** + **100/chat/day**
 
-### Telegram log bridge 
+### Telegram log bridge
+
 - 📡 **Outbound-only** mirror of WhatsApp log channels (`syslogs`, `botLogs`, `errLogs`, …) to Telegram chats/channels
 - 🔌 **Zero new dependencies** — raw HTTPS to `api.telegram.org` over the existing circuit-breaker
 - ⚡ **2-second batching** for info-level logs; `error`/`fatal` flushes **immediately**
 - 🎯 **Per-channel routing** — different WhatsApp log channels can go to different Telegram destinations
 - 💾 **Persistent AI rate-limit counters** (v1.3.0) survive bot restarts
 
-### Ops polish 
+### Ops polish
+
 - 🚀 **CI/CD auto-release** — `git push origin v1.x.x` triggers GitHub Release + Docker (GHCR + Docker Hub, multi-arch) + npm publish (with provenance) + Pages deploy in parallel
 - 📚 **VitePress docs site** auto-deployed to [cosm1cbug.github.io/echofox](https://cosm1cbug.github.io/echofox/)
 - 📊 **22 Grafana panels** out of the box (defaults + AI + Telegram + Signal Protocol Health)
@@ -60,10 +64,10 @@
 
 ### Prerequisites
 
-| | |
-|---|---|
-| Node.js | ≥ 20 (tested on 20 + 22 in CI) |
-| OS | Linux / macOS / Windows 11 |
+|          |                                                           |
+| -------- | --------------------------------------------------------- |
+| Node.js  | ≥ 20 (tested on 20 + 22 in CI)                            |
+| OS       | Linux / macOS / Windows 11                                |
 | WhatsApp | A real phone number you can scan a QR / pairing code from |
 
 ### Install
@@ -75,11 +79,13 @@ npm install
 ```
 
 Or use the published npm package:
+
 ```bash
 npm install echofox
 ```
 
 Or pull the Docker image:
+
 ```bash
 docker pull cosm1cbug/echofox:latest      # or :1.4, :1.4.2, :sha-abc1234
 ```
@@ -92,6 +98,7 @@ cp src/config.example.js src/config.js
 ```
 
 At minimum set:
+
 - `admins[]` — your own JID (e.g. `1234567890@s.whatsapp.net`)
 - `bot.timezone` — your IANA timezone
 
@@ -106,6 +113,7 @@ npm start
 On first run you'll see a QR code in the terminal. Open WhatsApp on your phone → **Settings → Linked Devices → Link a Device → scan it**.
 
 Alternatively, pairing code:
+
 ```js
 // src/config.js
 login: { type: 'PAIRING', phoneNumber: '1234567890' }
@@ -119,20 +127,20 @@ Then `npm start` prints an 8-character code; enter it on your phone in the same 
 
 The bot ships a React-based web dashboard at `:3001/dashboard`. **11 tabs** covering everything the bot tracks:
 
-| Tab | Shows |
-|---|---|
-| Overview | uptime, throughput, current load |
-| Groups | groups the bot is in + per-group activity |
-| Contacts | known contacts with extended status |
-| Presence | recently-active users with state icons |
-| Newsletters | WhatsApp channels the bot follows |
-| Subscriptions | RSS / AlienVault / VirusTotal subscriptions |
-| Labels | WA Business labels |
-| Blocklist | blocked JIDs |
-| Metrics | full Prometheus metric snapshot |
-| Diagnostics | self-test report (config, store, auth, network) |
-| Alerts | active built-in alert rules |
-| **AI** | config, cost-cap progress bar, per-day usage table, opted-in chats |
+| Tab           | Shows                                                              |
+| ------------- | ------------------------------------------------------------------ |
+| Overview      | uptime, throughput, current load                                   |
+| Groups        | groups the bot is in + per-group activity                          |
+| Contacts      | known contacts with extended status                                |
+| Presence      | recently-active users with state icons                             |
+| Newsletters   | WhatsApp channels the bot follows                                  |
+| Subscriptions | RSS / AlienVault / VirusTotal subscriptions                        |
+| Labels        | WA Business labels                                                 |
+| Blocklist     | blocked JIDs                                                       |
+| Metrics       | full Prometheus metric snapshot                                    |
+| Diagnostics   | self-test report (config, store, auth, network)                    |
+| Alerts        | active built-in alert rules                                        |
+| **AI**        | config, cost-cap progress bar, per-day usage table, opted-in chats |
 
 ### Development
 
@@ -159,14 +167,14 @@ Run `.menu` in WhatsApp to see the live list — 30+ commands across `general`, 
 
 Highlights:
 
-| Category | Commands |
-|---|---|
-| AI (v1.2.0+) | `.ai status` / `on` / `off` / `clear` / `persona` / `provider` / `model` |
-| Intel | `.virustotal`, `.alienvault`, `.thehackersnews`, `.rss`, `.github`, `.vtwatch` |
-| Download | `.song`, `.video`, `.mediafire`, … |
-| Convert | `.sticker`, `.toimg`, `.tts` |
-| Group | `.add`, `.kick`, `.promote`, `.demote`, `.link`, `.approve`, … |
-| Admin (`$`) | `$healthcheck`, `$serverinfo`, `$ai-admin stats`, … |
+| Category     | Commands                                                                       |
+| ------------ | ------------------------------------------------------------------------------ |
+| AI (v1.2.0+) | `.ai status` / `on` / `off` / `clear` / `persona` / `provider` / `model`       |
+| Intel        | `.virustotal`, `.alienvault`, `.thehackersnews`, `.rss`, `.github`, `.vtwatch` |
+| Download     | `.song`, `.video`, `.mediafire`, …                                             |
+| Convert      | `.sticker`, `.toimg`, `.tts`                                                   |
+| Group        | `.add`, `.kick`, `.promote`, `.demote`, `.link`, `.approve`, …                 |
+| Admin (`$`)  | `$healthcheck`, `$serverinfo`, `$ai-admin stats`, …                            |
 
 See [`docs/commands.md`](./docs/commands.md) for the full auto-generated catalogue.
 
@@ -189,6 +197,7 @@ ai: {
 ```
 
 Then in any chat:
+
 ```
 .ai on
 hey echofox, what's the latest on log4j
@@ -222,10 +231,10 @@ Full guide: [`docs/guide/telegram.md`](./docs/guide/telegram.md) or [the docs si
 
 ## 🏗️ Architecture
 
-``` 
+```
                 ┌─────────────┐
                 │bootstrap.js │  ← supervisor (PM2-like; restarts on crash)
-                │:3000/healthz│ 
+                │:3000/healthz│
                 │:3000/metrics│
                 └──────┬──────┘
                        │ fork()
@@ -258,68 +267,68 @@ Edit `src/config.js`. Every field has a sensible default; you can leave most emp
 
 ### Core sections
 
-| Path | Type | Default | Description |
-|---|---|---|---|
-| `bot.name`              | string  | `"EchoFox"`     | Bot display name |
-| `bot.prefix`            | string\|RegExp | `"."`  | User-command prefix |
-| `bot.adminPrefix`       | string\|RegExp | `"$"`  | Admin-command prefix |
-| `bot.sessionName`       | string  | `"@session"`    | Folder name for WA auth files |
-| `bot.timezone`          | string  | `"Asia/Kolkata"`| IANA timezone for logs / scheduling |
-| `bot.public`            | boolean | `true`          | `false` = admin-only mode |
-| `features.readMessages` | boolean | `true`          | Mark incoming msgs as read |
-| `features.readStatus`   | boolean | `true`          | Mark statuses as read |
-| `features.antiCall`     | boolean | `false`         | Auto-reject incoming calls |
-| `features.syncHistory`  | boolean | `true`          | Pull full history on first login |
-| `login.type`            | enum    | `"QR"`          | `"QR"` or `"PAIRING"` |
-| `login.phoneNumber`     | string  | `""`            | Required if `type="PAIRING"` (digits only) |
-| `auth.method`           | enum    | `"MULTIFILE"`   | `"MULTIFILE"` / `"REDIS"` / `"SQLITE"` |
-| `storeDB.type`          | enum    | `"SQLITE"`      | `"SQLITE"` / `"POSTGRES"` / `"MONGODB"` / `"REDIS"` |
-| `dashboard.enabled`     | boolean | `false`         | Built-in web UI |
-| `dashboard.port`        | number  | `3001`          | |
-| `dashboard.password`    | string  | `"change-me-please"` | ⚠️ change this |
+| Path                    | Type           | Default              | Description                                         |
+| ----------------------- | -------------- | -------------------- | --------------------------------------------------- |
+| `bot.name`              | string         | `"EchoFox"`          | Bot display name                                    |
+| `bot.prefix`            | string\|RegExp | `"."`                | User-command prefix                                 |
+| `bot.adminPrefix`       | string\|RegExp | `"$"`                | Admin-command prefix                                |
+| `bot.sessionName`       | string         | `"@session"`         | Folder name for WA auth files                       |
+| `bot.timezone`          | string         | `"Asia/Kolkata"`     | IANA timezone for logs / scheduling                 |
+| `bot.public`            | boolean        | `true`               | `false` = admin-only mode                           |
+| `features.readMessages` | boolean        | `true`               | Mark incoming msgs as read                          |
+| `features.readStatus`   | boolean        | `true`               | Mark statuses as read                               |
+| `features.antiCall`     | boolean        | `false`              | Auto-reject incoming calls                          |
+| `features.syncHistory`  | boolean        | `true`               | Pull full history on first login                    |
+| `login.type`            | enum           | `"QR"`               | `"QR"` or `"PAIRING"`                               |
+| `login.phoneNumber`     | string         | `""`                 | Required if `type="PAIRING"` (digits only)          |
+| `auth.method`           | enum           | `"MULTIFILE"`        | `"MULTIFILE"` / `"REDIS"` / `"SQLITE"`              |
+| `storeDB.type`          | enum           | `"SQLITE"`           | `"SQLITE"` / `"POSTGRES"` / `"MONGODB"` / `"REDIS"` |
+| `dashboard.enabled`     | boolean        | `false`              | Built-in web UI                                     |
+| `dashboard.port`        | number         | `3001`               |                                                     |
+| `dashboard.password`    | string         | `"change-me-please"` | ⚠️ change this                                      |
 
 ### AI section
 
-| Path | Type | Default | Description |
-|---|---|---|---|
-| `ai.enabled`            | boolean | `false` | Master switch |
-| `ai.defaultProvider`    | enum    | `'openai'` | `openai` / `gemini` / `anthropic` / `local` |
-| `ai.model`              | string  | `'gpt-4o-mini'` | Provider-specific model name |
-| `ai.maxTokens`          | number  | `800` | Per-response token cap |
-| `ai.costCapPerDayUsd`   | number  | `5` | Hard daily cap — bot refuses to reply past this |
-| `ai.persona`            | enum    | `'threat-intel'` | `threat-intel` / `general` / `custom` |
-| `ai.memoryTurns`        | number  | `20` | Rolling memory window (10 user + 10 assistant) |
-| `ai.optInDefault`       | enum    | `'off'` | `'on'` to auto-enable in every chat |
-| `ai.rateLimitPerUserPerHour` | number | `30` | |
-| `ai.rateLimitPerChatPerDay`  | number | `100` | |
-| `ai.enableToolCalling`  | boolean | `true` | |
-| `ai.toolWhitelist[]`    | array   | 12 tools | Which intel tools the model can call |
-| `ai.providers.openai.apiKey` | string | `''` | |
-| `ai.providers.gemini.apiKey` | string | `''` | |
-| `ai.providers.anthropic.apiKey` | string | `''` | |
-| `ai.providers.local.baseUrl` | string | `'http://localhost:11434'` | Ollama endpoint |
+| Path                            | Type    | Default                    | Description                                     |
+| ------------------------------- | ------- | -------------------------- | ----------------------------------------------- |
+| `ai.enabled`                    | boolean | `false`                    | Master switch                                   |
+| `ai.defaultProvider`            | enum    | `'openai'`                 | `openai` / `gemini` / `anthropic` / `local`     |
+| `ai.model`                      | string  | `'gpt-4o-mini'`            | Provider-specific model name                    |
+| `ai.maxTokens`                  | number  | `800`                      | Per-response token cap                          |
+| `ai.costCapPerDayUsd`           | number  | `5`                        | Hard daily cap — bot refuses to reply past this |
+| `ai.persona`                    | enum    | `'threat-intel'`           | `threat-intel` / `general` / `custom`           |
+| `ai.memoryTurns`                | number  | `20`                       | Rolling memory window (10 user + 10 assistant)  |
+| `ai.optInDefault`               | enum    | `'off'`                    | `'on'` to auto-enable in every chat             |
+| `ai.rateLimitPerUserPerHour`    | number  | `30`                       |                                                 |
+| `ai.rateLimitPerChatPerDay`     | number  | `100`                      |                                                 |
+| `ai.enableToolCalling`          | boolean | `true`                     |                                                 |
+| `ai.toolWhitelist[]`            | array   | 12 tools                   | Which intel tools the model can call            |
+| `ai.providers.openai.apiKey`    | string  | `''`                       |                                                 |
+| `ai.providers.gemini.apiKey`    | string  | `''`                       |                                                 |
+| `ai.providers.anthropic.apiKey` | string  | `''`                       |                                                 |
+| `ai.providers.local.baseUrl`    | string  | `'http://localhost:11434'` | Ollama endpoint                                 |
 
 ### Telegram section
 
-| Path | Type | Default | Description |
-|---|---|---|---|
-| `telegram.enabled`   | boolean | `false` | |
-| `telegram.botToken`  | string  | `''`    | from @BotFather |
-| `telegram.routing.{syslogs,botLogs,userLogs,groupUpdates,callLogs,errLogs,movGroup}` | string | `''` | Telegram chat id or `@channel` per WA log channel |
-| `telegram.parseMode` | enum    | `'HTML'` | `HTML` / `MarkdownV2` / `plain` |
-| `telegram.batchMs`   | number  | `2000`   | Errors flush instantly regardless |
-| `telegram.maxChunkChars` | number | `3800` | Telegram cap is 4096 |
+| Path                                                                                 | Type    | Default  | Description                                       |
+| ------------------------------------------------------------------------------------ | ------- | -------- | ------------------------------------------------- |
+| `telegram.enabled`                                                                   | boolean | `false`  |                                                   |
+| `telegram.botToken`                                                                  | string  | `''`     | from @BotFather                                   |
+| `telegram.routing.{syslogs,botLogs,userLogs,groupUpdates,callLogs,errLogs,movGroup}` | string  | `''`     | Telegram chat id or `@channel` per WA log channel |
+| `telegram.parseMode`                                                                 | enum    | `'HTML'` | `HTML` / `MarkdownV2` / `plain`                   |
+| `telegram.batchMs`                                                                   | number  | `2000`   | Errors flush instantly regardless                 |
+| `telegram.maxChunkChars`                                                             | number  | `3800`   | Telegram cap is 4096                              |
 
 ### Alerts section
 
-| Path | Type | Default | Description |
-|---|---|---|---|
-| `alerts.enabled`             | boolean | `true` | |
-| `alerts.windowMinutes`       | number  | `60`   | rolling window |
-| `alerts.minInvocations`      | number  | `10`   | need at least N runs to alert |
-| `alerts.failureRateThreshold`| number  | `0.30` | per-command failure rate trigger |
-| `alerts.rules.aiCostPct`     | object  | `{threshold: 0.80, cooldownMinutes: 60}` | Fire when daily AI cost reaches this fraction of cap |
-| `alerts.rules.telegramFailureRate`     | object | `{threshold: 0.20, minSends: 10, cooldownMinutes: 30}` | Fire when Telegram send-failure rate is high |
+| Path                               | Type    | Default                                                | Description                                          |
+| ---------------------------------- | ------- | ------------------------------------------------------ | ---------------------------------------------------- |
+| `alerts.enabled`                   | boolean | `true`                                                 |                                                      |
+| `alerts.windowMinutes`             | number  | `60`                                                   | rolling window                                       |
+| `alerts.minInvocations`            | number  | `10`                                                   | need at least N runs to alert                        |
+| `alerts.failureRateThreshold`      | number  | `0.30`                                                 | per-command failure rate trigger                     |
+| `alerts.rules.aiCostPct`           | object  | `{threshold: 0.80, cooldownMinutes: 60}`               | Fire when daily AI cost reaches this fraction of cap |
+| `alerts.rules.telegramFailureRate` | object  | `{threshold: 0.20, minSends: 10, cooldownMinutes: 30}` | Fire when Telegram send-failure rate is high         |
 
 Every field can also be set via an environment variable:
 `ECHOFOX_<SECTION>_<CAMELCASEKEY>` — e.g. `ECHOFOX_APIS_OMDB_APIKEY=xyz`, `ECHOFOX_STOREDB_TYPE=POSTGRES`.
@@ -359,20 +368,20 @@ curl http://localhost:3001/metrics       # store-backed counters (AI + Telegram 
 
 Prometheus metrics exposed (28 counters + 9 gauges across 2 endpoints):
 
-| Endpoint | Metric | Type | Description |
-|---|---|---|---|
-| `:3000` | `echofox_worker_up`                       | gauge   | 1 if the worker is alive |
-| `:3000` | `echofox_worker_restarts_total`           | counter | Cumulative supervisor restarts |
-| `:3001` | `echofox_messages_received_total`         | counter | Inbound messages |
-| `:3001` | `echofox_commands_total`                  | counter | Command invocations |
-| `:3001` | `echofox_ai_chat_requests_total`          | counter | AI chat requests |
-| `:3001` | `echofox_ai_tokens_prompt_total`          | counter | Prompt tokens consumed |
-| `:3001` | `echofox_ai_tokens_completion_total`      | counter | Completion tokens consumed |
-| `:3001` | `echofox_ai_cost_usd_today`               | gauge   | Today's AI spend |
-| `:3001` | `echofox_telegram_forwards_total`         | counter | Telegram log forwards |
-| `:3001` | `echofox_telegram_send_failures_total`    | counter | Telegram send failures |
-| `:3001` | `echofox_signal_decryption_failures_total`| counter | Baileys decryption errors |
-| `:3001` | `echofox_signal_session_recoveries_total` | counter | Auto-triggered session resets |
+| Endpoint | Metric                                     | Type    | Description                    |
+| -------- | ------------------------------------------ | ------- | ------------------------------ |
+| `:3000`  | `echofox_worker_up`                        | gauge   | 1 if the worker is alive       |
+| `:3000`  | `echofox_worker_restarts_total`            | counter | Cumulative supervisor restarts |
+| `:3001`  | `echofox_messages_received_total`          | counter | Inbound messages               |
+| `:3001`  | `echofox_commands_total`                   | counter | Command invocations            |
+| `:3001`  | `echofox_ai_chat_requests_total`           | counter | AI chat requests               |
+| `:3001`  | `echofox_ai_tokens_prompt_total`           | counter | Prompt tokens consumed         |
+| `:3001`  | `echofox_ai_tokens_completion_total`       | counter | Completion tokens consumed     |
+| `:3001`  | `echofox_ai_cost_usd_today`                | gauge   | Today's AI spend               |
+| `:3001`  | `echofox_telegram_forwards_total`          | counter | Telegram log forwards          |
+| `:3001`  | `echofox_telegram_send_failures_total`     | counter | Telegram send failures         |
+| `:3001`  | `echofox_signal_decryption_failures_total` | counter | Baileys decryption errors      |
+| `:3001`  | `echofox_signal_session_recoveries_total`  | counter | Auto-triggered session resets  |
 
 …plus 18 more. Full list at `src/store/schema/stats.js`.
 
@@ -394,6 +403,7 @@ docker run -d --name echofox \
 ```
 
 Tag scheme:
+
 - `:1.4.2`, `:1.3.0`, etc. — precise (immutable)
 - `:1.4`, `:1.3`, `:1.2` — major.minor (auto-updates with patches)
 - `:latest` — always newest stable
@@ -413,6 +423,7 @@ docker compose --profile observability up -d
 ```
 
 ### Full guides
+
 - [docs/deploy/docker.md](./docs/deploy/docker.md) — single container, env vars, volumes, updates
 - [docs/deploy/docker-compose.md](./docs/deploy/docker-compose.md) — Compose + observability profile
 - [docs/deploy/podman.md](./docs/deploy/podman.md) — rootless alternative
@@ -422,7 +433,7 @@ docker compose --profile observability up -d
 
 ---
 
-## 🚀 Releasing a new version *(maintainers)*
+## 🚀 Releasing a new version _(maintainers)_
 
 Tag-driven, fully automated:
 
@@ -438,6 +449,7 @@ git push origin --tags
 ```
 
 Within ~5 minutes:
+
 - ✅ GitHub Release with `RELEASE_NOTES_v<v>.md` body + source tarball
 - ✅ Multi-arch Docker images on GHCR + Docker Hub
 - ✅ npm publish with provenance (SLSA attestation)
@@ -452,6 +464,7 @@ Required secrets (all optional): `NPM_TOKEN`, `DOCKERHUB_USERNAME`, `DOCKERHUB_T
 Pull requests welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 CI gates every PR with:
+
 - ESLint + Prettier
 - 147 automated tests (Node 20 + 22 matrix)
 - AGPL header check (every `.js` file must have one)
@@ -467,6 +480,7 @@ By participating, you agree to behave kindly and constructively.
 Found a vulnerability? Please report it privately — see [SECURITY.md](./SECURITY.md).
 
 Hardening summary:
+
 - 🔒 Per-chat AI opt-in — no surprise replies
 - 🔒 AI fetch_url SSRF guard — refuses RFC 1918 / link-local / loopback
 - 🔒 Telegram bridge is strictly outbound — no inbound command surface
@@ -492,4 +506,4 @@ In short: if you run a modified version of EchoFox as a service, you must offer 
 
 ---
 
-*EchoFox is not affiliated with WhatsApp or Meta. WhatsApp™ is a trademark of WhatsApp LLC.*
+_EchoFox is not affiliated with WhatsApp or Meta. WhatsApp™ is a trademark of WhatsApp LLC._

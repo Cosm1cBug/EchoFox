@@ -36,17 +36,22 @@ function _getClient() {
   return _client;
 }
 
-function _resetClientForTests() { _client = null; _override = null; }
-function __testOverride(client) { _override = client; }
+function _resetClientForTests() {
+  _client = null;
+  _override = null;
+}
+function __testOverride(client) {
+  _override = client;
+}
 
 function toOpenAITools(tools = []) {
   if (!tools.length) return undefined;
   return tools.map((t) => ({
     type: 'function',
     function: {
-      name:        t.name,
+      name: t.name,
       description: t.description,
-      parameters:  t.parameters,
+      parameters: t.parameters,
     },
   }));
 }
@@ -59,18 +64,21 @@ function toOpenAIMessages(system, history) {
   for (const t of history) {
     if (t.role === 'tool') {
       out.push({
-        role:           'tool',
-        tool_call_id:   t.toolId || `tool_${Date.now()}`,
-        content:        typeof t.content === 'string' ? t.content : JSON.stringify(t.content),
+        role: 'tool',
+        tool_call_id: t.toolId || `tool_${Date.now()}`,
+        content: typeof t.content === 'string' ? t.content : JSON.stringify(t.content),
       });
     } else if (t.role === 'assistant' && t.toolCalls && t.toolCalls.length) {
       out.push({
-        role:       'assistant',
-        content:    t.content || '',
+        role: 'assistant',
+        content: t.content || '',
         tool_calls: t.toolCalls.map((tc) => ({
-          id:       tc.id,
-          type:     'function',
-          function: { name: tc.name, arguments: typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args || {}) },
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args || {}),
+          },
         })),
       });
     } else {
@@ -83,14 +91,14 @@ function toOpenAIMessages(system, history) {
 async function chat({ system, history = [], tools = [], model, maxTokens, temperature }) {
   const client = _getClient();
   const req = {
-    model:      model || config.ai?.model || 'gpt-4o-mini',
-    messages:   toOpenAIMessages(system, history),
+    model: model || config.ai?.model || 'gpt-4o-mini',
+    messages: toOpenAIMessages(system, history),
     max_tokens: Number(maxTokens) || Number(config.ai?.maxTokens) || 800,
   };
   if (typeof temperature === 'number') req.temperature = temperature;
   const oaiTools = toOpenAITools(tools);
   if (oaiTools) {
-    req.tools       = oaiTools;
+    req.tools = oaiTools;
     req.tool_choice = 'auto';
   }
 
@@ -102,21 +110,24 @@ async function chat({ system, history = [], tools = [], model, maxTokens, temper
   if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
     toolCalls = msg.tool_calls.map((tc) => {
       let args = {};
-      try { args = tc.function?.arguments ? JSON.parse(tc.function.arguments) : {}; }
-      catch { args = { __raw: tc.function?.arguments }; }
+      try {
+        args = tc.function?.arguments ? JSON.parse(tc.function.arguments) : {};
+      } catch {
+        args = { __raw: tc.function?.arguments };
+      }
       return { id: tc.id, name: tc.function?.name, args };
     });
   }
 
   return {
-    content:   msg.content || '',
+    content: msg.content || '',
     toolCalls,
     usage: {
-      promptTokens:     r.usage?.prompt_tokens     || 0,
+      promptTokens: r.usage?.prompt_tokens || 0,
       completionTokens: r.usage?.completion_tokens || 0,
     },
     finishReason: choice?.finish_reason,
-    model:        r.model,
+    model: r.model,
   };
 }
 

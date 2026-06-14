@@ -7,21 +7,22 @@
 
 function _parseMeta(raw) {
   if (raw == null || raw === '') return null;
-  try { return JSON.parse(raw); } catch { return null; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 const Database = require('better-sqlite3');
-const path     = require('node:path');
+const path = require('node:path');
 const { existsSync, mkdirSync } = require('node:fs');
 const { LRUCache } = require('lru-cache');
-const { proto }    = require('@whiskeysockets/baileys');
+const { proto } = require('@whiskeysockets/baileys');
 const { config } = require('../lib/configLoader');
 const { SQL_DDL: PARTICIPANTS_DDL } = require('./schema/participants');
-const { SQL_DDL: STATS_DDL }        = require('./schema/stats');
-const {
-  SQL_DDL: EXTRAS_DDL,
-  applyMessagesMigration_sqlite,
-} = require('./schema/messages-extras');
+const { SQL_DDL: STATS_DDL } = require('./schema/stats');
+const { SQL_DDL: EXTRAS_DDL, applyMessagesMigration_sqlite } = require('./schema/messages-extras');
 
 function makeSQLiteStore({ dbPath, logger, groupCache }) {
   const dir = path.dirname(dbPath);
@@ -239,154 +240,323 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
   applyMessagesMigration_sqlite(db);
 
   try {
-    const _ssCols = db.prepare(`PRAGMA table_info(service_subscribers)`).all().map((c) => c.name);
+    const _ssCols = db
+      .prepare(`PRAGMA table_info(service_subscribers)`)
+      .all()
+      .map((c) => c.name);
     if (!_ssCols.includes('meta')) {
       db.exec(`ALTER TABLE service_subscribers ADD COLUMN meta TEXT`);
     }
-  } catch (e) { logger.warn({ err: e }, 'service_subscribers.meta column ensure failed'); }
+  } catch (e) {
+    logger.warn({ err: e }, 'service_subscribers.meta column ensure failed');
+  }
 
   try {
-    const _tables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all().map((r) => r.name);
-    if (_tables.includes('thehackersnews_sent_articles') && !_tables.includes('service_sent_items')) {
+    const _tables = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table'`)
+      .all()
+      .map((r) => r.name);
+    if (
+      _tables.includes('thehackersnews_sent_articles') &&
+      !_tables.includes('service_sent_items')
+    ) {
       db.exec(`ALTER TABLE thehackersnews_sent_articles RENAME TO service_sent_items`);
       db.exec(`ALTER TABLE service_sent_items RENAME COLUMN article_url TO item_url`);
     }
-  } catch (e) { logger.warn({ err: e }, 'service_sent_items rename guard failed'); }
+  } catch (e) {
+    logger.warn({ err: e }, 'service_sent_items rename guard failed');
+  }
 
   try {
-    const _cCols = db.prepare(`PRAGMA table_info(chats)`).all().map((c) => c.name);
-    if (!_cCols.includes('pinned'))       db.exec(`ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`);
-    if (!_cCols.includes('muted_until'))  db.exec(`ALTER TABLE chats ADD COLUMN muted_until INTEGER`);
-    if (!_cCols.includes('archived'))     db.exec(`ALTER TABLE chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`);
-    if (!_cCols.includes('deleted_at'))   db.exec(`ALTER TABLE chats ADD COLUMN deleted_at INTEGER`);
-  } catch (e) { logger.warn({ err: e }, 'chats v1.1.0 column upgrade failed'); }
+    const _cCols = db
+      .prepare(`PRAGMA table_info(chats)`)
+      .all()
+      .map((c) => c.name);
+    if (!_cCols.includes('pinned'))
+      db.exec(`ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`);
+    if (!_cCols.includes('muted_until'))
+      db.exec(`ALTER TABLE chats ADD COLUMN muted_until INTEGER`);
+    if (!_cCols.includes('archived'))
+      db.exec(`ALTER TABLE chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`);
+    if (!_cCols.includes('deleted_at')) db.exec(`ALTER TABLE chats ADD COLUMN deleted_at INTEGER`);
+  } catch (e) {
+    logger.warn({ err: e }, 'chats v1.1.0 column upgrade failed');
+  }
 
   try {
-    const _ctCols = db.prepare(`PRAGMA table_info(contacts)`).all().map((c) => c.name);
-    if (!_ctCols.includes('status'))        db.exec(`ALTER TABLE contacts ADD COLUMN status TEXT`);
-    if (!_ctCols.includes('verified_name')) db.exec(`ALTER TABLE contacts ADD COLUMN verified_name TEXT`);
-  } catch (e) { logger.warn({ err: e }, 'contacts v1.1.0 column upgrade failed'); }
+    const _ctCols = db
+      .prepare(`PRAGMA table_info(contacts)`)
+      .all()
+      .map((c) => c.name);
+    if (!_ctCols.includes('status')) db.exec(`ALTER TABLE contacts ADD COLUMN status TEXT`);
+    if (!_ctCols.includes('verified_name'))
+      db.exec(`ALTER TABLE contacts ADD COLUMN verified_name TEXT`);
+  } catch (e) {
+    logger.warn({ err: e }, 'contacts v1.1.0 column upgrade failed');
+  }
 
   const stmts = {
-    msgInsert: db.prepare(`INSERT OR REPLACE INTO messages (jid,id,from_me,participant,msg,ts) VALUES (@jid,@id,@fromMe,@participant,@msg,@ts)`),
-    msgGet:    db.prepare(`SELECT msg FROM messages WHERE jid = ? AND id = ?`),
-    msgPrune:  db.prepare(`DELETE FROM messages WHERE ts < ?`),
+    msgInsert: db.prepare(
+      `INSERT OR REPLACE INTO messages (jid,id,from_me,participant,msg,ts) VALUES (@jid,@id,@fromMe,@participant,@msg,@ts)`,
+    ),
+    msgGet: db.prepare(`SELECT msg FROM messages WHERE jid = ? AND id = ?`),
+    msgPrune: db.prepare(`DELETE FROM messages WHERE ts < ?`),
 
-    chatUpsert: db.prepare(`INSERT INTO chats (jid,name,unread,ts) VALUES (?,?,?,?) ON CONFLICT(jid) DO UPDATE SET name=excluded.name, unread=excluded.unread, ts=excluded.ts`),
-    contactUpsert: db.prepare(`INSERT INTO contacts (jid,name,notify,img_url) VALUES (?,?,?,?) ON CONFLICT(jid) DO UPDATE SET name=COALESCE(excluded.name,name), notify=COALESCE(excluded.notify,notify), img_url=COALESCE(excluded.img_url,img_url)`),
+    chatUpsert: db.prepare(
+      `INSERT INTO chats (jid,name,unread,ts) VALUES (?,?,?,?) ON CONFLICT(jid) DO UPDATE SET name=excluded.name, unread=excluded.unread, ts=excluded.ts`,
+    ),
+    contactUpsert: db.prepare(
+      `INSERT INTO contacts (jid,name,notify,img_url) VALUES (?,?,?,?) ON CONFLICT(jid) DO UPDATE SET name=COALESCE(excluded.name,name), notify=COALESCE(excluded.notify,notify), img_url=COALESCE(excluded.img_url,img_url)`,
+    ),
     contactExists: db.prepare(`SELECT 1 FROM contacts WHERE jid = ? LIMIT 1`),
-    
-    groupUpsert: db.prepare(`INSERT OR REPLACE INTO groups (jid,subject,creation,meta) VALUES (?,?,?,?)`),
-    groupGet:   db.prepare(`SELECT meta FROM groups WHERE jid = ?`),
+
+    groupUpsert: db.prepare(
+      `INSERT OR REPLACE INTO groups (jid,subject,creation,meta) VALUES (?,?,?,?)`,
+    ),
+    groupGet: db.prepare(`SELECT meta FROM groups WHERE jid = ?`),
     groupCount: db.prepare(`SELECT COUNT(*) AS n FROM groups`),
     groupsList: db.prepare(`SELECT jid, subject, meta FROM groups ORDER BY subject COLLATE NOCASE`),
 
-    statUpsert: db.prepare(`INSERT INTO stats (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = value + excluded.value`),
-    statsAll:   db.prepare(`SELECT key, value FROM stats`),
+    statUpsert: db.prepare(
+      `INSERT INTO stats (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = value + excluded.value`,
+    ),
+    statsAll: db.prepare(`SELECT key, value FROM stats`),
 
-    gaugeUpsert: db.prepare(`INSERT INTO stats_gauges (key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`),
-    gaugesAll:   db.prepare(`SELECT key, value FROM stats_gauges`),
+    gaugeUpsert: db.prepare(
+      `INSERT INTO stats_gauges (key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+    ),
+    gaugesAll: db.prepare(`SELECT key, value FROM stats_gauges`),
 
-    partInsert: db.prepare(`INSERT INTO group_participants_events (group_jid, participant, action, actor, ts) VALUES (?, ?, ?, ?, ?)`),
-    partHistory: db.prepare(`SELECT participant, action, actor, ts FROM group_participants_events WHERE group_jid = ? ORDER BY ts DESC LIMIT ?`),
-    partCurrent: db.prepare(`SELECT participant, MAX(ts) AS last_ts, (SELECT action FROM group_participants_events e2 WHERE e2.group_jid = e.group_jid AND e2.participant = e.participant ORDER BY ts DESC LIMIT 1) AS last_action FROM group_participants_events e WHERE group_jid = ? GROUP BY participant`),
-    uniqueUsersCount: db.prepare(`SELECT COUNT(DISTINCT participant) AS n FROM group_participants_events`),
+    partInsert: db.prepare(
+      `INSERT INTO group_participants_events (group_jid, participant, action, actor, ts) VALUES (?, ?, ?, ?, ?)`,
+    ),
+    partHistory: db.prepare(
+      `SELECT participant, action, actor, ts FROM group_participants_events WHERE group_jid = ? ORDER BY ts DESC LIMIT ?`,
+    ),
+    partCurrent: db.prepare(
+      `SELECT participant, MAX(ts) AS last_ts, (SELECT action FROM group_participants_events e2 WHERE e2.group_jid = e.group_jid AND e2.participant = e.participant ORDER BY ts DESC LIMIT 1) AS last_action FROM group_participants_events e WHERE group_jid = ? GROUP BY participant`,
+    ),
+    uniqueUsersCount: db.prepare(
+      `SELECT COUNT(DISTINCT participant) AS n FROM group_participants_events`,
+    ),
 
-    getSubscribers: db.prepare(`SELECT jid, last_seen_pulse_ts, meta FROM service_subscribers WHERE service = ?`),
-    addSubscriber: db.prepare(`INSERT OR IGNORE INTO service_subscribers (service, jid, last_seen_pulse_ts, meta) VALUES (?, ?, NULL, ?)`),
+    getSubscribers: db.prepare(
+      `SELECT jid, last_seen_pulse_ts, meta FROM service_subscribers WHERE service = ?`,
+    ),
+    addSubscriber: db.prepare(
+      `INSERT OR IGNORE INTO service_subscribers (service, jid, last_seen_pulse_ts, meta) VALUES (?, ?, NULL, ?)`,
+    ),
     removeSubscriber: db.prepare(`DELETE FROM service_subscribers WHERE service = ? AND jid = ?`),
-    updateSubscriberTs: db.prepare(`UPDATE service_subscribers SET last_seen_pulse_ts = ? WHERE service = ? AND jid = ?`),
-    isSubscriber: db.prepare(`SELECT 1 FROM service_subscribers WHERE service = ? AND jid = ? LIMIT 1`),
-    getSubscriberMeta: db.prepare(`SELECT meta FROM service_subscribers WHERE service = ? AND jid = ?`),
-    updateSubscriberMeta: db.prepare(`UPDATE service_subscribers SET meta = ? WHERE service = ? AND jid = ?`),
+    updateSubscriberTs: db.prepare(
+      `UPDATE service_subscribers SET last_seen_pulse_ts = ? WHERE service = ? AND jid = ?`,
+    ),
+    isSubscriber: db.prepare(
+      `SELECT 1 FROM service_subscribers WHERE service = ? AND jid = ? LIMIT 1`,
+    ),
+    getSubscriberMeta: db.prepare(
+      `SELECT meta FROM service_subscribers WHERE service = ? AND jid = ?`,
+    ),
+    updateSubscriberMeta: db.prepare(
+      `UPDATE service_subscribers SET meta = ? WHERE service = ? AND jid = ?`,
+    ),
 
-    hasSentItem: db.prepare(`SELECT 1 FROM service_sent_items WHERE service = ? AND jid = ? AND item_url = ?`),
-    recordSentItem: db.prepare(`INSERT OR IGNORE INTO service_sent_items (service, jid, item_url, sent_at) VALUES (?, ?, ?, ?)`),
+    hasSentItem: db.prepare(
+      `SELECT 1 FROM service_sent_items WHERE service = ? AND jid = ? AND item_url = ?`,
+    ),
+    recordSentItem: db.prepare(
+      `INSERT OR IGNORE INTO service_sent_items (service, jid, item_url, sent_at) VALUES (?, ?, ?, ?)`,
+    ),
 
-    editInsert: db.prepare(`INSERT INTO message_edits (jid, message_id, editor, old_body, new_body, ts) VALUES (?, ?, ?, ?, ?, ?)`),
-    editsByMsg: db.prepare(`SELECT editor, old_body, new_body, ts FROM message_edits WHERE jid = ? AND message_id = ? ORDER BY ts ASC`),
+    editInsert: db.prepare(
+      `INSERT INTO message_edits (jid, message_id, editor, old_body, new_body, ts) VALUES (?, ?, ?, ?, ?, ?)`,
+    ),
+    editsByMsg: db.prepare(
+      `SELECT editor, old_body, new_body, ts FROM message_edits WHERE jid = ? AND message_id = ? ORDER BY ts ASC`,
+    ),
 
-    reactInsert: db.prepare(`INSERT INTO message_reactions (jid, message_id, reactor, emoji, ts) VALUES (?, ?, ?, ?, ?)`),
-    reactionsByMsg: db.prepare(`SELECT reactor, emoji, ts FROM message_reactions WHERE jid = ? AND message_id = ? ORDER BY ts ASC`),
+    reactInsert: db.prepare(
+      `INSERT INTO message_reactions (jid, message_id, reactor, emoji, ts) VALUES (?, ?, ?, ?, ?)`,
+    ),
+    reactionsByMsg: db.prepare(
+      `SELECT reactor, emoji, ts FROM message_reactions WHERE jid = ? AND message_id = ? ORDER BY ts ASC`,
+    ),
 
-    receiptUpsert: db.prepare(`INSERT INTO message_receipts (jid, message_id, recipient, status, ts) VALUES (?, ?, ?, ?, ?) ON CONFLICT(jid, message_id, recipient) DO UPDATE SET status = MAX(status, excluded.status), ts = excluded.ts`),
-    receiptsByMsg: db.prepare(`SELECT recipient, status, ts FROM message_receipts WHERE jid = ? AND message_id = ? ORDER BY ts ASC`),
+    receiptUpsert: db.prepare(
+      `INSERT INTO message_receipts (jid, message_id, recipient, status, ts) VALUES (?, ?, ?, ?, ?) ON CONFLICT(jid, message_id, recipient) DO UPDATE SET status = MAX(status, excluded.status), ts = excluded.ts`,
+    ),
+    receiptsByMsg: db.prepare(
+      `SELECT recipient, status, ts FROM message_receipts WHERE jid = ? AND message_id = ? ORDER BY ts ASC`,
+    ),
 
-    msgMarkDeletedExtra: db.prepare(`UPDATE messages SET deleted_at = ? WHERE jid = ? AND id = ? AND deleted_at IS NULL`),
-    chatMarkAllDeleted: db.prepare(`UPDATE messages SET deleted_at = ? WHERE jid = ? AND deleted_at IS NULL`),
+    msgMarkDeletedExtra: db.prepare(
+      `UPDATE messages SET deleted_at = ? WHERE jid = ? AND id = ? AND deleted_at IS NULL`,
+    ),
+    chatMarkAllDeleted: db.prepare(
+      `UPDATE messages SET deleted_at = ? WHERE jid = ? AND deleted_at IS NULL`,
+    ),
     msgUpdateBody: db.prepare(`UPDATE messages SET msg = ?, ts = ? WHERE jid = ? AND id = ?`),
-    msgUpdateStatus: db.prepare(`UPDATE messages SET status = MAX(IFNULL(status,0), ?) WHERE jid = ? AND id = ?`),
-    deletedInGroup: db.prepare(`SELECT id, participant, deleted_at FROM messages WHERE jid = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT ?`),
+    msgUpdateStatus: db.prepare(
+      `UPDATE messages SET status = MAX(IFNULL(status,0), ?) WHERE jid = ? AND id = ?`,
+    ),
+    deletedInGroup: db.prepare(
+      `SELECT id, participant, deleted_at FROM messages WHERE jid = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT ?`,
+    ),
 
-    blocklistInsert:  db.prepare(`INSERT OR IGNORE INTO blocklist (jid, added_at) VALUES (?, ?)`),
-    blocklistRemove:  db.prepare(`DELETE FROM blocklist WHERE jid = ?`),
-    blocklistAll:     db.prepare(`SELECT jid, added_at FROM blocklist ORDER BY added_at DESC`),
-    blocklistClear:   db.prepare(`DELETE FROM blocklist`),
-    blocklistHas:     db.prepare(`SELECT 1 FROM blocklist WHERE jid = ? LIMIT 1`),
+    blocklistInsert: db.prepare(`INSERT OR IGNORE INTO blocklist (jid, added_at) VALUES (?, ?)`),
+    blocklistRemove: db.prepare(`DELETE FROM blocklist WHERE jid = ?`),
+    blocklistAll: db.prepare(`SELECT jid, added_at FROM blocklist ORDER BY added_at DESC`),
+    blocklistClear: db.prepare(`DELETE FROM blocklist`),
+    blocklistHas: db.prepare(`SELECT 1 FROM blocklist WHERE jid = ? LIMIT 1`),
 
-    presenceUpsert:   db.prepare(`INSERT INTO presence (jid, last_state, last_seen_ts, chat_jid, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(jid) DO UPDATE SET last_state=excluded.last_state, last_seen_ts=COALESCE(excluded.last_seen_ts, last_seen_ts), chat_jid=excluded.chat_jid, updated_at=excluded.updated_at`),
-    presenceGet:      db.prepare(`SELECT jid, last_state, last_seen_ts, chat_jid, updated_at FROM presence WHERE jid = ?`),
-    presenceInChat:   db.prepare(`SELECT jid, last_state, last_seen_ts, updated_at FROM presence WHERE chat_jid = ? ORDER BY updated_at DESC`),
-    presenceRecent:   db.prepare(`SELECT jid, last_state, last_seen_ts, chat_jid, updated_at FROM presence ORDER BY updated_at DESC LIMIT ?`),
+    presenceUpsert: db.prepare(
+      `INSERT INTO presence (jid, last_state, last_seen_ts, chat_jid, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(jid) DO UPDATE SET last_state=excluded.last_state, last_seen_ts=COALESCE(excluded.last_seen_ts, last_seen_ts), chat_jid=excluded.chat_jid, updated_at=excluded.updated_at`,
+    ),
+    presenceGet: db.prepare(
+      `SELECT jid, last_state, last_seen_ts, chat_jid, updated_at FROM presence WHERE jid = ?`,
+    ),
+    presenceInChat: db.prepare(
+      `SELECT jid, last_state, last_seen_ts, updated_at FROM presence WHERE chat_jid = ? ORDER BY updated_at DESC`,
+    ),
+    presenceRecent: db.prepare(
+      `SELECT jid, last_state, last_seen_ts, chat_jid, updated_at FROM presence ORDER BY updated_at DESC LIMIT ?`,
+    ),
 
-    chatUpdatePartial: db.prepare(`UPDATE chats SET name = COALESCE(?, name), unread = COALESCE(?, unread), ts = COALESCE(?, ts), pinned = COALESCE(?, pinned), muted_until = COALESCE(?, muted_until), archived = COALESCE(?, archived) WHERE jid = ?`),
-    chatMarkDeleted:  db.prepare(`UPDATE chats SET deleted_at = ? WHERE jid = ?`),
-    chatListAll:      db.prepare(`SELECT jid, name, unread, ts, pinned, muted_until, archived, deleted_at FROM chats ORDER BY ts DESC`),
-    chatGet:          db.prepare(`SELECT jid, name, unread, ts, pinned, muted_until, archived, deleted_at FROM chats WHERE jid = ?`),
+    chatUpdatePartial: db.prepare(
+      `UPDATE chats SET name = COALESCE(?, name), unread = COALESCE(?, unread), ts = COALESCE(?, ts), pinned = COALESCE(?, pinned), muted_until = COALESCE(?, muted_until), archived = COALESCE(?, archived) WHERE jid = ?`,
+    ),
+    chatMarkDeleted: db.prepare(`UPDATE chats SET deleted_at = ? WHERE jid = ?`),
+    chatListAll: db.prepare(
+      `SELECT jid, name, unread, ts, pinned, muted_until, archived, deleted_at FROM chats ORDER BY ts DESC`,
+    ),
+    chatGet: db.prepare(
+      `SELECT jid, name, unread, ts, pinned, muted_until, archived, deleted_at FROM chats WHERE jid = ?`,
+    ),
 
-    contactUpsertExt: db.prepare(`INSERT INTO contacts (jid, name, notify, img_url, status, verified_name) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(jid) DO UPDATE SET name=COALESCE(excluded.name,name), notify=COALESCE(excluded.notify,notify), img_url=COALESCE(excluded.img_url,img_url), status=COALESCE(excluded.status,status), verified_name=COALESCE(excluded.verified_name,verified_name)`),
-    contactGet:       db.prepare(`SELECT jid, name, notify, img_url, status, verified_name FROM contacts WHERE jid = ?`),
-    contactList:      db.prepare(`SELECT jid, name, notify, img_url, status, verified_name FROM contacts ORDER BY COALESCE(name, notify, jid) COLLATE NOCASE LIMIT ? OFFSET ?`),
-    contactCount:     db.prepare(`SELECT COUNT(*) AS n FROM contacts`),
+    contactUpsertExt: db.prepare(
+      `INSERT INTO contacts (jid, name, notify, img_url, status, verified_name) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(jid) DO UPDATE SET name=COALESCE(excluded.name,name), notify=COALESCE(excluded.notify,notify), img_url=COALESCE(excluded.img_url,img_url), status=COALESCE(excluded.status,status), verified_name=COALESCE(excluded.verified_name,verified_name)`,
+    ),
+    contactGet: db.prepare(
+      `SELECT jid, name, notify, img_url, status, verified_name FROM contacts WHERE jid = ?`,
+    ),
+    contactList: db.prepare(
+      `SELECT jid, name, notify, img_url, status, verified_name FROM contacts ORDER BY COALESCE(name, notify, jid) COLLATE NOCASE LIMIT ? OFFSET ?`,
+    ),
+    contactCount: db.prepare(`SELECT COUNT(*) AS n FROM contacts`),
 
-    labelUpsert:      db.prepare(`INSERT INTO labels (label_id, name, color, deleted, updated_at) VALUES (?, ?, ?, 0, ?) ON CONFLICT(label_id) DO UPDATE SET name=excluded.name, color=excluded.color, deleted=0, updated_at=excluded.updated_at`),
-    labelSoftDelete:  db.prepare(`UPDATE labels SET deleted = 1, updated_at = ? WHERE label_id = ?`),
-    labelGet:         db.prepare(`SELECT label_id, name, color, deleted, updated_at FROM labels WHERE label_id = ?`),
-    labelList:        db.prepare(`SELECT label_id, name, color, deleted, updated_at FROM labels WHERE deleted = 0 ORDER BY name COLLATE NOCASE`),
-    labelAssocInsert: db.prepare(`INSERT OR IGNORE INTO label_associations (label_id, target_type, target_jid, target_msg_id, associated_at) VALUES (?, ?, ?, ?, ?)`),
-    labelAssocRemove: db.prepare(`DELETE FROM label_associations WHERE label_id = ? AND target_type = ? AND target_jid = ? AND IFNULL(target_msg_id, '') = IFNULL(?, '')`),
-    labelAssocByLabel: db.prepare(`SELECT label_id, target_type, target_jid, target_msg_id, associated_at FROM label_associations WHERE label_id = ?`),
-    labelAssocByTarget: db.prepare(`SELECT la.label_id, l.name, l.color FROM label_associations la JOIN labels l ON la.label_id = l.label_id WHERE la.target_jid = ? AND l.deleted = 0`),
+    labelUpsert: db.prepare(
+      `INSERT INTO labels (label_id, name, color, deleted, updated_at) VALUES (?, ?, ?, 0, ?) ON CONFLICT(label_id) DO UPDATE SET name=excluded.name, color=excluded.color, deleted=0, updated_at=excluded.updated_at`,
+    ),
+    labelSoftDelete: db.prepare(`UPDATE labels SET deleted = 1, updated_at = ? WHERE label_id = ?`),
+    labelGet: db.prepare(
+      `SELECT label_id, name, color, deleted, updated_at FROM labels WHERE label_id = ?`,
+    ),
+    labelList: db.prepare(
+      `SELECT label_id, name, color, deleted, updated_at FROM labels WHERE deleted = 0 ORDER BY name COLLATE NOCASE`,
+    ),
+    labelAssocInsert: db.prepare(
+      `INSERT OR IGNORE INTO label_associations (label_id, target_type, target_jid, target_msg_id, associated_at) VALUES (?, ?, ?, ?, ?)`,
+    ),
+    labelAssocRemove: db.prepare(
+      `DELETE FROM label_associations WHERE label_id = ? AND target_type = ? AND target_jid = ? AND IFNULL(target_msg_id, '') = IFNULL(?, '')`,
+    ),
+    labelAssocByLabel: db.prepare(
+      `SELECT label_id, target_type, target_jid, target_msg_id, associated_at FROM label_associations WHERE label_id = ?`,
+    ),
+    labelAssocByTarget: db.prepare(
+      `SELECT la.label_id, l.name, l.color FROM label_associations la JOIN labels l ON la.label_id = l.label_id WHERE la.target_jid = ? AND l.deleted = 0`,
+    ),
 
-    newsletterUpsert: db.prepare(`INSERT INTO newsletters (newsletter_id, name, description, picture_url, verification, subscribers, meta, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(newsletter_id) DO UPDATE SET name=COALESCE(excluded.name, name), description=COALESCE(excluded.description, description), picture_url=COALESCE(excluded.picture_url, picture_url), verification=COALESCE(excluded.verification, verification), subscribers=COALESCE(excluded.subscribers, subscribers), meta=COALESCE(excluded.meta, meta), updated_at=excluded.updated_at`),
-    newsletterGet:    db.prepare(`SELECT newsletter_id, name, description, picture_url, verification, subscribers, meta, created_at, updated_at FROM newsletters WHERE newsletter_id = ?`),
-    newsletterList:   db.prepare(`SELECT newsletter_id, name, description, picture_url, verification, subscribers, created_at, updated_at FROM newsletters ORDER BY updated_at DESC`),
-    newsletterViewInc: db.prepare(`INSERT INTO newsletter_views (newsletter_id, message_id, view_count, updated_at) VALUES (?, ?, 1, ?) ON CONFLICT(newsletter_id, message_id) DO UPDATE SET view_count = view_count + 1, updated_at = excluded.updated_at`),
-    newsletterViewGet: db.prepare(`SELECT message_id, view_count, updated_at FROM newsletter_views WHERE newsletter_id = ? AND message_id = ?`),
-    newsletterViewList: db.prepare(`SELECT message_id, view_count, updated_at FROM newsletter_views WHERE newsletter_id = ? ORDER BY updated_at DESC LIMIT ?`),
-    newsletterReactInsert: db.prepare(`INSERT INTO newsletter_reactions (newsletter_id, message_id, emoji, count, recorded_at) VALUES (?, ?, ?, ?, ?)`),
-    newsletterReactByMsg: db.prepare(`SELECT emoji, SUM(count) AS total, MAX(recorded_at) AS last_seen FROM newsletter_reactions WHERE newsletter_id = ? AND message_id = ? GROUP BY emoji ORDER BY total DESC`),
-    newsletterSettingsUpsert: db.prepare(`INSERT INTO newsletter_settings (newsletter_id, settings_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(newsletter_id) DO UPDATE SET settings_json=excluded.settings_json, updated_at=excluded.updated_at`),
-    newsletterSettingsGet: db.prepare(`SELECT settings_json, updated_at FROM newsletter_settings WHERE newsletter_id = ?`),
+    newsletterUpsert: db.prepare(
+      `INSERT INTO newsletters (newsletter_id, name, description, picture_url, verification, subscribers, meta, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(newsletter_id) DO UPDATE SET name=COALESCE(excluded.name, name), description=COALESCE(excluded.description, description), picture_url=COALESCE(excluded.picture_url, picture_url), verification=COALESCE(excluded.verification, verification), subscribers=COALESCE(excluded.subscribers, subscribers), meta=COALESCE(excluded.meta, meta), updated_at=excluded.updated_at`,
+    ),
+    newsletterGet: db.prepare(
+      `SELECT newsletter_id, name, description, picture_url, verification, subscribers, meta, created_at, updated_at FROM newsletters WHERE newsletter_id = ?`,
+    ),
+    newsletterList: db.prepare(
+      `SELECT newsletter_id, name, description, picture_url, verification, subscribers, created_at, updated_at FROM newsletters ORDER BY updated_at DESC`,
+    ),
+    newsletterViewInc: db.prepare(
+      `INSERT INTO newsletter_views (newsletter_id, message_id, view_count, updated_at) VALUES (?, ?, 1, ?) ON CONFLICT(newsletter_id, message_id) DO UPDATE SET view_count = view_count + 1, updated_at = excluded.updated_at`,
+    ),
+    newsletterViewGet: db.prepare(
+      `SELECT message_id, view_count, updated_at FROM newsletter_views WHERE newsletter_id = ? AND message_id = ?`,
+    ),
+    newsletterViewList: db.prepare(
+      `SELECT message_id, view_count, updated_at FROM newsletter_views WHERE newsletter_id = ? ORDER BY updated_at DESC LIMIT ?`,
+    ),
+    newsletterReactInsert: db.prepare(
+      `INSERT INTO newsletter_reactions (newsletter_id, message_id, emoji, count, recorded_at) VALUES (?, ?, ?, ?, ?)`,
+    ),
+    newsletterReactByMsg: db.prepare(
+      `SELECT emoji, SUM(count) AS total, MAX(recorded_at) AS last_seen FROM newsletter_reactions WHERE newsletter_id = ? AND message_id = ? GROUP BY emoji ORDER BY total DESC`,
+    ),
+    newsletterSettingsUpsert: db.prepare(
+      `INSERT INTO newsletter_settings (newsletter_id, settings_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(newsletter_id) DO UPDATE SET settings_json=excluded.settings_json, updated_at=excluded.updated_at`,
+    ),
+    newsletterSettingsGet: db.prepare(
+      `SELECT settings_json, updated_at FROM newsletter_settings WHERE newsletter_id = ?`,
+    ),
 
-    lidMappingUpsert: db.prepare(`INSERT INTO lid_mapping (lid, jid, updated_at) VALUES (?, ?, ?) ON CONFLICT(lid) DO UPDATE SET jid=excluded.jid, updated_at=excluded.updated_at`),
-    lidMappingGet:    db.prepare(`SELECT jid FROM lid_mapping WHERE lid = ?`),
-    lidMappingRev:    db.prepare(`SELECT lid FROM lid_mapping WHERE jid = ?`),
+    lidMappingUpsert: db.prepare(
+      `INSERT INTO lid_mapping (lid, jid, updated_at) VALUES (?, ?, ?) ON CONFLICT(lid) DO UPDATE SET jid=excluded.jid, updated_at=excluded.updated_at`,
+    ),
+    lidMappingGet: db.prepare(`SELECT jid FROM lid_mapping WHERE lid = ?`),
+    lidMappingRev: db.prepare(`SELECT lid FROM lid_mapping WHERE jid = ?`),
 
-    messageCappingUpsert: db.prepare(`INSERT INTO message_capping (jid, cap_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(jid) DO UPDATE SET cap_value=excluded.cap_value, updated_at=excluded.updated_at`),
-    messageCappingGet:    db.prepare(`SELECT cap_value, updated_at FROM message_capping WHERE jid = ?`),
+    messageCappingUpsert: db.prepare(
+      `INSERT INTO message_capping (jid, cap_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(jid) DO UPDATE SET cap_value=excluded.cap_value, updated_at=excluded.updated_at`,
+    ),
+    messageCappingGet: db.prepare(
+      `SELECT cap_value, updated_at FROM message_capping WHERE jid = ?`,
+    ),
 
     // v1.2.0 AI ──────────────────────────────────────────────
-    aiConvInsert: db.prepare(`INSERT INTO ai_conversations (chat_jid, role, content, tool_name, tool_args, tool_id, model, provider, prompt_tokens, completion_tokens, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-    aiConvRecent: db.prepare(`SELECT role, content, tool_name, tool_args, tool_id, model, provider, prompt_tokens, completion_tokens, ts FROM ai_conversations WHERE chat_jid = ? ORDER BY id DESC LIMIT ?`),
-    aiConvClear:  db.prepare(`DELETE FROM ai_conversations WHERE chat_jid = ?`),
+    aiConvInsert: db.prepare(
+      `INSERT INTO ai_conversations (chat_jid, role, content, tool_name, tool_args, tool_id, model, provider, prompt_tokens, completion_tokens, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    aiConvRecent: db.prepare(
+      `SELECT role, content, tool_name, tool_args, tool_id, model, provider, prompt_tokens, completion_tokens, ts FROM ai_conversations WHERE chat_jid = ? ORDER BY id DESC LIMIT ?`,
+    ),
+    aiConvClear: db.prepare(`DELETE FROM ai_conversations WHERE chat_jid = ?`),
 
-    aiUsageUpsert: db.prepare(`INSERT INTO ai_usage_daily (day, provider, model, prompt_tokens, completion_tokens, cost_usd, calls) VALUES (?, ?, ?, ?, ?, ?, 1) ON CONFLICT(day, provider, model) DO UPDATE SET prompt_tokens = prompt_tokens + excluded.prompt_tokens, completion_tokens = completion_tokens + excluded.completion_tokens, cost_usd = cost_usd + excluded.cost_usd, calls = calls + 1`),
-    aiUsageDayTotal: db.prepare(`SELECT COALESCE(SUM(cost_usd), 0) AS total FROM ai_usage_daily WHERE day = ?`),
-    aiUsageRecent: db.prepare(`SELECT day, provider, model, prompt_tokens, completion_tokens, cost_usd, calls FROM ai_usage_daily WHERE day >= ? ORDER BY day DESC, cost_usd DESC`),
-    aiUsageAllDays: db.prepare(`SELECT day, SUM(cost_usd) AS cost_usd, SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, SUM(calls) AS calls FROM ai_usage_daily GROUP BY day ORDER BY day DESC LIMIT ?`),
+    aiUsageUpsert: db.prepare(
+      `INSERT INTO ai_usage_daily (day, provider, model, prompt_tokens, completion_tokens, cost_usd, calls) VALUES (?, ?, ?, ?, ?, ?, 1) ON CONFLICT(day, provider, model) DO UPDATE SET prompt_tokens = prompt_tokens + excluded.prompt_tokens, completion_tokens = completion_tokens + excluded.completion_tokens, cost_usd = cost_usd + excluded.cost_usd, calls = calls + 1`,
+    ),
+    aiUsageDayTotal: db.prepare(
+      `SELECT COALESCE(SUM(cost_usd), 0) AS total FROM ai_usage_daily WHERE day = ?`,
+    ),
+    aiUsageRecent: db.prepare(
+      `SELECT day, provider, model, prompt_tokens, completion_tokens, cost_usd, calls FROM ai_usage_daily WHERE day >= ? ORDER BY day DESC, cost_usd DESC`,
+    ),
+    aiUsageAllDays: db.prepare(
+      `SELECT day, SUM(cost_usd) AS cost_usd, SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, SUM(calls) AS calls FROM ai_usage_daily GROUP BY day ORDER BY day DESC LIMIT ?`,
+    ),
 
-    aiOptInUpsert: db.prepare(`INSERT INTO ai_chat_opt_in (chat_jid, enabled, persona, provider, model, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(chat_jid) DO UPDATE SET enabled=excluded.enabled, persona=excluded.persona, provider=excluded.provider, model=excluded.model, updated_at=excluded.updated_at`),
-    aiOptInGet:    db.prepare(`SELECT enabled, persona, provider, model, updated_at FROM ai_chat_opt_in WHERE chat_jid = ?`),
-    aiOptInAll:    db.prepare(`SELECT chat_jid, enabled, persona, provider, model, updated_at FROM ai_chat_opt_in ORDER BY updated_at DESC LIMIT ?`),
+    aiOptInUpsert: db.prepare(
+      `INSERT INTO ai_chat_opt_in (chat_jid, enabled, persona, provider, model, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(chat_jid) DO UPDATE SET enabled=excluded.enabled, persona=excluded.persona, provider=excluded.provider, model=excluded.model, updated_at=excluded.updated_at`,
+    ),
+    aiOptInGet: db.prepare(
+      `SELECT enabled, persona, provider, model, updated_at FROM ai_chat_opt_in WHERE chat_jid = ?`,
+    ),
+    aiOptInAll: db.prepare(
+      `SELECT chat_jid, enabled, persona, provider, model, updated_at FROM ai_chat_opt_in ORDER BY updated_at DESC LIMIT ?`,
+    ),
 
     // v1.3.0 — AI persistent rate-limit counters
-    aiRateUserUpsert: db.prepare(`INSERT INTO ai_rate_user (user_jid, hour_bucket, count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(user_jid, hour_bucket) DO UPDATE SET count = count + 1`),
-    aiRateUserGet:    db.prepare(`SELECT count FROM ai_rate_user WHERE user_jid = ? AND hour_bucket = ?`),
-    aiRateUserPrune:  db.prepare(`DELETE FROM ai_rate_user WHERE expires_at < ?`),
-    aiRateChatUpsert: db.prepare(`INSERT INTO ai_rate_chat (chat_jid, day_bucket, count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(chat_jid, day_bucket) DO UPDATE SET count = count + 1`),
-    aiRateChatGet:    db.prepare(`SELECT count FROM ai_rate_chat WHERE chat_jid = ? AND day_bucket = ?`),
-    aiRateChatPrune:  db.prepare(`DELETE FROM ai_rate_chat WHERE expires_at < ?`),
+    aiRateUserUpsert: db.prepare(
+      `INSERT INTO ai_rate_user (user_jid, hour_bucket, count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(user_jid, hour_bucket) DO UPDATE SET count = count + 1`,
+    ),
+    aiRateUserGet: db.prepare(
+      `SELECT count FROM ai_rate_user WHERE user_jid = ? AND hour_bucket = ?`,
+    ),
+    aiRateUserPrune: db.prepare(`DELETE FROM ai_rate_user WHERE expires_at < ?`),
+    aiRateChatUpsert: db.prepare(
+      `INSERT INTO ai_rate_chat (chat_jid, day_bucket, count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(chat_jid, day_bucket) DO UPDATE SET count = count + 1`,
+    ),
+    aiRateChatGet: db.prepare(
+      `SELECT count FROM ai_rate_chat WHERE chat_jid = ? AND day_bucket = ?`,
+    ),
+    aiRateChatPrune: db.prepare(`DELETE FROM ai_rate_chat WHERE expires_at < ?`),
   };
 
   const msgHot = new LRUCache({ max: 5_000, ttl: 1000 * 60 * 30 });
@@ -395,34 +565,56 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     for (const r of rows) stmts.msgInsert.run(r);
   });
 
-  setInterval(() => {
-    try { db.pragma('wal_checkpoint(TRUNCATE)'); }
-    catch (e) { logger.warn({ err: e }, 'store: wal_checkpoint failed'); }
-  }, 60 * 60 * 1000).unref();
+  setInterval(
+    () => {
+      try {
+        db.pragma('wal_checkpoint(TRUNCATE)');
+      } catch (e) {
+        logger.warn({ err: e }, 'store: wal_checkpoint failed');
+      }
+    },
+    60 * 60 * 1000,
+  ).unref();
 
   setTimeout(() => {
-    try { db.exec('VACUUM'); logger.info('store: weekly VACUUM ok'); }
-    catch (e) { logger.warn({ err: e }, 'store: VACUUM failed'); }
-    setInterval(() => {
-      try { db.exec('VACUUM'); }
-      catch (e) { logger.warn({ err: e }, 'store: VACUUM failed'); }
-    }, 7 * 24 * 60 * 60 * 1000).unref();
+    try {
+      db.exec('VACUUM');
+      logger.info('store: weekly VACUUM ok');
+    } catch (e) {
+      logger.warn({ err: e }, 'store: VACUUM failed');
+    }
+    setInterval(
+      () => {
+        try {
+          db.exec('VACUUM');
+        } catch (e) {
+          logger.warn({ err: e }, 'store: VACUUM failed');
+        }
+      },
+      7 * 24 * 60 * 60 * 1000,
+    ).unref();
   }, 30_000).unref();
 
-  setInterval(() => {
-    try {
-      const days = config.privacy?.messageBodyRetentionDays || 0;
-      if (days <= 0) {
-        const cutoff = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7;
+  setInterval(
+    () => {
+      try {
+        const days = config.privacy?.messageBodyRetentionDays || 0;
+        if (days <= 0) {
+          const cutoff = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7;
+          const r = stmts.msgPrune.run(cutoff);
+          if (r.changes) logger.debug({ removed: r.changes }, 'store: pruned old messages');
+          return;
+        }
+        const cutoff = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * days;
         const r = stmts.msgPrune.run(cutoff);
-        if (r.changes) logger.debug({ removed: r.changes }, 'store: pruned old messages');
-        return;
+        if (r.changes)
+          logger.debug({ removed: r.changes, days }, 'store: pruned old messages (privacy)');
+      } catch (e) {
+        logger.warn({ err: e }, 'store: prune failed');
       }
-      const cutoff = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * days;
-      const r = stmts.msgPrune.run(cutoff);
-      if (r.changes) logger.debug({ removed: r.changes, days }, 'store: pruned old messages (privacy)');
-    } catch (e) { logger.warn({ err: e }, 'store: prune failed'); }
-  }, 60 * 60 * 1000).unref();
+    },
+    60 * 60 * 1000,
+  ).unref();
 
   return {
     db,
@@ -460,13 +652,26 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
 
     saveGroupMetadata(jid, meta) {
       groupCache.set(jid, meta);
-      stmts.groupUpsert.run(jid, meta.subject ?? null, meta.creation ?? null, Buffer.from(JSON.stringify(meta), 'utf8'));
+      stmts.groupUpsert.run(
+        jid,
+        meta.subject ?? null,
+        meta.creation ?? null,
+        Buffer.from(JSON.stringify(meta), 'utf8'),
+      );
     },
 
     recordParticipantEvent(groupJid, participant, action, actor, ts) {
       try {
-        stmts.partInsert.run(groupJid, participant, action, actor || null, ts ?? Math.floor(Date.now() / 1000));
-      } catch (e) { logger.warn({ err: e }, 'participant event insert failed'); }
+        stmts.partInsert.run(
+          groupJid,
+          participant,
+          action,
+          actor || null,
+          ts ?? Math.floor(Date.now() / 1000),
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'participant event insert failed');
+      }
     },
 
     getParticipantHistory(groupJid, limit = 500) {
@@ -487,9 +692,14 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       return new Promise((resolve) => {
         setImmediate(() => {
           try {
-            const result = stmts.partCurrent.all(groupJid).filter(
-              (r) => r.last_action !== 'leave' && r.last_action !== 'kick' && r.last_action !== 'reject',
-            );
+            const result = stmts.partCurrent
+              .all(groupJid)
+              .filter(
+                (r) =>
+                  r.last_action !== 'leave' &&
+                  r.last_action !== 'kick' &&
+                  r.last_action !== 'reject',
+              );
             resolve(result);
           } catch (e) {
             logger.warn({ err: e }, 'current participants query failed');
@@ -499,43 +709,73 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       });
     },
 
-
-
     // labels ─────────────────────────────────────────
     async upsertLabel(labelId, name, color) {
       try {
         if (!labelId || !name) return;
         stmts.labelUpsert.run(labelId, name, color ?? null, Math.floor(Date.now() / 1000));
-      } catch (e) { logger.warn({ err: e, labelId }, 'upsertLabel failed'); }
+      } catch (e) {
+        logger.warn({ err: e, labelId }, 'upsertLabel failed');
+      }
     },
     async deleteLabel(labelId) {
-      try { stmts.labelSoftDelete.run(Math.floor(Date.now() / 1000), labelId); }
-      catch (e) { logger.warn({ err: e, labelId }, 'deleteLabel failed'); }
+      try {
+        stmts.labelSoftDelete.run(Math.floor(Date.now() / 1000), labelId);
+      } catch (e) {
+        logger.warn({ err: e, labelId }, 'deleteLabel failed');
+      }
     },
     async getLabel(labelId) {
-      try { return stmts.labelGet.get(labelId) || null; }
-      catch (e) { logger.warn({ err: e, labelId }, 'getLabel failed'); return null; }
+      try {
+        return stmts.labelGet.get(labelId) || null;
+      } catch (e) {
+        logger.warn({ err: e, labelId }, 'getLabel failed');
+        return null;
+      }
     },
     async listLabels() {
-      try { return stmts.labelList.all(); }
-      catch (e) { logger.warn({ err: e }, 'listLabels failed'); return []; }
+      try {
+        return stmts.labelList.all();
+      } catch (e) {
+        logger.warn({ err: e }, 'listLabels failed');
+        return [];
+      }
     },
     async associateLabel(labelId, targetType, targetJid, targetMsgId = null) {
       try {
-        stmts.labelAssocInsert.run(labelId, targetType, targetJid, targetMsgId || null, Math.floor(Date.now() / 1000));
-      } catch (e) { logger.warn({ err: e, labelId, targetJid }, 'associateLabel failed'); }
+        stmts.labelAssocInsert.run(
+          labelId,
+          targetType,
+          targetJid,
+          targetMsgId || null,
+          Math.floor(Date.now() / 1000),
+        );
+      } catch (e) {
+        logger.warn({ err: e, labelId, targetJid }, 'associateLabel failed');
+      }
     },
     async disassociateLabel(labelId, targetType, targetJid, targetMsgId = null) {
-      try { stmts.labelAssocRemove.run(labelId, targetType, targetJid, targetMsgId || null); }
-      catch (e) { logger.warn({ err: e, labelId, targetJid }, 'disassociateLabel failed'); }
+      try {
+        stmts.labelAssocRemove.run(labelId, targetType, targetJid, targetMsgId || null);
+      } catch (e) {
+        logger.warn({ err: e, labelId, targetJid }, 'disassociateLabel failed');
+      }
     },
     async getLabelAssociations(labelId) {
-      try { return stmts.labelAssocByLabel.all(labelId); }
-      catch (e) { logger.warn({ err: e, labelId }, 'getLabelAssociations failed'); return []; }
+      try {
+        return stmts.labelAssocByLabel.all(labelId);
+      } catch (e) {
+        logger.warn({ err: e, labelId }, 'getLabelAssociations failed');
+        return [];
+      }
     },
     async getLabelsForTarget(targetJid) {
-      try { return stmts.labelAssocByTarget.all(targetJid); }
-      catch (e) { logger.warn({ err: e, targetJid }, 'getLabelsForTarget failed'); return []; }
+      try {
+        return stmts.labelAssocByTarget.all(targetJid);
+      } catch (e) {
+        logger.warn({ err: e, targetJid }, 'getLabelsForTarget failed');
+        return [];
+      }
     },
 
     // newsletters ────────────────────────────────────
@@ -555,7 +795,9 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           m.created_at ?? ts,
           ts,
         );
-      } catch (e) { logger.warn({ err: e, newsletterId }, 'upsertNewsletter failed'); }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId }, 'upsertNewsletter failed');
+      }
     },
     async updateNewsletter(newsletterId, partial = {}) {
       return this.upsertNewsletter(newsletterId, partial);
@@ -564,17 +806,33 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       try {
         const r = stmts.newsletterGet.get(newsletterId);
         if (!r) return null;
-        if (r.meta) { try { r.meta = JSON.parse(r.meta); } catch { /* keep raw */ } }
+        if (r.meta) {
+          try {
+            r.meta = JSON.parse(r.meta);
+          } catch {
+            /* keep raw */
+          }
+        }
         return r;
-      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletter failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId }, 'getNewsletter failed');
+        return null;
+      }
     },
     async listNewsletters() {
-      try { return stmts.newsletterList.all(); }
-      catch (e) { logger.warn({ err: e }, 'listNewsletters failed'); return []; }
+      try {
+        return stmts.newsletterList.all();
+      } catch (e) {
+        logger.warn({ err: e }, 'listNewsletters failed');
+        return [];
+      }
     },
     async incrementNewsletterView(newsletterId, messageId) {
-      try { stmts.newsletterViewInc.run(newsletterId, messageId, Math.floor(Date.now() / 1000)); }
-      catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'incrementNewsletterView failed'); }
+      try {
+        stmts.newsletterViewInc.run(newsletterId, messageId, Math.floor(Date.now() / 1000));
+      } catch (e) {
+        logger.warn({ err: e, newsletterId, messageId }, 'incrementNewsletterView failed');
+      }
     },
     async getNewsletterViews(newsletterId, messageId, limit = 100) {
       try {
@@ -583,30 +841,53 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           return r ? [r] : [];
         }
         return stmts.newsletterViewList.all(newsletterId, limit);
-      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletterViews failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId }, 'getNewsletterViews failed');
+        return [];
+      }
     },
     async recordNewsletterReaction(newsletterId, messageId, emoji, count = 1) {
       try {
-        stmts.newsletterReactInsert.run(newsletterId, messageId, emoji || null, count || 1, Math.floor(Date.now() / 1000));
-      } catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'recordNewsletterReaction failed'); }
+        stmts.newsletterReactInsert.run(
+          newsletterId,
+          messageId,
+          emoji || null,
+          count || 1,
+          Math.floor(Date.now() / 1000),
+        );
+      } catch (e) {
+        logger.warn({ err: e, newsletterId, messageId }, 'recordNewsletterReaction failed');
+      }
     },
     async getNewsletterReactions(newsletterId, messageId) {
-      try { return stmts.newsletterReactByMsg.all(newsletterId, messageId); }
-      catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'getNewsletterReactions failed'); return []; }
+      try {
+        return stmts.newsletterReactByMsg.all(newsletterId, messageId);
+      } catch (e) {
+        logger.warn({ err: e, newsletterId, messageId }, 'getNewsletterReactions failed');
+        return [];
+      }
     },
     async updateNewsletterSettings(newsletterId, settings = {}) {
       try {
         const json = JSON.stringify(settings || {});
         stmts.newsletterSettingsUpsert.run(newsletterId, json, Math.floor(Date.now() / 1000));
-      } catch (e) { logger.warn({ err: e, newsletterId }, 'updateNewsletterSettings failed'); }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId }, 'updateNewsletterSettings failed');
+      }
     },
     async getNewsletterSettings(newsletterId) {
       try {
         const r = stmts.newsletterSettingsGet.get(newsletterId);
         if (!r) return null;
-        try { return { settings: JSON.parse(r.settings_json), updated_at: r.updated_at }; }
-        catch { return { settings: {}, updated_at: r.updated_at }; }
-      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletterSettings failed'); return null; }
+        try {
+          return { settings: JSON.parse(r.settings_json), updated_at: r.updated_at };
+        } catch {
+          return { settings: {}, updated_at: r.updated_at };
+        }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId }, 'getNewsletterSettings failed');
+        return null;
+      }
     },
 
     // lid-mapping ────────────────────────────────────
@@ -614,15 +895,25 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       try {
         if (!lid || !jid) return;
         stmts.lidMappingUpsert.run(lid, jid, Math.floor(Date.now() / 1000));
-      } catch (e) { logger.warn({ err: e, lid, jid }, 'setLidMapping failed'); }
+      } catch (e) {
+        logger.warn({ err: e, lid, jid }, 'setLidMapping failed');
+      }
     },
     async getLidMapping(lid) {
-      try { return stmts.lidMappingGet.get(lid)?.jid || null; }
-      catch (e) { logger.warn({ err: e, lid }, 'getLidMapping failed'); return null; }
+      try {
+        return stmts.lidMappingGet.get(lid)?.jid || null;
+      } catch (e) {
+        logger.warn({ err: e, lid }, 'getLidMapping failed');
+        return null;
+      }
     },
     async getReverseLidMapping(jid) {
-      try { return stmts.lidMappingRev.get(jid)?.lid || null; }
-      catch (e) { logger.warn({ err: e, jid }, 'getReverseLidMapping failed'); return null; }
+      try {
+        return stmts.lidMappingRev.get(jid)?.lid || null;
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'getReverseLidMapping failed');
+        return null;
+      }
     },
 
     // message-capping ────────────────────────────────
@@ -630,13 +921,18 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       try {
         if (!jid || capValue == null) return;
         stmts.messageCappingUpsert.run(jid, Number(capValue), Math.floor(Date.now() / 1000));
-      } catch (e) { logger.warn({ err: e, jid }, 'setMessageCap failed'); }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'setMessageCap failed');
+      }
     },
     async getMessageCap(jid) {
       try {
         const r = stmts.messageCappingGet.get(jid);
         return r ? { cap_value: r.cap_value, updated_at: r.updated_at } : null;
-      } catch (e) { logger.warn({ err: e, jid }, 'getMessageCap failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'getMessageCap failed');
+        return null;
+      }
     },
 
     // blocklist ───────────────────────────────────────────────
@@ -649,42 +945,78 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           for (const j of list) if (j) stmts.blocklistInsert.run(j, ts);
         });
         txn(jids);
-      } catch (e) { logger.warn({ err: e }, 'setBlocklist failed'); }
+      } catch (e) {
+        logger.warn({ err: e }, 'setBlocklist failed');
+      }
     },
     async addToBlocklist(jid) {
-      try { stmts.blocklistInsert.run(jid, Math.floor(Date.now() / 1000)); }
-      catch (e) { logger.warn({ err: e, jid }, 'addToBlocklist failed'); }
+      try {
+        stmts.blocklistInsert.run(jid, Math.floor(Date.now() / 1000));
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'addToBlocklist failed');
+      }
     },
     async removeFromBlocklist(jid) {
-      try { stmts.blocklistRemove.run(jid); }
-      catch (e) { logger.warn({ err: e, jid }, 'removeFromBlocklist failed'); }
+      try {
+        stmts.blocklistRemove.run(jid);
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'removeFromBlocklist failed');
+      }
     },
     async getBlocklist() {
-      try { return stmts.blocklistAll.all(); }
-      catch (e) { logger.warn({ err: e }, 'getBlocklist failed'); return []; }
+      try {
+        return stmts.blocklistAll.all();
+      } catch (e) {
+        logger.warn({ err: e }, 'getBlocklist failed');
+        return [];
+      }
     },
     async isBlocked(jid) {
-      try { return !!stmts.blocklistHas.get(jid); }
-      catch (e) { logger.warn({ err: e, jid }, 'isBlocked failed'); return false; }
+      try {
+        return !!stmts.blocklistHas.get(jid);
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'isBlocked failed');
+        return false;
+      }
     },
 
     // presence ────────────────────────────────────────────────
     async recordPresence(jid, state, lastSeenTs, chatJid) {
       try {
-        stmts.presenceUpsert.run(jid, state || null, lastSeenTs || null, chatJid || null, Math.floor(Date.now() / 1000));
-      } catch (e) { logger.warn({ err: e, jid }, 'recordPresence failed'); }
+        stmts.presenceUpsert.run(
+          jid,
+          state || null,
+          lastSeenTs || null,
+          chatJid || null,
+          Math.floor(Date.now() / 1000),
+        );
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'recordPresence failed');
+      }
     },
     async getPresence(jid) {
-      try { return stmts.presenceGet.get(jid) || null; }
-      catch (e) { logger.warn({ err: e, jid }, 'getPresence failed'); return null; }
+      try {
+        return stmts.presenceGet.get(jid) || null;
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'getPresence failed');
+        return null;
+      }
     },
     async getPresenceInChat(chatJid) {
-      try { return stmts.presenceInChat.all(chatJid); }
-      catch (e) { logger.warn({ err: e }, 'getPresenceInChat failed'); return []; }
+      try {
+        return stmts.presenceInChat.all(chatJid);
+      } catch (e) {
+        logger.warn({ err: e }, 'getPresenceInChat failed');
+        return [];
+      }
     },
     async getRecentPresence(limit = 50) {
-      try { return stmts.presenceRecent.all(limit); }
-      catch (e) { logger.warn({ err: e }, 'getRecentPresence failed'); return []; }
+      try {
+        return stmts.presenceRecent.all(limit);
+      } catch (e) {
+        logger.warn({ err: e }, 'getRecentPresence failed');
+        return [];
+      }
     },
 
     // chat state ──────────────────────────────────────────────
@@ -696,24 +1028,37 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           name ?? null,
           unread ?? null,
           ts ?? null,
-          pinned == null ? null : (pinned ? 1 : 0),
+          pinned == null ? null : pinned ? 1 : 0,
           muted_until ?? null,
-          archived == null ? null : (archived ? 1 : 0),
+          archived == null ? null : archived ? 1 : 0,
           jid,
         );
-      } catch (e) { logger.warn({ err: e, jid }, 'updateChat failed'); }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'updateChat failed');
+      }
     },
     async markChatDeleted(jid) {
-      try { stmts.chatMarkDeleted.run(Math.floor(Date.now() / 1000), jid); }
-      catch (e) { logger.warn({ err: e, jid }, 'markChatDeleted failed'); }
+      try {
+        stmts.chatMarkDeleted.run(Math.floor(Date.now() / 1000), jid);
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'markChatDeleted failed');
+      }
     },
     async listChats() {
-      try { return stmts.chatListAll.all(); }
-      catch (e) { logger.warn({ err: e }, 'listChats failed'); return []; }
+      try {
+        return stmts.chatListAll.all();
+      } catch (e) {
+        logger.warn({ err: e }, 'listChats failed');
+        return [];
+      }
     },
     async getChat(jid) {
-      try { return stmts.chatGet.get(jid) || null; }
-      catch (e) { logger.warn({ err: e, jid }, 'getChat failed'); return null; }
+      try {
+        return stmts.chatGet.get(jid) || null;
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'getChat failed');
+        return null;
+      }
     },
 
     // contacts (bulk + extended) ─────────────────────────────
@@ -737,19 +1082,34 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           return n;
         });
         return txn(contacts);
-      } catch (e) { logger.warn({ err: e }, 'bulkUpsertContacts failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e }, 'bulkUpsertContacts failed');
+        return 0;
+      }
     },
     async getContact(jid) {
-      try { return stmts.contactGet.get(jid) || null; }
-      catch (e) { logger.warn({ err: e, jid }, 'getContact failed'); return null; }
+      try {
+        return stmts.contactGet.get(jid) || null;
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'getContact failed');
+        return null;
+      }
     },
     async listContacts({ limit = 100, offset = 0 } = {}) {
-      try { return stmts.contactList.all(limit, offset); }
-      catch (e) { logger.warn({ err: e }, 'listContacts failed'); return []; }
+      try {
+        return stmts.contactList.all(limit, offset);
+      } catch (e) {
+        logger.warn({ err: e }, 'listContacts failed');
+        return [];
+      }
     },
     async countContacts() {
-      try { return stmts.contactCount.get()?.n || 0; }
-      catch (e) { logger.warn({ err: e }, 'countContacts failed'); return 0; }
+      try {
+        return stmts.contactCount.get()?.n || 0;
+      } catch (e) {
+        logger.warn({ err: e }, 'countContacts failed');
+        return 0;
+      }
     },
 
     // v1.2.0 AI ──────────────────────────────────────────────
@@ -760,7 +1120,11 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           String(turn.role || ''),
           String(turn.content == null ? '' : turn.content),
           turn.toolName || null,
-          turn.toolArgs ? (typeof turn.toolArgs === 'string' ? turn.toolArgs : JSON.stringify(turn.toolArgs)) : null,
+          turn.toolArgs
+            ? typeof turn.toolArgs === 'string'
+              ? turn.toolArgs
+              : JSON.stringify(turn.toolArgs)
+            : null,
           turn.toolId || null,
           turn.model || null,
           turn.provider || null,
@@ -769,7 +1133,10 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           Number(turn.ts || Date.now()),
         );
         return true;
-      } catch (e) { logger.warn({ err: e, chatJid }, 'appendAiTurn failed'); return false; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'appendAiTurn failed');
+        return false;
+      }
     },
     async getRecentAiTurns(chatJid, limit = 20) {
       try {
@@ -786,45 +1153,96 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           completionTokens: r.completion_tokens || 0,
           ts: r.ts,
         }));
-      } catch (e) { logger.warn({ err: e, chatJid }, 'getRecentAiTurns failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'getRecentAiTurns failed');
+        return [];
+      }
     },
     async clearAiTurns(chatJid) {
-      try { stmts.aiConvClear.run(chatJid); return true; }
-      catch (e) { logger.warn({ err: e, chatJid }, 'clearAiTurns failed'); return false; }
+      try {
+        stmts.aiConvClear.run(chatJid);
+        return true;
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'clearAiTurns failed');
+        return false;
+      }
     },
 
-    async recordAiUsage({ day, provider, model, promptTokens = 0, completionTokens = 0, costUsd = 0 }) {
+    async recordAiUsage({
+      day,
+      provider,
+      model,
+      promptTokens = 0,
+      completionTokens = 0,
+      costUsd = 0,
+    }) {
       try {
-        stmts.aiUsageUpsert.run(String(day), String(provider || ''), String(model || ''),
-          Number(promptTokens) || 0, Number(completionTokens) || 0, Number(costUsd) || 0);
+        stmts.aiUsageUpsert.run(
+          String(day),
+          String(provider || ''),
+          String(model || ''),
+          Number(promptTokens) || 0,
+          Number(completionTokens) || 0,
+          Number(costUsd) || 0,
+        );
         return true;
-      } catch (e) { logger.warn({ err: e }, 'recordAiUsage failed'); return false; }
+      } catch (e) {
+        logger.warn({ err: e }, 'recordAiUsage failed');
+        return false;
+      }
     },
     async getAiUsageDayTotal(day) {
-      try { return Number(stmts.aiUsageDayTotal.get(String(day))?.total || 0); }
-      catch (e) { logger.warn({ err: e }, 'getAiUsageDayTotal failed'); return 0; }
+      try {
+        return Number(stmts.aiUsageDayTotal.get(String(day))?.total || 0);
+      } catch (e) {
+        logger.warn({ err: e }, 'getAiUsageDayTotal failed');
+        return 0;
+      }
     },
     async getAiUsageSince(day) {
-      try { return stmts.aiUsageRecent.all(String(day)) || []; }
-      catch (e) { logger.warn({ err: e }, 'getAiUsageSince failed'); return []; }
+      try {
+        return stmts.aiUsageRecent.all(String(day)) || [];
+      } catch (e) {
+        logger.warn({ err: e }, 'getAiUsageSince failed');
+        return [];
+      }
     },
     async getAiUsageByDay(limit = 30) {
-      try { return stmts.aiUsageAllDays.all(Number(limit)) || []; }
-      catch (e) { logger.warn({ err: e }, 'getAiUsageByDay failed'); return []; }
+      try {
+        return stmts.aiUsageAllDays.all(Number(limit)) || [];
+      } catch (e) {
+        logger.warn({ err: e }, 'getAiUsageByDay failed');
+        return [];
+      }
     },
 
-    async setAiChatOptIn(chatJid, { enabled = false, persona = null, provider = null, model = null } = {}) {
+    async setAiChatOptIn(
+      chatJid,
+      { enabled = false, persona = null, provider = null, model = null } = {},
+    ) {
       try {
         stmts.aiOptInUpsert.run(chatJid, enabled ? 1 : 0, persona, provider, model, Date.now());
         return true;
-      } catch (e) { logger.warn({ err: e, chatJid }, 'setAiChatOptIn failed'); return false; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'setAiChatOptIn failed');
+        return false;
+      }
     },
     async getAiChatOptIn(chatJid) {
       try {
         const r = stmts.aiOptInGet.get(chatJid);
         if (!r) return null;
-        return { enabled: !!r.enabled, persona: r.persona, provider: r.provider, model: r.model, updatedAt: r.updated_at };
-      } catch (e) { logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed'); return null; }
+        return {
+          enabled: !!r.enabled,
+          persona: r.persona,
+          provider: r.provider,
+          model: r.model,
+          updatedAt: r.updated_at,
+        };
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed');
+        return null;
+      }
     },
     async listAiOptedInChats(limit = 100) {
       try {
@@ -836,7 +1254,10 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           model: r.model,
           updatedAt: r.updated_at,
         }));
-      } catch (e) { logger.warn({ err: e }, 'listAiOptedInChats failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'listAiOptedInChats failed');
+        return [];
+      }
     },
 
     // v1.3.0 AI persistent rate-limit ────────────────────────
@@ -846,13 +1267,19 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         stmts.aiRateUserUpsert.run(String(userJid), Number(hourBucket), exp);
         const r = stmts.aiRateUserGet.get(String(userJid), Number(hourBucket));
         return Number(r?.count || 0);
-      } catch (e) { logger.warn({ err: e, userJid }, 'incrAiRateUser failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e, userJid }, 'incrAiRateUser failed');
+        return 0;
+      }
     },
     async getAiRateUser(userJid, hourBucket) {
       try {
         const r = stmts.aiRateUserGet.get(String(userJid), Number(hourBucket));
         return Number(r?.count || 0);
-      } catch (e) { logger.warn({ err: e, userJid }, 'getAiRateUser failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e, userJid }, 'getAiRateUser failed');
+        return 0;
+      }
     },
     async incrAiRateChat(chatJid, dayBucket) {
       try {
@@ -860,68 +1287,103 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         stmts.aiRateChatUpsert.run(String(chatJid), Number(dayBucket), exp);
         const r = stmts.aiRateChatGet.get(String(chatJid), Number(dayBucket));
         return Number(r?.count || 0);
-      } catch (e) { logger.warn({ err: e, chatJid }, 'incrAiRateChat failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'incrAiRateChat failed');
+        return 0;
+      }
     },
     async getAiRateChat(chatJid, dayBucket) {
       try {
         const r = stmts.aiRateChatGet.get(String(chatJid), Number(dayBucket));
         return Number(r?.count || 0);
-      } catch (e) { logger.warn({ err: e, chatJid }, 'getAiRateChat failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'getAiRateChat failed');
+        return 0;
+      }
     },
     async pruneAiRate(now = Date.now()) {
       try {
         const a = stmts.aiRateUserPrune.run(Number(now));
         const b = stmts.aiRateChatPrune.run(Number(now));
         return { users: a.changes, chats: b.changes };
-      } catch (e) { logger.warn({ err: e }, 'pruneAiRate failed'); return { users: 0, chats: 0 }; }
+      } catch (e) {
+        logger.warn({ err: e }, 'pruneAiRate failed');
+        return { users: 0, chats: 0 };
+      }
     },
 
     recordStat(key, inc = 1) {
-      try { stmts.statUpsert.run(key, inc); }
-      catch (e) { logger.warn({ err: e, key }, 'recordStat failed'); }
+      try {
+        stmts.statUpsert.run(key, inc);
+      } catch (e) {
+        logger.warn({ err: e, key }, 'recordStat failed');
+      }
     },
 
     getStats() {
       try {
-        return stmts.statsAll.all().reduce((acc, row) => (acc[row.key] = Number(row.value), acc), {});
-      } catch { return {}; }
+        return stmts.statsAll
+          .all()
+          .reduce((acc, row) => ((acc[row.key] = Number(row.value)), acc), {});
+      } catch {
+        return {};
+      }
     },
 
     setGauge(key, value) {
       try {
         stmts.gaugeUpsert.run(key, value, Math.floor(Date.now() / 1000));
-      } catch (e) { logger.warn({ err: e, key }, 'setGauge failed'); }
+      } catch (e) {
+        logger.warn({ err: e, key }, 'setGauge failed');
+      }
     },
 
     getGauges() {
       try {
-        return stmts.gaugesAll.all().reduce((acc, row) => (acc[row.key] = Number(row.value), acc), {});
-      } catch { return {}; }
+        return stmts.gaugesAll
+          .all()
+          .reduce((acc, row) => ((acc[row.key] = Number(row.value)), acc), {});
+      } catch {
+        return {};
+      }
     },
 
     async hasSentItem(service, jid, itemUrl) {
-      try { return !!stmts.hasSentItem.get(service, jid, itemUrl); }
-      catch (e) { logger.warn({ err: e }, 'hasSentItem failed'); return false; }
+      try {
+        return !!stmts.hasSentItem.get(service, jid, itemUrl);
+      } catch (e) {
+        logger.warn({ err: e }, 'hasSentItem failed');
+        return false;
+      }
     },
     async recordSentItem(service, jid, itemUrl) {
       try {
         stmts.recordSentItem.run(service, jid, itemUrl, Math.floor(Date.now() / 1000));
-      } catch (e) { logger.warn({ err: e }, 'recordSentItem failed'); }
+      } catch (e) {
+        logger.warn({ err: e }, 'recordSentItem failed');
+      }
     },
 
-    async hasSentArticle(service, jid, articleUrl) { return this.hasSentItem(service, jid, articleUrl); },
-    async recordSentArticle(service, jid, articleUrl) { return this.recordSentItem(service, jid, articleUrl); },
+    async hasSentArticle(service, jid, articleUrl) {
+      return this.hasSentItem(service, jid, articleUrl);
+    },
+    async recordSentArticle(service, jid, articleUrl) {
+      return this.recordSentItem(service, jid, articleUrl);
+    },
 
-    countGroups() { 
-      try { 
-        return stmts.groupCount.get().n; 
-      }       catch { return 0; } },
-    countUniqueUsers() { 
-      try { 
-        return stmts.uniqueUsersCount.get().n; 
-      } catch { 
-        return 0; 
-      } 
+    countGroups() {
+      try {
+        return stmts.groupCount.get().n;
+      } catch {
+        return 0;
+      }
+    },
+    countUniqueUsers() {
+      try {
+        return stmts.uniqueUsersCount.get().n;
+      } catch {
+        return 0;
+      }
     },
 
     listGroups() {
@@ -930,7 +1392,9 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
           try {
             const result = stmts.groupsList.all().map((r) => {
               let meta = null;
-              try { meta = r.meta ? JSON.parse(r.meta.toString('utf8')) : null; } catch {}
+              try {
+                meta = r.meta ? JSON.parse(r.meta.toString('utf8')) : null;
+              } catch {}
               return {
                 jid: r.jid,
                 subject: r.subject || meta?.subject || '(unnamed)',
@@ -948,45 +1412,69 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     bind(ev) {
       ev.on('messages.upsert', ({ messages }) => {
         const storeBodies = config.privacy?.storeMessageBodies !== false;
-        const excluded    = new Set(config.privacy?.excludeFromStore || []);
+        const excluded = new Set(config.privacy?.excludeFromStore || []);
         const rows = [];
         for (const m of messages) {
           if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
           if (excluded.has(m.key.remoteJid)) continue;
           rows.push({
             jid: m.key.remoteJid,
-            id:  m.key.id,
+            id: m.key.id,
             fromMe: m.key.fromMe ? 1 : 0,
             participant: m.key.participant ?? null,
             msg: storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null,
-            ts:  Number(m.messageTimestamp) || Math.floor(Date.now() / 1000),
+            ts: Number(m.messageTimestamp) || Math.floor(Date.now() / 1000),
           });
           if (storeBodies) msgHot.set(`${m.key.remoteJid}|${m.key.id}`, m.message);
         }
         if (rows.length) {
-          try { writeMessages(rows); } catch (e) { logger.warn({ err: e }, 'store: msg write failed'); }
+          try {
+            writeMessages(rows);
+          } catch (e) {
+            logger.warn({ err: e }, 'store: msg write failed');
+          }
         }
       });
 
       ev.on('chats.upsert', (chats) => {
         const tx = db.transaction(() => {
-          for (const c of chats) stmts.chatUpsert.run(c.id, c.name ?? null, Number(c.unreadCount) || 0, Number(c.conversationTimestamp) || Math.floor(Date.now() / 1000));
+          for (const c of chats)
+            stmts.chatUpsert.run(
+              c.id,
+              c.name ?? null,
+              Number(c.unreadCount) || 0,
+              Number(c.conversationTimestamp) || Math.floor(Date.now() / 1000),
+            );
         });
-        try { tx(); } catch (e) { logger.warn({ err: e }, 'store: chats.upsert'); }
+        try {
+          tx();
+        } catch (e) {
+          logger.warn({ err: e }, 'store: chats.upsert');
+        }
       });
 
       ev.on('contacts.upsert', (contacts) => {
         const tx = db.transaction(() => {
-          for (const c of contacts) stmts.contactUpsert.run(c.id, c.name ?? null, c.notify ?? null, c.imgUrl ?? null);
+          for (const c of contacts)
+            stmts.contactUpsert.run(c.id, c.name ?? null, c.notify ?? null, c.imgUrl ?? null);
         });
-        try { tx(); } catch (e) { logger.warn({ err: e }, 'store: contacts.upsert'); }
+        try {
+          tx();
+        } catch (e) {
+          logger.warn({ err: e }, 'store: contacts.upsert');
+        }
       });
 
       ev.on('contacts.update', (updates) => {
         const tx = db.transaction(() => {
-          for (const c of updates) stmts.contactUpsert.run(c.id, c.name ?? null, c.notify ?? null, c.imgUrl ?? null);
+          for (const c of updates)
+            stmts.contactUpsert.run(c.id, c.name ?? null, c.notify ?? null, c.imgUrl ?? null);
         });
-        try { tx(); } catch (e) { logger.warn({ err: e }, 'store: contacts.update'); }
+        try {
+          tx();
+        } catch (e) {
+          logger.warn({ err: e }, 'store: contacts.update');
+        }
       });
 
       ev.on('groups.upsert', (groups) => {
@@ -996,101 +1484,171 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
 
     recordMessageEdit(jid, messageId, editor, oldBody, newBody, ts) {
       try {
-        stmts.editInsert.run(jid, messageId, editor || null, oldBody || '', newBody || '', ts ?? Math.floor(Date.now()/1000));
-      } catch (e) { logger.warn({err:e}, 'editInsert failed'); }
+        stmts.editInsert.run(
+          jid,
+          messageId,
+          editor || null,
+          oldBody || '',
+          newBody || '',
+          ts ?? Math.floor(Date.now() / 1000),
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'editInsert failed');
+      }
     },
     getMessageEdits(jid, messageId) {
-      try { return stmts.editsByMsg.all(jid, messageId); }
-      catch (e) { logger.warn({err:e}, 'editsByMsg failed'); return []; }
+      try {
+        return stmts.editsByMsg.all(jid, messageId);
+      } catch (e) {
+        logger.warn({ err: e }, 'editsByMsg failed');
+        return [];
+      }
     },
 
     updateMessageBody(jid, messageId, message, ts) {
       try {
         const buf = Buffer.from(proto.Message.encode(message).finish());
-        stmts.msgUpdateBody.run(buf, ts ?? Math.floor(Date.now()/1000), jid, messageId);
-      } catch (e) { logger.warn({err:e}, 'msgUpdateBody failed'); }
+        stmts.msgUpdateBody.run(buf, ts ?? Math.floor(Date.now() / 1000), jid, messageId);
+      } catch (e) {
+        logger.warn({ err: e }, 'msgUpdateBody failed');
+      }
     },
 
     recordMessageReaction(jid, messageId, reactor, emoji, ts) {
       try {
-        stmts.reactInsert.run(jid, messageId, reactor || '', emoji || null, ts ?? Math.floor(Date.now()/1000));
-      } catch (e) { logger.warn({err:e}, 'reactInsert failed'); }
+        stmts.reactInsert.run(
+          jid,
+          messageId,
+          reactor || '',
+          emoji || null,
+          ts ?? Math.floor(Date.now() / 1000),
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'reactInsert failed');
+      }
     },
     getMessageReactions(jid, messageId) {
-      try { return stmts.reactionsByMsg.all(jid, messageId); }
-      catch (e) { logger.warn({err:e}, 'reactionsByMsg failed'); return []; }
+      try {
+        return stmts.reactionsByMsg.all(jid, messageId);
+      } catch (e) {
+        logger.warn({ err: e }, 'reactionsByMsg failed');
+        return [];
+      }
     },
 
     recordReceipt(jid, messageId, recipient, status, ts) {
       try {
-        stmts.receiptUpsert.run(jid, messageId, recipient, status, ts ?? Math.floor(Date.now()/1000));
-      } catch (e) { logger.warn({err:e}, 'receiptUpsert failed'); }
+        stmts.receiptUpsert.run(
+          jid,
+          messageId,
+          recipient,
+          status,
+          ts ?? Math.floor(Date.now() / 1000),
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'receiptUpsert failed');
+      }
     },
     getMessageReceipts(jid, messageId) {
-      try { return stmts.receiptsByMsg.all(jid, messageId); }
-      catch (e) { logger.warn({err:e}, 'receiptsByMsg failed'); return []; }
+      try {
+        return stmts.receiptsByMsg.all(jid, messageId);
+      } catch (e) {
+        logger.warn({ err: e }, 'receiptsByMsg failed');
+        return [];
+      }
     },
 
     markMessageDeleted(jid, messageId, _by, ts) {
       try {
-        stmts.msgMarkDeletedExtra.run(ts ?? Math.floor(Date.now()/1000), jid, messageId);
-      } catch (e) { logger.warn({err:e}, 'markMessageDeleted failed'); }
+        stmts.msgMarkDeletedExtra.run(ts ?? Math.floor(Date.now() / 1000), jid, messageId);
+      } catch (e) {
+        logger.warn({ err: e }, 'markMessageDeleted failed');
+      }
     },
     markChatMessagesDeleted(jid, ts) {
       try {
-        stmts.chatMarkAllDeleted.run(ts ?? Math.floor(Date.now()/1000), jid);
-      } catch (e) { logger.warn({err:e}, 'markChatMessagesDeleted failed'); }
+        stmts.chatMarkAllDeleted.run(ts ?? Math.floor(Date.now() / 1000), jid);
+      } catch (e) {
+        logger.warn({ err: e }, 'markChatMessagesDeleted failed');
+      }
     },
     getDeletedInGroup(jid, limit = 100) {
-      try { return stmts.deletedInGroup.all(jid, limit); }
-      catch (e) { logger.warn({err:e}, 'deletedInGroup failed'); return []; }
+      try {
+        return stmts.deletedInGroup.all(jid, limit);
+      } catch (e) {
+        logger.warn({ err: e }, 'deletedInGroup failed');
+        return [];
+      }
     },
 
     updateMessageStatus(jid, messageId, status, _ts) {
-      try { stmts.msgUpdateStatus.run(Number(status), jid, messageId); }
-      catch (e) { logger.warn({err:e}, 'msgUpdateStatus failed'); }
+      try {
+        stmts.msgUpdateStatus.run(Number(status), jid, messageId);
+      } catch (e) {
+        logger.warn({ err: e }, 'msgUpdateStatus failed');
+      }
     },
 
     async getSubscribers(service) {
       try {
         return stmts.getSubscribers.all(service).map((row) => ({
           jid: row.jid,
-          last_seen_pulse_ts: row.last_seen_pulse_ts == null ? null : Number(row.last_seen_pulse_ts),
+          last_seen_pulse_ts:
+            row.last_seen_pulse_ts == null ? null : Number(row.last_seen_pulse_ts),
           meta: _parseMeta(row.meta),
         }));
-      } catch { return []; }
+      } catch {
+        return [];
+      }
     },
     async addSubscriber(service, jid, meta) {
       try {
         stmts.addSubscriber.run(service, jid, meta == null ? null : JSON.stringify(meta));
-      } catch (e) { logger.warn({ err: e, service, jid }, 'addSubscriber failed'); }
+      } catch (e) {
+        logger.warn({ err: e, service, jid }, 'addSubscriber failed');
+      }
     },
     async removeSubscriber(service, jid) {
-      try { stmts.removeSubscriber.run(service, jid); }
-      catch (e) { logger.warn({ err: e, service, jid }, 'removeSubscriber failed'); }
+      try {
+        stmts.removeSubscriber.run(service, jid);
+      } catch (e) {
+        logger.warn({ err: e, service, jid }, 'removeSubscriber failed');
+      }
     },
     async updateSubscriberTimestamp(service, jid, ts) {
-      try { stmts.updateSubscriberTs.run(ts, service, jid); }
-      catch (e) { logger.warn({ err: e }, 'updateSubscriberTimestamp failed'); }
+      try {
+        stmts.updateSubscriberTs.run(ts, service, jid);
+      } catch (e) {
+        logger.warn({ err: e }, 'updateSubscriberTimestamp failed');
+      }
     },
     async isSubscriber(service, jid) {
-      try { return !!stmts.isSubscriber.get(service, jid); }
-      catch { return false; }
+      try {
+        return !!stmts.isSubscriber.get(service, jid);
+      } catch {
+        return false;
+      }
     },
     async getSubscriberMeta(service, jid) {
       try {
         const row = stmts.getSubscriberMeta.get(service, jid);
         if (!row) return null;
         return _parseMeta(row.meta);
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     },
     async updateSubscriberMeta(service, jid, meta) {
       try {
         stmts.updateSubscriberMeta.run(meta == null ? null : JSON.stringify(meta), service, jid);
-      } catch (e) { logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed'); }
+      } catch (e) {
+        logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed');
+      }
     },
 
-    close() { db.close(); },
+    close() {
+      db.close();
+    },
   };
 }
 

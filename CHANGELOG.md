@@ -6,9 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Planned
-- CI/CD with auto-release on tag 
-- VitePress docs site at cosm1cbug.github.io/echofox 
 
+- CI/CD with auto-release on tag
+- VitePress docs site at cosm1cbug.github.io/echofox
 
 ---
 
@@ -114,22 +114,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   TruffleHog fix that was in the v1.4.2 bundle but never landed
   on `main` (probably skipped during the Copy-Item). Split into
   three event paths:
-    - `pull_request` → diff PR head vs PR base
-    - `push` → diff `github.event.before` → `github.sha`
-      (the commit range that was just pushed)
-    - `workflow_dispatch` OR first-push-to-branch → full repo scan
+  - `pull_request` → diff PR head vs PR base
+  - `push` → diff `github.event.before` → `github.sha`
+    (the commit range that was just pushed)
+  - `workflow_dispatch` OR first-push-to-branch → full repo scan
 
 ### Why CI is healthy now
 
-| Gate | Before v1.4.3 | After v1.4.3 |
-|---|---|---|
-| `npm run lint` | ❌ 6 errors + 28 warnings | ✅ 0 errors, 0 warnings |
-| `npm test` | ✅ 147/147 | ✅ 147/147 |
-| `npm run headers:check` | ✅ 140 files | ✅ 140 files |
-| Dashboard `tsc --noEmit` | ✅ | ✅ |
-| `npm ci` in `dashboard/` | ❌ no lockfile | ✅ committed |
-| TruffleHog secret scan | ❌ `base == head` on push | ✅ event-conditional |
-| All 7 workflows `actionlint` | ✅ | ✅ |
+| Gate                         | Before v1.4.3             | After v1.4.3            |
+| ---------------------------- | ------------------------- | ----------------------- |
+| `npm run lint`               | ❌ 6 errors + 28 warnings | ✅ 0 errors, 0 warnings |
+| `npm test`                   | ✅ 147/147                | ✅ 147/147              |
+| `npm run headers:check`      | ✅ 140 files              | ✅ 140 files            |
+| Dashboard `tsc --noEmit`     | ✅                        | ✅                      |
+| `npm ci` in `dashboard/`     | ❌ no lockfile            | ✅ committed            |
+| TruffleHog secret scan       | ❌ `base == head` on push | ✅ event-conditional    |
+| All 7 workflows `actionlint` | ✅                        | ✅                      |
 
 ### Migration notes
 
@@ -213,9 +213,9 @@ conditions. Far below anything WhatsApp could plausibly flag.
   `head: github.ref` — both resolved to `main` on push events, causing
   TruffleHog to bail with `base == head`. **Split** the workflow into
   three event paths:
-    - `pull_request` → diff PR head vs PR base (the original good path)
-    - `push` → diff the pushed commit range (`github.event.before` → `github.sha`)
-    - `workflow_dispatch` + first-push-to-branch → full repository scan
+  - `pull_request` → diff PR head vs PR base (the original good path)
+  - `push` → diff the pushed commit range (`github.event.before` → `github.sha`)
+  - `workflow_dispatch` + first-push-to-branch → full repository scan
 - **Release / npm-publish / CI workflows** all called `npm test`, so
   the `scripts/run-tests.js` fix above transitively fixes all three.
 
@@ -324,7 +324,7 @@ conditions. Far below anything WhatsApp could plausibly flag.
     panels in 2 sections:
     - **AI (v1.2.0+)**: requests (24h), failures (24h), tokens
       today, cost today (USD), tool invocation rate, rate-limit
-      + cost-cap hit rate.
+      - cost-cap hit rate.
     - **Telegram bridge (v1.3.0+)**: forwards (24h), failures
       (24h), routed channels, failure rate (percent) + retries/sec.
 - **2 new built-in alert rules** in `services/alertEngine.js`:
@@ -434,7 +434,7 @@ conditions. Far below anything WhatsApp could plausibly flag.
 - **Persistent AI rate-limit counters** (replaces v1.2.0's in-memory
   Maps). 5 new methods across all 4 store flavours:
   - `incrAiRateUser(jid, hourBucket)` / `getAiRateUser(...)`
-  - `incrAiRateChat(jid, dayBucket)`  / `getAiRateChat(...)`
+  - `incrAiRateChat(jid, dayBucket)` / `getAiRateChat(...)`
   - `pruneAiRate(now)`
 - **Migration 006** across sqlite / postgres / mongo / redis — creates
   `ai_rate_user` + `ai_rate_chat` tables (or equivalents).
@@ -590,7 +590,7 @@ conditions. Far below anything WhatsApp could plausibly flag.
   one provider API key, optionally `.ai on` per chat (or set
   `optInDefault: 'on'` for all chats). Cost cap defaults to **\$5/day**
   globally — adjust via `costCapPerDayUsd` or live with `$ai-admin
-  limit set <usd>`.
+limit set <usd>`.
 
 ### Known limitations
 
@@ -730,7 +730,7 @@ Eliminated 12 transitive CVEs in one pass:
   dep — preempts its bundled axios 0.21.x from carrying any CVEs.
 
 **Audit before v1.1.1:** 14 vulnerabilities (2 critical, 5 high, 7 moderate)
-**Audit after v1.1.1:**   2 vulnerabilities (2 high, both inside
+**Audit after v1.1.1:** 2 vulnerabilities (2 high, both inside
 `@whiskeysockets/baileys` → `link-preview-js`; upstream's to fix)
 
 ### Changed
@@ -745,6 +745,7 @@ Eliminated 12 transitive CVEs in one pass:
 ### Backward compatibility
 
 Fully compatible with v1.1.0:
+
 - `.tts <lang>` command works identically from the user's perspective —
   the underlying engine is just better (neural voice instead of gTTS)
 - No config schema breakages — `config.tts.*` is all-optional with
@@ -821,7 +822,7 @@ Fully compatible with v1.1.0:
 - **Critical Redis-backend regression from v1.0.1+** — Group A/B added
   `K + ':...'` patterns to `redisStore.js` but the `K` namespace
   constant was never declared. Redis users would get `ReferenceError:
-  K is not defined` on every blocklist/presence/contacts write. Now
+K is not defined` on every blocklist/presence/contacts write. Now
   declared as `const K = 'echofox'` at the top of `makeRedisStore()`.
 - **`newsletter.update` destructure mismatch** (carry-over from
   v1.0.2) — handler destructured `{ updates }` but the worker emits
@@ -844,6 +845,7 @@ Fully compatible with v1.1.0:
 ### Backward compatibility
 
 Fully compatible with v1.0.x:
+
 - No config schema changes
 - No existing store interface changes (new methods ADDED, none changed)
 - No `/api/*` route signatures changed (only new routes ADDED)
@@ -907,6 +909,7 @@ Fully compatible with v1.0.x:
 ### Backward compatibility
 
 Fully backward compatible with v1.0.1:
+
 - No config schema changes
 - No store interface changes
 - No `/api/*` route changes
@@ -938,11 +941,11 @@ Fully backward compatible with v1.0.1:
   "Autofix" added `require('express-rate-limit')` to
   `src/dashboard/server.js` without adding the package to
   `package.json`. Bot crashed at boot with `Cannot find module
-  'express-rate-limit'` whenever `dashboard.enabled: true`. Now declared as
+'express-rate-limit'` whenever `dashboard.enabled: true`. Now declared as
   a direct dependency (`^7.4.1`).
 - **Rate limiter mounted on the wrong path** — the Autofix applied
   the limiter to `/dashboard` (static React files) instead of `/api/*`
-  (the actual data endpoints) and placed it *after* basic-auth so
+  (the actual data endpoints) and placed it _after_ basic-auth so
   brute-force auth attempts weren't throttled. Now applies to BOTH
   `/api` and `/dashboard`, mounted BEFORE basic-auth, with a more
   realistic limit (300 req per 15-min window vs the previous 100).
@@ -977,6 +980,7 @@ timed-out sockets. Users get a friendly "service overloaded" message
 instead of stack traces.
 
 Service breakers added:
+
 - `alienvault` — AlienVault OTX
 - `thehackersnews` — The Hacker News RSS
 - `rss:<hostname>` — per-host breakers for the generic RSS service
@@ -985,6 +989,7 @@ Service breakers added:
 - `vtwatch:<type>` — VirusTotal verdict watch (per type: hash/ip/domain/url)
 
 Command breakers added:
+
 - `virustotal` — `.virustotal` lookup command
 - `aptoide-search`, `aptoide-info` — `.apkdl` command
 - `pinterest-search` — `.pinterest` command
@@ -1008,6 +1013,7 @@ isn't beneficial.
 ### Backward compatibility
 
 Fully backward compatible with v1.0.0:
+
 - No config schema changes
 - No store interface changes
 - No `/api/*` route changes
@@ -1091,8 +1097,8 @@ Breaking changes after v1.0.0 will require a v2.0.0 release.
   - Phase 4: event-routing cleanup — 26↔26 symmetry, no dead handlers, no silent drops
   - Phase 5: test coverage uplift — 54 → 76 tests (+22)
   - Phase 6: 3 new subscription sources (RSS, GitHub, VirusTotal-watch);
-            table rename `thehackersnews_sent_articles` → `service_sent_items`
-            via migration 002, with backward-compat method aliases
+    table rename `thehackersnews_sent_articles` → `service_sent_items`
+    via migration 002, with backward-compat method aliases
 
 ### Test coverage
 
@@ -1126,6 +1132,7 @@ Breaking changes after v1.0.0 will require a v2.0.0 release.
 > loader.
 
 ### Fixed
+
 - **🔴 BOOT CRASH** — `worker.js` imported `tempManager` from `../utils/`
   but the file lives at `src/lib/tempManager.js`. Path corrected.
 - **🔴 RUNTIME CRASH** — `src/core/auth.js` referenced `proto.Message.AppStateSyncKeyData`
@@ -1135,6 +1142,7 @@ Breaking changes after v1.0.0 will require a v2.0.0 release.
   `set(key, Buffer, 'EX', ttl)`.
 
 ### Added (restored from M1, lost in squash)
+
 - `CHANGELOG.md`, `DISCLAIMER.md`, `SECURITY.md`, `NOTICE`, `CONTRIBUTING.md`
 - `.github/FUNDING.yml`, `.husky/pre-commit` + `.husky/.gitignore`
 - `src/lib/configLoader.js` + `src/lib/configSchema.js` — zod-validated config
@@ -1146,6 +1154,7 @@ Breaking changes after v1.0.0 will require a v2.0.0 release.
 - AGPL-3.0 header on every source file (`npm run headers` to apply)
 
 ### Extended (config schema + loader)
+
 - New schema sections recognised: `login`, `auth`, `storeDB`, `dashboard`,
   `processing`, `features.syncHistory`
 - Pairing-code login: schema validates `login.phoneNumber` is required when
@@ -1156,6 +1165,7 @@ Breaking changes after v1.0.0 will require a v2.0.0 release.
   (`ECHOFOX_STOREDB_TYPE=POSTGRES`, `ECHOFOX_DASHBOARD_ENABLED=true`, …)
 
 ### Changed
+
 - **`src/events/messages.upsert.js`** — now delegates command execution to
   `commandRunner.run()` for centralised timeout/crash handling. Also glues
   legacy `m.sender`, `m.from`, `m.reply`, `m.react`, etc. onto the raw
@@ -1174,11 +1184,13 @@ Breaking changes after v1.0.0 will require a v2.0.0 release.
   devDeps (`eslint`, `prettier`, `husky`, `lint-staged`, `zod`).
 
 ### Known issues (deferred to v0.4.2)
+
 - Two commands share the name `.sticker` (`convert/sticker.js` + `convert/stk.js`)
   and two share `.ctx` (`general/ctx.js` + `misc/test.js`). Contract test
   catches this. Rename pending.
 
 ### Migration notes
+
 - **No action required for your `src/config.js`** — auto-translated.
 - New users start with `cp src/config.example.js src/config.js` for a clean
   template.
@@ -1194,9 +1206,10 @@ Breaking changes after v1.0.0 will require a v2.0.0 release.
 > M1: AGPL relicense, zod config (later lost, restored in 0.4.1).
 > M2: Multi-stage Dockerfile, Compose with observability profile, docs.
 > M3: Commands triage — fixed 5 quarantined commands, command runner,
->     contract tests, auto-generated docs catalog.
+> contract tests, auto-generated docs catalog.
 
 ### Added (highlights)
+
 - Multi-store backend (SQLite / Postgres / MongoDB / Redis)
 - Pluggable auth backend (MultiFile / Redis / SQLite)
 - Pairing-code login (alt to QR)

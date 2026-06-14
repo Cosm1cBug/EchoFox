@@ -29,7 +29,9 @@ function makeMockSock(opts = {}) {
   const reads = [];
   const sock = {
     user: { id: opts.userJid || '+0000000@s.whatsapp.net', name: 'TestBot' },
-    sent, presence, reads,
+    sent,
+    presence,
+    reads,
     calls: { sendMessage: 0, sendPresenceUpdate: 0, readMessages: 0 },
     lastSent: null,
 
@@ -52,12 +54,11 @@ function makeMockSock(opts = {}) {
     },
 
     groupMetadata: async (_jid) => ({
-      id: _jid, subject: 'TestGroup', creation: 1700000000,
+      id: _jid,
+      subject: 'TestGroup',
+      creation: 1700000000,
       owner: '111@s.whatsapp.net',
-      participants: [
-        { id: '111@s.whatsapp.net', admin: 'admin' },
-        { id: '222@s.whatsapp.net' },
-      ],
+      participants: [{ id: '111@s.whatsapp.net', admin: 'admin' }, { id: '222@s.whatsapp.net' }],
     }),
 
     groupFetchAllParticipating: async () => ({}),
@@ -74,7 +75,7 @@ function makeMockMessage({ text, jid, sender, fromMe = false, msgId, ts } = {}) 
       remoteJid: jid || '999@s.whatsapp.net',
       id: msgId || `mock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       fromMe,
-      participant: jid && jid.endsWith('@g.us') ? (sender || '222@s.whatsapp.net') : undefined,
+      participant: jid && jid.endsWith('@g.us') ? sender || '222@s.whatsapp.net' : undefined,
     },
     message: { conversation: text || 'hello' },
     messageTimestamp: ts || Math.floor(Date.now() / 1000),
@@ -84,38 +85,64 @@ function makeMockMessage({ text, jid, sender, fromMe = false, msgId, ts } = {}) 
 
 /** Quick stub for a store (in-memory; supports the methods commands use). */
 function makeMockStore() {
-  const _gauges = {}, _counters = {};
-  const _subs = new Map();        // `${service}|${jid}` → { last_seen_pulse_ts, meta }
-  const _sent = new Map();        // `${service}|${jid}|${articleUrl}` → true
-  const _key  = (service, jid) => `${service}|${jid}`;
+  const _gauges = {},
+    _counters = {};
+  const _subs = new Map(); // `${service}|${jid}` → { last_seen_pulse_ts, meta }
+  const _sent = new Map(); // `${service}|${jid}|${articleUrl}` → true
+  const _key = (service, jid) => `${service}|${jid}`;
   const _sKey = (service, jid, url) => `${service}|${jid}|${url}`;
   return {
-    async getMessage()             { return undefined; },
-    async getGroupMetadata()        { return undefined; },
-    async saveGroupMetadata()        {},
-    async getParticipantHistory()   { return []; },
-    async getCurrentParticipants()   { return []; },
-    async listGroups()               { return []; },
-    async countGroups()              { return 0; },
-    async countUniqueUsers()         { return 0; },
-    recordStat(k, n = 1)             { _counters[k] = (_counters[k] || 0) + n; },
-    setGauge(k, v)                   { _gauges[k] = v; },
-    async getStats()                 { return { ..._counters }; },
-    async getGauges()                { return { ..._gauges }; },
-    recordParticipantEvent()         {},
-    recordMessageEdit()              {},
-    recordMessageReaction()          {},
-    recordReceipt()                  {},
-    markMessageDeleted()             {},
-    markChatMessagesDeleted()        {},
-    updateMessageStatus()            {},
-    updateMessageBody()              {},
-    getDeletedInGroup()              { return []; },
+    async getMessage() {
+      return undefined;
+    },
+    async getGroupMetadata() {
+      return undefined;
+    },
+    async saveGroupMetadata() {},
+    async getParticipantHistory() {
+      return [];
+    },
+    async getCurrentParticipants() {
+      return [];
+    },
+    async listGroups() {
+      return [];
+    },
+    async countGroups() {
+      return 0;
+    },
+    async countUniqueUsers() {
+      return 0;
+    },
+    recordStat(k, n = 1) {
+      _counters[k] = (_counters[k] || 0) + n;
+    },
+    setGauge(k, v) {
+      _gauges[k] = v;
+    },
+    async getStats() {
+      return { ..._counters };
+    },
+    async getGauges() {
+      return { ..._gauges };
+    },
+    recordParticipantEvent() {},
+    recordMessageEdit() {},
+    recordMessageReaction() {},
+    recordReceipt() {},
+    markMessageDeleted() {},
+    markChatMessagesDeleted() {},
+    updateMessageStatus() {},
+    updateMessageBody() {},
+    getDeletedInGroup() {
+      return [];
+    },
     async getSubscribers(service) {
       const out = [];
       for (const [k, v] of _subs) {
         const [svc, jid] = k.split('|');
-        if (svc === service) out.push({ jid, last_seen_pulse_ts: v.last_seen_pulse_ts, meta: v.meta });
+        if (svc === service)
+          out.push({ jid, last_seen_pulse_ts: v.last_seen_pulse_ts, meta: v.meta });
       }
       return out;
     },
@@ -153,8 +180,8 @@ function makeMockStore() {
     async recordSentItem(service, jid, itemUrl) {
       _sent.set(_sKey(service, jid, itemUrl), true);
     },
-    bind()                           {},
-    close()                          {},
+    bind() {},
+    close() {},
   };
 }
 

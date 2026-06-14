@@ -20,3 +20,4 @@ git pull
 rm package-lock.json          # forces npm to honour the new overrides
 npm install
 npm start
+```

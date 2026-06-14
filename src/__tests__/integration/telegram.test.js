@@ -12,9 +12,9 @@
  *
  * No real HTTP — transport.__testOverride captures payloads.
  */
-const test   = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
-const path   = require('node:path');
+const path = require('node:path');
 
 function applyTelegramCfg(patch = {}) {
   process.env.NODE_ENV = 'test';
@@ -24,16 +24,16 @@ function applyTelegramCfg(patch = {}) {
       enabled: true,
       botToken: 'test-token',
       routing: {
-        syslogs:      '@echofox_sys',
-        botLogs:      '-100100',
-        userLogs:     '',
+        syslogs: '@echofox_sys',
+        botLogs: '-100100',
+        userLogs: '',
         groupUpdates: '',
-        callLogs:     '',
-        errLogs:      '@echofox_err',
-        movGroup:     '',
+        callLogs: '',
+        errLogs: '@echofox_err',
+        movGroup: '',
       },
       parseMode: 'HTML',
-      batchMs:   50,
+      batchMs: 50,
       maxChunkChars: 3800,
       botUsername: '',
       userId: '',
@@ -64,26 +64,29 @@ test('routing.resolve: returns chatId only when telegram.enabled', () => {
   applyTelegramCfg({ enabled: true });
   const tg2 = freshTelegram();
   assert.equal(tg2.routing.resolve('syslogs'), '@echofox_sys');
-  assert.equal(tg2.routing.resolve('userLogs'), null);  // empty -> null
+  assert.equal(tg2.routing.resolve('userLogs'), null); // empty -> null
 });
 
 test('routing.listRoutes: enumerates only routed keys', () => {
   applyTelegramCfg();
   const tg = freshTelegram();
-  const routes = tg.routing.listRoutes().map((r) => r.key).sort();
+  const routes = tg.routing
+    .listRoutes()
+    .map((r) => r.key)
+    .sort();
   assert.deepEqual(routes, ['botLogs', 'errLogs', 'syslogs']);
 });
 
 test('transport.chunkText splits at 3800 char boundary, prefers newlines', () => {
   const tg = freshTelegram();
-  const body = ('lorem ipsum dolor sit amet\n'.repeat(200));
+  const body = 'lorem ipsum dolor sit amet\n'.repeat(200);
   const chunks = tg.transport.chunkText(body, 1000);
   assert.ok(chunks.length >= 2, `expected chunking, got ${chunks.length}`);
   for (const c of chunks) assert.ok(c.length <= 1000, 'chunk too big');
   // Round-trip invariant: every non-empty line in the input appears
   // in the chunks in order. (The chunker collapses run-of-\n between
   // chunks; we don't care about that here.)
-  const inputLines  = body.split('\n').filter(Boolean);
+  const inputLines = body.split('\n').filter(Boolean);
   const outputLines = chunks.join('\n').split('\n').filter(Boolean);
   assert.deepEqual(outputLines, inputLines);
 });
@@ -97,7 +100,10 @@ test('forward(): drops silently when telegram disabled', async () => {
   applyTelegramCfg({ enabled: false });
   const tg = freshTelegram();
   let calls = 0;
-  tg.transport.__testOverride(() => { calls += 1; return { ok: true }; });
+  tg.transport.__testOverride(() => {
+    calls += 1;
+    return { ok: true };
+  });
   const r = tg.forward('syslogs', { text: 'hello', level: 'info' });
   assert.equal(r, false);
   await new Promise((res) => setTimeout(res, 80));
@@ -108,8 +114,11 @@ test('forward(): drops silently when channel not routed', async () => {
   applyTelegramCfg();
   const tg = freshTelegram();
   let calls = 0;
-  tg.transport.__testOverride(() => { calls += 1; return { ok: true }; });
-  const r = tg.forward('userLogs', { text: 'x', level: 'info' });   // empty in routing
+  tg.transport.__testOverride(() => {
+    calls += 1;
+    return { ok: true };
+  });
+  const r = tg.forward('userLogs', { text: 'x', level: 'info' }); // empty in routing
   assert.equal(r, false);
   await new Promise((res) => setTimeout(res, 80));
   assert.equal(calls, 0);
@@ -119,13 +128,16 @@ test('forward(): batches info-level messages within batchMs', async () => {
   applyTelegramCfg({ batchMs: 100 });
   const tg = freshTelegram();
   const sent = [];
-  tg.transport.__testOverride((p) => { sent.push(p); return { ok: true, status: 200, messageId: 1 }; });
+  tg.transport.__testOverride((p) => {
+    sent.push(p);
+    return { ok: true, status: 200, messageId: 1 };
+  });
 
   tg.forward('syslogs', { text: 'line one', level: 'info', source: 'a' });
   tg.forward('syslogs', { text: 'line two', level: 'info', source: 'b' });
   tg.forward('syslogs', { text: 'line three', level: 'info', source: 'c' });
 
-  assert.equal(sent.length, 0);  // nothing sent yet
+  assert.equal(sent.length, 0); // nothing sent yet
   await new Promise((res) => setTimeout(res, 200));
   assert.equal(sent.length, 1, 'should batch into 1 send');
   assert.equal(sent[0].chatId, '@echofox_sys');
@@ -139,10 +151,13 @@ test('forward(): batches info-level messages within batchMs', async () => {
 });
 
 test('forward(): error level flushes immediately, bypassing batch', async () => {
-  applyTelegramCfg({ batchMs: 5000 });   // long batch — should NOT wait
+  applyTelegramCfg({ batchMs: 5000 }); // long batch — should NOT wait
   const tg = freshTelegram();
   const sent = [];
-  tg.transport.__testOverride((p) => { sent.push(p); return { ok: true }; });
+  tg.transport.__testOverride((p) => {
+    sent.push(p);
+    return { ok: true };
+  });
 
   tg.forward('errLogs', { text: 'boom!', level: 'error', source: 'core' });
   await new Promise((res) => setTimeout(res, 50));
@@ -157,7 +172,10 @@ test('forward(): chunks bodies above maxChunkChars', async () => {
   applyTelegramCfg({ batchMs: 50, maxChunkChars: 500 });
   const tg = freshTelegram();
   const sent = [];
-  tg.transport.__testOverride((p) => { sent.push(p); return { ok: true }; });
+  tg.transport.__testOverride((p) => {
+    sent.push(p);
+    return { ok: true };
+  });
 
   const big = ('log line ' + 'x'.repeat(80) + '\n').repeat(20);
   tg.forward('botLogs', { text: big, level: 'info', source: 'evt' });
@@ -198,10 +216,13 @@ test('_renderEntry: HTML format produces expected layout', () => {
 });
 
 test('flushAll(): drains every pending channel', async () => {
-  applyTelegramCfg({ batchMs: 60_000 });   // would never auto-flush
+  applyTelegramCfg({ batchMs: 60_000 }); // would never auto-flush
   const tg = freshTelegram();
   const sent = [];
-  tg.transport.__testOverride((p) => { sent.push(p); return { ok: true }; });
+  tg.transport.__testOverride((p) => {
+    sent.push(p);
+    return { ok: true };
+  });
 
   tg.forward('syslogs', { text: 's1', level: 'info' });
   tg.forward('botLogs', { text: 'b1', level: 'info' });

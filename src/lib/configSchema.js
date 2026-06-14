@@ -45,9 +45,9 @@
  */
 const { z } = require('zod');
 
-const JID_USER  = /^\d+@s\.whatsapp\.net$/;
+const JID_USER = /^\d+@s\.whatsapp\.net$/;
 const JID_GROUP = /^(\d+-\d+|\d+)@g\.us$/;
-const JID_LID   = /^\d+@lid$/;
+const JID_LID = /^\d+@lid$/;
 
 const optionalGroupJid = z
   .string()
@@ -72,367 +72,477 @@ const phoneNumber = z
   });
 
 // Cron-expression sanity check (5 or 6 space-separated tokens).
-const cronExpr = z.string().refine(
-  (s) => /^\S+(\s+\S+){4,5}$/.test(s.trim()),
-  { message: 'must be a 5- or 6-field cron expression' },
-);
+const cronExpr = z.string().refine((s) => /^\S+(\s+\S+){4,5}$/.test(s.trim()), {
+  message: 'must be a 5- or 6-field cron expression',
+});
 
-const schema = z.object({
+const schema = z
+  .object({
+    bot: z
+      .object({
+        name: z.string().min(1).default('EchoFox'),
+        prefix: z.union([z.string().min(1), z.instanceof(RegExp)]).default('.'),
+        adminPrefix: z.union([z.string().min(1), z.instanceof(RegExp)]).default('$'),
+        sessionName: z.string().min(1).default('@session'),
+        timezone: z.string().min(1).default('Asia/Kolkata'),
+        language: z.string().length(2).default('en'),
+        public: z.boolean().default(true),
+      })
+      .default({}),
 
-  bot: z.object({
-    name:        z.string().min(1).default('EchoFox'),
-    prefix:      z.union([z.string().min(1), z.instanceof(RegExp)]).default('.'),
-    adminPrefix: z.union([z.string().min(1), z.instanceof(RegExp)]).default('$'),
-    sessionName: z.string().min(1).default('@session'),
-    timezone:    z.string().min(1).default('Asia/Kolkata'),
-    language:    z.string().length(2).default('en'),
-    public:      z.boolean().default(true),
-  }).default({}),
+    features: z
+      .object({
+        readMessages: z.boolean().default(true),
+        readStatus: z.boolean().default(true),
+        reactStatus: z.boolean().default(false),
+        antiCall: z.boolean().default(false),
+        syncHistory: z.boolean().default(true),
+      })
+      .default({}),
 
-  features: z.object({
-    readMessages: z.boolean().default(true),
-    readStatus:   z.boolean().default(true),
-    reactStatus:  z.boolean().default(false),
-    antiCall:     z.boolean().default(false),
-    syncHistory:  z.boolean().default(true),
-  }).default({}),
+    login: z
+      .object({
+        type: z.enum(['QR', 'PAIRING']).default('QR'),
+        phoneNumber: phoneNumber.default(''),
+      })
+      .default({})
+      .refine((l) => l.type !== 'PAIRING' || l.phoneNumber.length > 0, {
+        message: 'login.phoneNumber is required when login.type = "PAIRING"',
+      }),
 
-  login: z.object({
-    type:        z.enum(['QR', 'PAIRING']).default('QR'),
-    phoneNumber: phoneNumber.default(''),
-  }).default({}).refine(
-    (l) => l.type !== 'PAIRING' || l.phoneNumber.length > 0,
-    { message: 'login.phoneNumber is required when login.type = "PAIRING"' },
-  ),
+    auth: z
+      .object({
+        method: z.enum(['MULTIFILE', 'REDIS', 'SQLITE', 'POSTGRES']).default('MULTIFILE'),
+        redisUrl: z.string().default('redis://localhost:6379'),
+        sqlitePath: z.string().default('./src/store/auth.db'),
+        postgresUrl: z.string().default('postgresql://postgres:postgres@localhost:5432/echofox'),
+      })
+      .default({}),
 
-  auth: z.object({
-    method:      z.enum(['MULTIFILE', 'REDIS', 'SQLITE', 'POSTGRES']).default('MULTIFILE'),
-    redisUrl:    z.string().default('redis://localhost:6379'),
-    sqlitePath:  z.string().default('./src/store/auth.db'),
-    postgresUrl: z.string().default('postgresql://postgres:postgres@localhost:5432/echofox'),
-  }).default({}),
+    storeDB: z
+      .object({
+        type: z.enum(['SQLITE', 'POSTGRES', 'MONGODB', 'REDIS']).default('SQLITE'),
+        sqlitePath: z.string().default('./src/store/runtime/wa.db'),
+        postgresUrl: z.string().default('postgresql://postgres:postgres@localhost:5432/echofox'),
+        mongoUri: z.string().default('mongodb://localhost:27017/echofox'),
+        redisUrl: z.string().default('redis://localhost:6379'),
+        runMigrationsOnBoot: z.boolean().default(true),
+      })
+      .default({}),
 
-  storeDB: z.object({
-    type:        z.enum(['SQLITE', 'POSTGRES', 'MONGODB', 'REDIS']).default('SQLITE'),
-    sqlitePath:  z.string().default('./src/store/runtime/wa.db'),
-    postgresUrl: z.string().default('postgresql://postgres:postgres@localhost:5432/echofox'),
-    mongoUri:    z.string().default('mongodb://localhost:27017/echofox'),
-    redisUrl:    z.string().default('redis://localhost:6379'),
-    runMigrationsOnBoot: z.boolean().default(true),
-  }).default({}),
+    dashboard: z
+      .object({
+        enabled: z.boolean().default(false),
+        port: z.coerce.number().int().min(1).max(65535).default(3001),
+        username: z.string().default('admin'),
+        password: z.string().default('change-me-please'),
+      })
+      .default({}),
 
-  dashboard: z.object({
-    enabled:  z.boolean().default(false),
-    port:     z.coerce.number().int().min(1).max(65535).default(3001),
-    username: z.string().default('admin'),
-    password: z.string().default('change-me-please'),
-  }).default({}),
+    processing: z
+      .object({
+        concurrencyPerChat: z.coerce.number().int().min(1).max(16).default(1),
+        globalRateLimit: z.coerce.number().int().min(1).default(20),
+        userRateLimit: z.coerce.number().int().min(1).default(10),
+        sendConcurrency: z.coerce.number().int().min(1).max(16).default(4),
+        messageBatch: z
+          .object({
+            maxBatch: z.coerce.number().int().min(1).max(10_000).default(100),
+            maxWaitMs: z.coerce.number().int().min(10).max(60_000).default(250),
+            maxBufferSize: z.coerce.number().int().min(100).max(1_000_000).default(5_000),
+          })
+          .default({}),
+      })
+      .default({}),
 
-  processing: z.object({
-    concurrencyPerChat: z.coerce.number().int().min(1).max(16).default(1),
-    globalRateLimit:    z.coerce.number().int().min(1).default(20),
-    userRateLimit:      z.coerce.number().int().min(1).default(10),
-    sendConcurrency:    z.coerce.number().int().min(1).max(16).default(4),
-    messageBatch: z.object({
-      maxBatch:      z.coerce.number().int().min(1).max(10_000).default(100),
-      maxWaitMs:     z.coerce.number().int().min(10).max(60_000).default(250),
-      maxBufferSize: z.coerce.number().int().min(100).max(1_000_000).default(5_000),
-    }).default({}),
-  }).default({}),
+    antiBan: z
+      .object({
+        typingIndicator: z.boolean().default(true),
+        shortReplyChars: z.coerce.number().int().min(0).default(40),
+        pauseAfterSend: z.boolean().default(true),
+        typingDelayMs: z
+          .object({
+            min: z.coerce.number().int().min(0).default(800),
+            max: z.coerce.number().int().min(0).default(2500),
+          })
+          .default({}),
 
-  antiBan: z.object({
-    typingIndicator: z.boolean().default(true),
-    shortReplyChars: z.coerce.number().int().min(0).default(40),
-    pauseAfterSend:  z.boolean().default(true),
-    typingDelayMs:   z.object({
-      min: z.coerce.number().int().min(0).default(800),
-      max: z.coerce.number().int().min(0).default(2500),
-    }).default({}),
+        presenceOnConnect: z.enum(['available', 'unavailable', 'composing']).default('available'),
+        warmupMode: z.boolean().default(false),
+        warmupDays: z.coerce.number().int().min(0).default(14),
+        warmupMultiplier: z.coerce.number().min(0.1).max(10).default(3),
+        maxGroupsPerDay: z.coerce.number().int().min(0).default(0),
+        maxNewContactsPerHour: z.coerce.number().int().min(0).default(0),
+      })
+      .passthrough()
+      .default({}),
 
-    presenceOnConnect: z.enum(['available', 'unavailable', 'composing']).default('available'),
-    warmupMode:        z.boolean().default(false),
-    warmupDays:        z.coerce.number().int().min(0).default(14),
-    warmupMultiplier:  z.coerce.number().min(0.1).max(10).default(3),
-    maxGroupsPerDay:   z.coerce.number().int().min(0).default(0),
-    maxNewContactsPerHour: z.coerce.number().int().min(0).default(0),
-  }).passthrough().default({}),
+    admins: z.array(optionalUserJid).default([]),
 
-  admins: z.array(optionalUserJid).default([]),
+    channels: z
+      .object({
+        syslogs: optionalGroupJid.default(''),
+        botLogs: optionalGroupJid.default(''),
+        userLogs: optionalGroupJid.default(''),
+        groupUpdates: optionalGroupJid.default(''),
+        callLogs: optionalGroupJid.default(''),
+        errLogs: optionalGroupJid.default(''),
+        movGroup: optionalGroupJid.default(''),
+      })
+      .default({}),
 
-  channels: z.object({
-    syslogs:      optionalGroupJid.default(''),
-    botLogs:      optionalGroupJid.default(''),
-    userLogs:     optionalGroupJid.default(''),
-    groupUpdates: optionalGroupJid.default(''),
-    callLogs:     optionalGroupJid.default(''),
-    errLogs:      optionalGroupJid.default(''),
-    movGroup:     optionalGroupJid.default(''),
-  }).default({}),
+    apis: z
+      .object({
+        omdb: z
+          .object({
+            apiKey: z.string().default(''),
+            url: z.string().url().default('https://www.omdbapi.com/'),
+          })
+          .default({}),
+        virustotal: z.object({ apiKey: z.string().default('') }).default({}),
+        alienvault: z.object({ apiKey: z.string().default('') }).default({}),
+        thehackersnews: z
+          .object({ checkIntervalMin: z.number().min(5).default(60) })
+          .default({ checkIntervalMin: 60 }),
+        github: z
+          .object({
+            token: z.string().default(''), // optional; raises rate limit 60→5000/h
+            checkIntervalMin: z.number().min(5).default(60),
+          })
+          .default({}),
+        rss: z
+          .object({
+            checkIntervalMin: z.number().min(5).default(30),
+            maxFeedsPerSubscriber: z.number().min(1).max(50).default(20),
+            maxArticlesPerFeed: z.number().min(1).max(20).default(5),
+          })
+          .default({}),
+        vtwatch: z
+          .object({
+            checkIntervalMin: z.number().min(15).default(360), // free tier: ~4 req/min
+          })
+          .default({}),
+      })
+      .default({}),
 
-  apis: z.object({
-    omdb: z.object({
-      apiKey: z.string().default(''),
-      url:    z.string().url().default('https://www.omdbapi.com/'),
-    }).default({}),
-    virustotal: z.object({ apiKey: z.string().default('') }).default({}),
-    alienvault: z.object({ apiKey: z.string().default('') }).default({}),
-    thehackersnews: z.object({ checkIntervalMin: z.number().min(5).default(60) }).default({ checkIntervalMin: 60 }),
-    github: z.object({
-      token:            z.string().default(''),    // optional; raises rate limit 60→5000/h
-      checkIntervalMin: z.number().min(5).default(60),
-    }).default({}),
-    rss: z.object({
-      checkIntervalMin:        z.number().min(5).default(30),
-      maxFeedsPerSubscriber:   z.number().min(1).max(50).default(20),
-      maxArticlesPerFeed:      z.number().min(1).max(20).default(5),
-    }).default({}),
-    vtwatch: z.object({
-      checkIntervalMin: z.number().min(15).default(360),  // free tier: ~4 req/min
-    }).default({}),
-  }).default({}),
+    sticker: z
+      .object({
+        packName: z.string().default('EchoFox'),
+        packAuthor: z.string().default('COSM1CBUG'),
+      })
+      .default({}),
 
-  sticker: z.object({
-    packName:   z.string().default('EchoFox'),
-    packAuthor: z.string().default('COSM1CBUG'),
-  }).default({}),
+    runtime: z
+      .object({
+        logLevel: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+        port: z.coerce.number().int().min(1).max(65535).default(3000),
+        healthPath: z.string().startsWith('/').default('/healthz'),
+        metricsPath: z.string().startsWith('/').default('/metrics'),
 
-  runtime: z.object({
-    logLevel:    z.enum(['trace','debug','info','warn','error','fatal']).default('info'),
-    port:        z.coerce.number().int().min(1).max(65535).default(3000),
-    healthPath:  z.string().startsWith('/').default('/healthz'),
-    metricsPath: z.string().startsWith('/').default('/metrics'),
-
-    maxHeapPercent:   z.coerce.number().min(50).max(100).default(90),
-    autoRestart:      z.boolean().default(true),
-    checkIntervalMs:  z.coerce.number().int().min(5_000).default(30_000),
-    gracePeriodMs:    z.coerce.number().int().min(1_000).default(5_000),
-    logFile: z.object({
-      enabled:    z.boolean().default(false),
-      dir:        z.string().default('./logs'),
-      prefix:     z.string().default('echofox'),
-    }).default({}),
+        maxHeapPercent: z.coerce.number().min(50).max(100).default(90),
+        autoRestart: z.boolean().default(true),
+        checkIntervalMs: z.coerce.number().int().min(5_000).default(30_000),
+        gracePeriodMs: z.coerce.number().int().min(1_000).default(5_000),
+        logFile: z
+          .object({
+            enabled: z.boolean().default(false),
+            dir: z.string().default('./logs'),
+            prefix: z.string().default('echofox'),
+          })
+          .default({}),
         // v1.0.0 — leak detector (rolling-window heap growth analysis)
-    leakDetection: z.object({
-      enabled:                z.boolean().default(true),
-      sampleIntervalMs:       z.coerce.number().int().min(60_000).max(3_600_000).default(600_000),
-      windowSize:             z.coerce.number().int().min(4).max(1440).default(144),
-      growthThresholdPercent: z.coerce.number().min(5).max(500).default(30),
-    }).default({}),
-  }).default({}),
+        leakDetection: z
+          .object({
+            enabled: z.boolean().default(true),
+            sampleIntervalMs: z.coerce.number().int().min(60_000).max(3_600_000).default(600_000),
+            windowSize: z.coerce.number().int().min(4).max(1440).default(144),
+            growthThresholdPercent: z.coerce.number().min(5).max(500).default(30),
+          })
+          .default({}),
+      })
+      .default({}),
 
-  store: z.object({
-    instanceId: z.string().default('EchoFox'),
-    storePath:  z.string().default('./src/store/'),
-    runtimeDir: z.string().default('./src/store/runtime/'),
-  }).default({}),
+    store: z
+      .object({
+        instanceId: z.string().default('EchoFox'),
+        storePath: z.string().default('./src/store/'),
+        runtimeDir: z.string().default('./src/store/runtime/'),
+      })
+      .default({}),
 
-  network: z.object({
-    httpProxy:    z.string().default(''),
-    httpsProxy:   z.string().default(''),
-    socksProxy:   z.string().default(''),
-    noProxy:      z.array(z.string()).default([]),
-    fetchTimeoutMs: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
-    extraCaCertPath: z.string().default(''),
-    userAgent:    z.string().default('EchoFox/0.4 (+https://github.com/Cosm1cBug/EchoFox)'),
-  }).default({}),
+    network: z
+      .object({
+        httpProxy: z.string().default(''),
+        httpsProxy: z.string().default(''),
+        socksProxy: z.string().default(''),
+        noProxy: z.array(z.string()).default([]),
+        fetchTimeoutMs: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
+        extraCaCertPath: z.string().default(''),
+        userAgent: z.string().default('EchoFox/0.4 (+https://github.com/Cosm1cBug/EchoFox)'),
+      })
+      .default({}),
 
-  backup: z.object({
-    enabled:     z.boolean().default(false),
-    schedule:    cronExpr.default('0 3 * * *'),
-    destination: z.string().default(''),
-    retain:      z.coerce.number().int().min(1).max(365).default(7),
-    include:     z.array(z.string()).default(['@session', 'store/runtime']),
-    encryptionPassphrase: z.string().default(''),
-  }).default({}),
+    backup: z
+      .object({
+        enabled: z.boolean().default(false),
+        schedule: cronExpr.default('0 3 * * *'),
+        destination: z.string().default(''),
+        retain: z.coerce.number().int().min(1).max(365).default(7),
+        include: z.array(z.string()).default(['@session', 'store/runtime']),
+        encryptionPassphrase: z.string().default(''),
+      })
+      .default({}),
 
-  metrics: z.object({
-    enabled:           z.boolean().default(true),
-    prometheusEnabled: z.boolean().default(false),
-    prometheusPort:    z.coerce.number().int().min(1).max(65535).default(9100),
-    retentionDays:     z.coerce.number().int().min(1).max(3650).default(90),
-  }).default({}),
+    metrics: z
+      .object({
+        enabled: z.boolean().default(true),
+        prometheusEnabled: z.boolean().default(false),
+        prometheusPort: z.coerce.number().int().min(1).max(65535).default(9100),
+        retentionDays: z.coerce.number().int().min(1).max(3650).default(90),
+      })
+      .default({}),
 
-  webhooks: z.object({
-    enabled:  z.boolean().default(false),
-    endpoints: z.array(z.object({
-      url:     z.string().url(),
-      events:  z.array(z.string()).default([]),
-      secret:  z.string().default(''),
-      headers: z.record(z.string()).default({}),
-    })).default([]),
-    retries:    z.coerce.number().int().min(0).max(10).default(3),
-    timeoutMs:  z.coerce.number().int().min(500).default(5000),
-  }).default({}),
+    webhooks: z
+      .object({
+        enabled: z.boolean().default(false),
+        endpoints: z
+          .array(
+            z.object({
+              url: z.string().url(),
+              events: z.array(z.string()).default([]),
+              secret: z.string().default(''),
+              headers: z.record(z.string()).default({}),
+            }),
+          )
+          .default([]),
+        retries: z.coerce.number().int().min(0).max(10).default(3),
+        timeoutMs: z.coerce.number().int().min(500).default(5000),
+      })
+      .default({}),
 
-  i18n: z.object({
-    defaultLocale:  z.string().length(2).default('en'),
-    enabledLocales: z.array(z.string().length(2)).default(['en']),
-    perGroupLocale: z.record(z.string().length(2)).default({}),
-    fallbackToDefault: z.boolean().default(true),
-  }).default({}),
+    i18n: z
+      .object({
+        defaultLocale: z.string().length(2).default('en'),
+        enabledLocales: z.array(z.string().length(2)).default(['en']),
+        perGroupLocale: z.record(z.string().length(2)).default({}),
+        fallbackToDefault: z.boolean().default(true),
+      })
+      .default({}),
 
-  groupSettings: z.record(z.object({
-    public:           z.boolean().optional(),
-    prefix:           z.string().optional(),
-    disabledCommands: z.array(z.string()).default([]),
-    locale:           z.string().length(2).optional(),
-    silentMode:       z.boolean().default(false),
-  }).passthrough()).default({}),
+    groupSettings: z
+      .record(
+        z
+          .object({
+            public: z.boolean().optional(),
+            prefix: z.string().optional(),
+            disabledCommands: z.array(z.string()).default([]),
+            locale: z.string().length(2).optional(),
+            silentMode: z.boolean().default(false),
+          })
+          .passthrough(),
+      )
+      .default({}),
 
-  schedules: z.array(z.object({
-    name:    z.string().min(1),
-    cron:    cronExpr,
-    command: z.string().min(1),
-    target:  z.string().default(''),
-    enabled: z.boolean().default(true),
-  })).default([]),
+    schedules: z
+      .array(
+        z.object({
+          name: z.string().min(1),
+          cron: cronExpr,
+          command: z.string().min(1),
+          target: z.string().default(''),
+          enabled: z.boolean().default(true),
+        }),
+      )
+      .default([]),
 
-  privacy: z.object({
-    storeMessageBodies:       z.boolean().default(true),
-    messageBodyRetentionDays: z.coerce.number().int().min(0).max(3650).default(0),
-    blockUnknownSenders:      z.boolean().default(false),
-    forwardingDisabled:       z.boolean().default(false),
-    excludeFromStore:         z.array(z.string()).default([]),
-    minimiseLogs:             z.boolean().default(false),
-  }).default({}),
+    privacy: z
+      .object({
+        storeMessageBodies: z.boolean().default(true),
+        messageBodyRetentionDays: z.coerce.number().int().min(0).max(3650).default(0),
+        blockUnknownSenders: z.boolean().default(false),
+        forwardingDisabled: z.boolean().default(false),
+        excludeFromStore: z.array(z.string()).default([]),
+        minimiseLogs: z.boolean().default(false),
+      })
+      .default({}),
 
-  ai: z.object({
-    enabled:           z.boolean().default(false),
-    defaultProvider:   z.enum(['openai', 'gemini', 'anthropic', 'local']).default('openai'),
-    model:             z.string().default('gpt-4o-mini'),
-    maxTokens:         z.coerce.number().int().min(1).max(200_000).default(800),
-    costCapPerDayUsd:  z.coerce.number().min(0).default(5),
+    ai: z
+      .object({
+        enabled: z.boolean().default(false),
+        defaultProvider: z.enum(['openai', 'gemini', 'anthropic', 'local']).default('openai'),
+        model: z.string().default('gpt-4o-mini'),
+        maxTokens: z.coerce.number().int().min(1).max(200_000).default(800),
+        costCapPerDayUsd: z.coerce.number().min(0).default(5),
 
-    // v1.2.0 — persona + memory
-    persona:           z.enum(['threat-intel', 'general', 'custom']).default('threat-intel'),
-    customPersona:     z.string().default(''),
-    memoryTurns:       z.coerce.number().int().min(0).max(100).default(20),
+        // v1.2.0 — persona + memory
+        persona: z.enum(['threat-intel', 'general', 'custom']).default('threat-intel'),
+        customPersona: z.string().default(''),
+        memoryTurns: z.coerce.number().int().min(0).max(100).default(20),
 
-    // v1.2.0 — opt-in trigger model
-    optInDefault:      z.enum(['on', 'off']).default('off'),
-    botNameRegex:      z.string().default('echofox|bot|@assistant'),
+        // v1.2.0 — opt-in trigger model
+        optInDefault: z.enum(['on', 'off']).default('off'),
+        botNameRegex: z.string().default('echofox|bot|@assistant'),
 
-    // v1.2.0 — UX
-    typingWhileGenerating: z.boolean().default(true),
+        // v1.2.0 — UX
+        typingWhileGenerating: z.boolean().default(true),
 
-    // v1.2.0 — tool calling
-    enableToolCalling: z.boolean().default(true),
-    toolWhitelist:     z.array(z.string()).default([
-      'get_blocklist',
-      'get_presence_in_chat',
-      'get_labels_for_chat',
-      'list_newsletters',
-      'get_recent_messages',
-      'check_virustotal',
-      'search_alienvault',
-      'latest_hackernews',
-      'github_releases',
-      'github_advisories',
-      'wiki_lookup',
-      'fetch_url',
-    ]),
+        // v1.2.0 — tool calling
+        enableToolCalling: z.boolean().default(true),
+        toolWhitelist: z
+          .array(z.string())
+          .default([
+            'get_blocklist',
+            'get_presence_in_chat',
+            'get_labels_for_chat',
+            'list_newsletters',
+            'get_recent_messages',
+            'check_virustotal',
+            'search_alienvault',
+            'latest_hackernews',
+            'github_releases',
+            'github_advisories',
+            'wiki_lookup',
+            'fetch_url',
+          ]),
 
-    // v1.2.0 — rate limits (loose preset chosen at delivery time)
-    rateLimitPerUserPerHour: z.coerce.number().int().min(0).default(30),
-    rateLimitPerChatPerDay:  z.coerce.number().int().min(0).default(100),
+        // v1.2.0 — rate limits (loose preset chosen at delivery time)
+        rateLimitPerUserPerHour: z.coerce.number().int().min(0).default(30),
+        rateLimitPerChatPerDay: z.coerce.number().int().min(0).default(100),
 
-    providers: z.object({
-      openai:    z.object({ apiKey: z.string().default(''), baseUrl: z.string().default('') }).default({}),
-      gemini:    z.object({ apiKey: z.string().default(''), baseUrl: z.string().default('') }).default({}),
-      anthropic: z.object({ apiKey: z.string().default(''), baseUrl: z.string().default('') }).default({}),
-      local:     z.object({ baseUrl: z.string().default('http://localhost:11434'), model: z.string().default('llama3.2') }).default({}),
-    }).default({}),
-  }).passthrough().default({}),
+        providers: z
+          .object({
+            openai: z
+              .object({ apiKey: z.string().default(''), baseUrl: z.string().default('') })
+              .default({}),
+            gemini: z
+              .object({ apiKey: z.string().default(''), baseUrl: z.string().default('') })
+              .default({}),
+            anthropic: z
+              .object({ apiKey: z.string().default(''), baseUrl: z.string().default('') })
+              .default({}),
+            local: z
+              .object({
+                baseUrl: z.string().default('http://localhost:11434'),
+                model: z.string().default('llama3.2'),
+              })
+              .default({}),
+          })
+          .default({}),
+      })
+      .passthrough()
+      .default({}),
 
-  // Text-to-Speech provider abstraction
-  tts: z.object({
-    provider:     z.enum(['edge', 'google', 'piper', 'coqui']).default('edge'),
-    defaultLang:  z.string().length(2).default('en'),
-    defaultVoice: z.string().default('en-US-AriaNeural'),
-    maxChars:     z.coerce.number().int().min(100).max(16000).default(8000),
+    // Text-to-Speech provider abstraction
+    tts: z
+      .object({
+        provider: z.enum(['edge', 'google', 'piper', 'coqui']).default('edge'),
+        defaultLang: z.string().length(2).default('en'),
+        defaultVoice: z.string().default('en-US-AriaNeural'),
+        maxChars: z.coerce.number().int().min(100).max(16000).default(8000),
 
-    edge: z.object({
-      outputFormat: z.string().default('audio-24khz-48kbitrate-mono-mp3'),
-    }).default({}),
-    google: z.object({}).default({}),
-    piper: z.object({
-      binPath:   z.string().default('piper'),
-      modelPath: z.string().default(''),
-    }).default({}),
-    coqui: z.object({
-      pythonBin: z.string().default('python3'),
-      model:     z.string().default('tts_models/en/ljspeech/tacotron2-DDC'),
-    }).default({}),
-  }).default({}),
+        edge: z
+          .object({
+            outputFormat: z.string().default('audio-24khz-48kbitrate-mono-mp3'),
+          })
+          .default({}),
+        google: z.object({}).default({}),
+        piper: z
+          .object({
+            binPath: z.string().default('piper'),
+            modelPath: z.string().default(''),
+          })
+          .default({}),
+        coqui: z
+          .object({
+            pythonBin: z.string().default('python3'),
+            model: z.string().default('tts_models/en/ljspeech/tacotron2-DDC'),
+          })
+          .default({}),
+      })
+      .default({}),
 
-  telegram: z.object({
-    // v1.3.0 — log-only outbound bridge (no inbound polling)
-    enabled:      z.boolean().default(false),
-    botToken:     z.string().default(''),
+    telegram: z
+      .object({
+        // v1.3.0 — log-only outbound bridge (no inbound polling)
+        enabled: z.boolean().default(false),
+        botToken: z.string().default(''),
 
-    // v1.3.0 — per-channel routing: WA log-channel key -> Telegram chat id / @channel.
-    // Empty string for any field disables that channel's forward.
-    // Keys mirror config.channels.*
-    routing: z.object({
-      syslogs:      z.string().default(''),
-      botLogs:      z.string().default(''),
-      userLogs:     z.string().default(''),
-      groupUpdates: z.string().default(''),
-      callLogs:     z.string().default(''),
-      errLogs:      z.string().default(''),
-      movGroup:     z.string().default(''),
-    }).default({}),
+        // v1.3.0 — per-channel routing: WA log-channel key -> Telegram chat id / @channel.
+        // Empty string for any field disables that channel's forward.
+        // Keys mirror config.channels.*
+        routing: z
+          .object({
+            syslogs: z.string().default(''),
+            botLogs: z.string().default(''),
+            userLogs: z.string().default(''),
+            groupUpdates: z.string().default(''),
+            callLogs: z.string().default(''),
+            errLogs: z.string().default(''),
+            movGroup: z.string().default(''),
+          })
+          .default({}),
 
-    // v1.3.0 — message format
-    parseMode:    z.enum(['HTML', 'MarkdownV2', 'plain']).default('HTML'),
+        // v1.3.0 — message format
+        parseMode: z.enum(['HTML', 'MarkdownV2', 'plain']).default('HTML'),
 
-    // v1.3.0 — buffering (ms). 0 = forward each line immediately.
-    // Error-level entries always flush instantly regardless of batchMs.
-    batchMs:      z.coerce.number().int().min(0).max(60_000).default(2_000),
+        // v1.3.0 — buffering (ms). 0 = forward each line immediately.
+        // Error-level entries always flush instantly regardless of batchMs.
+        batchMs: z.coerce.number().int().min(0).max(60_000).default(2_000),
 
-    // Telegram outbound max msg size is 4096 chars; we chunk above this.
-    maxChunkChars: z.coerce.number().int().min(500).max(4096).default(3800),
+        // Telegram outbound max msg size is 4096 chars; we chunk above this.
+        maxChunkChars: z.coerce.number().int().min(500).max(4096).default(3800),
 
-    // ── legacy / future fields kept for back-compat (unused by log bridge) ──
-    botUsername:  z.string().default(''),
-    userId:       z.string().default(''),
-    apiId:        z.string().default(''),
-    apiHash:      z.string().default(''),
-    channelId:    z.string().default(''),
-    groupId:      z.string().default(''),
-    bridgedChats: z.record(z.string()).default({}),
-  }).passthrough().default({}),
+        // ── legacy / future fields kept for back-compat (unused by log bridge) ──
+        botUsername: z.string().default(''),
+        userId: z.string().default(''),
+        apiId: z.string().default(''),
+        apiHash: z.string().default(''),
+        channelId: z.string().default(''),
+        groupId: z.string().default(''),
+        bridgedChats: z.record(z.string()).default({}),
+      })
+      .passthrough()
+      .default({}),
 
-  // ─── v0.4.5 NEW: per-command failure-rate alerts ────────────────────────
-  // ─── v1.4.0: added aiCostPct + telegramFailureRate built-in rules ──────
-  alerts: z.object({
-    enabled:              z.boolean().default(true),
-    windowMinutes:        z.coerce.number().int().min(5).max(1440).default(60),
-    minInvocations:       z.coerce.number().int().min(1).default(10),
-    failureRateThreshold: z.coerce.number().min(0).max(1).default(0.30),
-    notifyChannel:        z.string().default(''),   // override config.channels.errLogs if set
+    // ─── v0.4.5 NEW: per-command failure-rate alerts ────────────────────────
+    // ─── v1.4.0: added aiCostPct + telegramFailureRate built-in rules ──────
+    alerts: z
+      .object({
+        enabled: z.boolean().default(true),
+        windowMinutes: z.coerce.number().int().min(5).max(1440).default(60),
+        minInvocations: z.coerce.number().int().min(1).default(10),
+        failureRateThreshold: z.coerce.number().min(0).max(1).default(0.3),
+        notifyChannel: z.string().default(''), // override config.channels.errLogs if set
 
-    // v1.4.0 — extra built-in rules. Each can be disabled by setting
-    // its threshold to 0 (or its enabled flag below to false).
-    rules: z.object({
-      // Fire when today's AI cost reaches this fraction of costCapPerDayUsd.
-      // 0 disables. Default 0.80 = warn at 80%.
-      aiCostPct: z.object({
-        enabled:   z.boolean().default(true),
-        threshold: z.coerce.number().min(0).max(1).default(0.80),
-        cooldownMinutes: z.coerce.number().int().min(1).default(60),
-      }).default({}),
-      // Fire when telegram send-failure rate over the alert window exceeds
-      // the threshold (0..1). minSends gates noise from low traffic.
-      telegramFailureRate: z.object({
-        enabled:   z.boolean().default(true),
-        threshold: z.coerce.number().min(0).max(1).default(0.20),
-        minSends:  z.coerce.number().int().min(1).default(10),
-        cooldownMinutes: z.coerce.number().int().min(1).default(30),
-      }).default({}),
-    }).default({}),
-  }).passthrough().default({}),
-
-}).passthrough();   // tolerate any extras the user adds at the top level
+        // v1.4.0 — extra built-in rules. Each can be disabled by setting
+        // its threshold to 0 (or its enabled flag below to false).
+        rules: z
+          .object({
+            // Fire when today's AI cost reaches this fraction of costCapPerDayUsd.
+            // 0 disables. Default 0.80 = warn at 80%.
+            aiCostPct: z
+              .object({
+                enabled: z.boolean().default(true),
+                threshold: z.coerce.number().min(0).max(1).default(0.8),
+                cooldownMinutes: z.coerce.number().int().min(1).default(60),
+              })
+              .default({}),
+            // Fire when telegram send-failure rate over the alert window exceeds
+            // the threshold (0..1). minSends gates noise from low traffic.
+            telegramFailureRate: z
+              .object({
+                enabled: z.boolean().default(true),
+                threshold: z.coerce.number().min(0).max(1).default(0.2),
+                minSends: z.coerce.number().int().min(1).default(10),
+                cooldownMinutes: z.coerce.number().int().min(1).default(30),
+              })
+              .default({}),
+          })
+          .default({}),
+      })
+      .passthrough()
+      .default({}),
+  })
+  .passthrough(); // tolerate any extras the user adds at the top level
 
 module.exports = { schema, JID_USER, JID_GROUP, JID_LID };

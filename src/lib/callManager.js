@@ -19,9 +19,7 @@ class CallManager {
     logger.info({ from, callId }, 'Accepting call');
 
     const peer = new dc.PeerConnection(`call-${callId}`, {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-      ],
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
 
     this.activeCalls.set(callId, { peer, from, state: 'connecting' });

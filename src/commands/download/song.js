@@ -14,16 +14,20 @@
  *   Replaces the abandoned `youtubedl-core` with `@distube/ytdl-core`.
  */
 
-const fs   = require('node:fs');
-const os   = require('node:os');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 let ytdl;
 
-try { ytdl = require('@distube/ytdl-core'); } catch { ytdl = null; }
+try {
+  ytdl = require('@distube/ytdl-core');
+} catch {
+  ytdl = null;
+}
 
-const TEMP_TTL_MS  = 60 * 60 * 1000;
+const TEMP_TTL_MS = 60 * 60 * 1000;
 const MAX_DURATION = 10 * 60;
 
 async function searchYouTube(query) {
@@ -31,12 +35,10 @@ async function searchYouTube(query) {
   const { data } = await axiosWithBreaker('piped', { method: 'GET', url, timeout: 15_000 });
   const item = (data?.items || []).find((i) => i.type === 'stream' || i.url);
   if (!item) return null;
-  const fullUrl = item.url?.startsWith('http')
-    ? item.url
-    : `https://www.youtube.com${item.url}`;
+  const fullUrl = item.url?.startsWith('http') ? item.url : `https://www.youtube.com${item.url}`;
   return {
-    url:      fullUrl,
-    title:    item.title    || query,
+    url: fullUrl,
+    title: item.title || query,
     uploader: item.uploaderName || 'Unknown',
     duration: item.duration || 0,
   };
@@ -45,13 +47,21 @@ async function searchYouTube(query) {
 function downloadAudio(url, outPath, lengthSeconds) {
   return new Promise((resolve, reject) => {
     if (lengthSeconds > MAX_DURATION) {
-      return reject(new Error(`track is ${Math.floor(lengthSeconds / 60)} min — limit is ${MAX_DURATION / 60} min`));
+      return reject(
+        new Error(
+          `track is ${Math.floor(lengthSeconds / 60)} min — limit is ${MAX_DURATION / 60} min`,
+        ),
+      );
     }
-    const stream = ytdl(url, { filter: 'audioonly', quality: 'highestaudio', highWaterMark: 1 << 25 });
+    const stream = ytdl(url, {
+      filter: 'audioonly',
+      quality: 'highestaudio',
+      highWaterMark: 1 << 25,
+    });
     const out = fs.createWriteStream(outPath);
     stream.pipe(out);
     out.on('finish', () => resolve(outPath));
-    out.on('error',  reject);
+    out.on('error', reject);
     stream.on('error', reject);
   });
 }
@@ -73,9 +83,9 @@ module.exports = {
     }
 
     await ctx.react('🔎');
-    
+
     let result;
-    
+
     try {
       result = await searchYouTube(text);
     } catch (e) {
@@ -98,11 +108,15 @@ module.exports = {
       const stat = fs.statSync(out);
       if (stat.size < 1024) throw new Error('downloaded file is empty');
 
-      await sock.sendMessage(ctx.from, {
-        audio: { url: out },
-        mimetype: 'audio/mpeg',
-        fileName: `${result.title.replace(/[\\/:*?"<>|]/g, '_')}.mp3`,
-      }, { quoted: m });
+      await sock.sendMessage(
+        ctx.from,
+        {
+          audio: { url: out },
+          mimetype: 'audio/mpeg',
+          fileName: `${result.title.replace(/[\\/:*?"<>|]/g, '_')}.mp3`,
+        },
+        { quoted: m },
+      );
 
       await ctx.react('✅');
     } finally {

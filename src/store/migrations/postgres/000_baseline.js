@@ -94,5 +94,7 @@ module.exports = {
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS status INTEGER NOT NULL DEFAULT 0;
     `);
   },
-  async down(_ctx) { /* intentionally a no-op */ },
+  async down(_ctx) {
+    /* intentionally a no-op */
+  },
 };

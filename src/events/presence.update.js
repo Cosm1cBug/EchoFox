@@ -32,12 +32,12 @@ module.exports = async ({ u }) => {
     if (!id) continue;
     try {
       await store.updateNewsletter(id, {
-        name:         n.name ?? n.subject,
-        description:  n.description,
-        picture_url:  n.picture?.url ?? n.pictureUrl,
+        name: n.name ?? n.subject,
+        description: n.description,
+        picture_url: n.picture?.url ?? n.pictureUrl,
         verification: n.verification ?? n.verifiedName,
-        subscribers:  n.subscribers ?? n.subscribersCount,
-        raw:          n,
+        subscribers: n.subscribers ?? n.subscribersCount,
+        raw: n,
       });
       count++;
     } catch (err) {

@@ -18,26 +18,26 @@ the console. Scan with WhatsApp → Linked Devices → Link a Device.
 
 ## System requirements
 
-| | Minimum | Recommended |
-|---|---|---|
-| Node | 18 | 20 LTS |
-| RAM | 512 MB | 1 GB |
-| Disk | 200 MB | 2 GB (for message history) |
-| OS | Linux / macOS / Windows | Linux (Ubuntu 22+) |
+|      | Minimum                 | Recommended                |
+| ---- | ----------------------- | -------------------------- |
+| Node | 18                      | 20 LTS                     |
+| RAM  | 512 MB                  | 1 GB                       |
+| Disk | 200 MB                  | 2 GB (for message history) |
+| OS   | Linux / macOS / Windows | Linux (Ubuntu 22+)         |
 
 ## Optional dependencies
 
 Some commands need additional binaries or services:
 
-| Command / feature | Needs |
-|---|---|
-| `.sticker` / `.toimg` | `ffmpeg` (or `webpmux`) on PATH |
-| `.tts` | `ffmpeg` |
-| `.spotify` / `.song` | `@distube/ytdl-core` (auto-installed via package.json) |
-| Postgres store | Running PostgreSQL 14+ |
-| MongoDB store | Running MongoDB 6+ |
-| Redis store | Running Redis 6+ |
-| Dashboard build | nothing extra; `scripts/build-dashboard.js` runs npm install in dashboard/ on first run |
+| Command / feature     | Needs                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| `.sticker` / `.toimg` | `ffmpeg` (or `webpmux`) on PATH                                                         |
+| `.tts`                | `ffmpeg`                                                                                |
+| `.spotify` / `.song`  | `@distube/ytdl-core` (auto-installed via package.json)                                  |
+| Postgres store        | Running PostgreSQL 14+                                                                  |
+| MongoDB store         | Running MongoDB 6+                                                                      |
+| Redis store           | Running Redis 6+                                                                        |
+| Dashboard build       | nothing extra; `scripts/build-dashboard.js` runs npm install in dashboard/ on first run |
 
 ## Running with PM2
 

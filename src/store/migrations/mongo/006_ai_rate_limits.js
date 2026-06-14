@@ -21,7 +21,7 @@ module.exports = {
   async up({ conn, logger }) {
     const specs = [
       ['ai_rate_user', { user_jid: 1, hour_bucket: 1 }, { unique: true }],
-      ['ai_rate_chat', { chat_jid: 1, day_bucket: 1 },  { unique: true }],
+      ['ai_rate_chat', { chat_jid: 1, day_bucket: 1 }, { unique: true }],
       ['ai_rate_user', { expires_at: 1 }, { expireAfterSeconds: 0 }],
       ['ai_rate_chat', { expires_at: 1 }, { expireAfterSeconds: 0 }],
     ];
@@ -36,7 +36,11 @@ module.exports = {
 
   async down({ conn }) {
     for (const coll of ['ai_rate_user', 'ai_rate_chat']) {
-      try { await conn.collection(coll).drop(); } catch (_) { /* ignore */ }
+      try {
+        await conn.collection(coll).drop();
+      } catch (_) {
+        /* ignore */
+      }
     }
   },
 };

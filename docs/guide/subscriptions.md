@@ -9,13 +9,13 @@ with the bot. Subscriptions persist across bot restarts.
 
 ## Subscription sources
 
-| Command | Source | Default interval |
-|---|---|---|
-| `.alienvault` | AlienVault OTX pulse digests | 60 min |
-| `.thehackersnews` | The Hacker News articles | 60 min |
-| `.rss` | Any RSS/Atom feed (multiple per user) | 30 min |
-| `.github` | GitHub releases + security advisories | 60 min |
-| `.vtwatch` | VirusTotal verdict changes | 360 min (6h) |
+| Command           | Source                                | Default interval |
+| ----------------- | ------------------------------------- | ---------------- |
+| `.alienvault`     | AlienVault OTX pulse digests          | 60 min           |
+| `.thehackersnews` | The Hacker News articles              | 60 min           |
+| `.rss`            | Any RSS/Atom feed (multiple per user) | 30 min           |
+| `.github`         | GitHub releases + security advisories | 60 min           |
+| `.vtwatch`        | VirusTotal verdict changes            | 360 min (6h)     |
 
 ## Common verb pattern
 
@@ -68,6 +68,7 @@ Subscribe to **any** RSS or Atom feed (limit: 20 feeds per user).
 ```
 
 Useful feeds:
+
 - `https://hnrss.org/frontpage` — Hacker News front page
 - `https://feeds.feedburner.com/TheHackersNews` — same as `.thehackersnews`
 - `https://www.bleepingcomputer.com/feed/` — BleepingComputer

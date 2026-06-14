@@ -34,11 +34,11 @@ async function synthesize(text, opts = {}) {
   for (const u of urls) {
     try {
       const r = await axiosWithBreaker(`google-tts:${lang}`, {
-        method:       'GET',
-        url:          u.url,
+        method: 'GET',
+        url: u.url,
         responseType: 'arraybuffer',
-        timeout:      15_000,
-        headers:      { 'User-Agent': 'Mozilla/5.0 EchoFox/1.1' },
+        timeout: 15_000,
+        headers: { 'User-Agent': 'Mozilla/5.0 EchoFox/1.1' },
       });
       chunks.push(Buffer.from(r.data));
     } catch (err) {

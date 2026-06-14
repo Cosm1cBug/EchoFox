@@ -30,11 +30,10 @@ module.exports = {
 
     // A status quote usually has contextInfo.remoteJid === 'status@broadcast'
     // OR contextInfo.participant pointing to the story author.
-    const innerCtx = ctx.raw?.message?.extendedTextMessage?.contextInfo
-                  || ctx.raw?.message?.[ctx.mtype]?.contextInfo;
-    const fromStatus =
-      innerCtx?.remoteJid === 'status@broadcast' ||
-      !!innerCtx?.participant;
+    const innerCtx =
+      ctx.raw?.message?.extendedTextMessage?.contextInfo ||
+      ctx.raw?.message?.[ctx.mtype]?.contextInfo;
+    const fromStatus = innerCtx?.remoteJid === 'status@broadcast' || !!innerCtx?.participant;
 
     if (!fromStatus) {
       return ctx.reply('🚫 The quoted message does not look like a Status update.');
@@ -42,7 +41,9 @@ module.exports = {
 
     const quotedType = ctx.quoted.type;
     if (quotedType !== 'imageMessage' && quotedType !== 'videoMessage') {
-      return ctx.reply(`⚠️ Unsupported status type: \`${quotedType}\`. Only image/video stories work.`);
+      return ctx.reply(
+        `⚠️ Unsupported status type: \`${quotedType}\`. Only image/video stories work.`,
+      );
     }
 
     await ctx.react('⏳');
@@ -55,9 +56,8 @@ module.exports = {
     }
 
     const caption = quotedType === 'imageMessage' ? '📸 Saved from status' : '🎞️ Saved from status';
-    const payload = quotedType === 'imageMessage'
-      ? { image: buf, caption }
-      : { video: buf, caption };
+    const payload =
+      quotedType === 'imageMessage' ? { image: buf, caption } : { video: buf, caption };
 
     await sock.sendMessage(ctx.from, payload, { quoted: m });
     await ctx.react('✅');

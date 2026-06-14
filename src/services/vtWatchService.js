@@ -31,16 +31,20 @@ const CHECK_INTERVAL = config.apis?.vtwatch?.checkIntervalMin || 360;
 
 // Endpoint map: target.type → VirusTotal v3 path segment
 const PATH = {
-  hash:   'files',
-  ip:     'ip_addresses',
+  hash: 'files',
+  ip: 'ip_addresses',
   domain: 'domains',
-  url:    'urls',
+  url: 'urls',
 };
 
 function vtId(type, id) {
   // URLs need url-safe-base64 of the URL itself per VT v3 docs
   if (type !== 'url') return id;
-  return Buffer.from(id).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return Buffer.from(id)
+    .toString('base64')
+    .replace(/=+$/, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
 }
 
 async function fetchStats(type, id) {
@@ -50,16 +54,16 @@ async function fetchStats(type, id) {
   if (!seg) return null;
   try {
     const { data } = await axiosWithBreaker(`vtwatch:${type}`, {
-      method:  'GET',
-      url:     `https://www.virustotal.com/api/v3/${seg}/${encodeURIComponent(vtId(type, id))}`,
+      method: 'GET',
+      url: `https://www.virustotal.com/api/v3/${seg}/${encodeURIComponent(vtId(type, id))}`,
       headers: { 'x-apikey': apiKey },
       timeout: 15000,
     });
     const stats = data?.data?.attributes?.last_analysis_stats || {};
     return {
-      malicious:  Number(stats.malicious  || 0),
+      malicious: Number(stats.malicious || 0),
       suspicious: Number(stats.suspicious || 0),
-      harmless:   Number(stats.harmless   || 0),
+      harmless: Number(stats.harmless || 0),
       undetected: Number(stats.undetected || 0),
     };
   } catch (err) {
@@ -74,10 +78,13 @@ async function fetchStats(type, id) {
 
 function formatAlert(type, id, before, after) {
   const before_mal = before?.malicious ?? 0;
-  const after_mal  = after.malicious;
-  const direction  = after_mal > before_mal ? '⬆️ *Detections increased*'
-                   : after_mal < before_mal ? '⬇️ Detections decreased'
-                   : '➡️ Detection count stable';
+  const after_mal = after.malicious;
+  const direction =
+    after_mal > before_mal
+      ? '⬆️ *Detections increased*'
+      : after_mal < before_mal
+        ? '⬇️ Detections decreased'
+        : '➡️ Detection count stable';
   return [
     `🛡️ *VT-watch alert*`,
     `Target: \`${type}:${id}\``,
@@ -101,13 +108,13 @@ async function checkAndDeliver(sock) {
     }
 
     for (const { jid, meta } of subscribers) {
-      const targets = (meta && Array.isArray(meta.targets)) ? meta.targets : [];
+      const targets = meta && Array.isArray(meta.targets) ? meta.targets : [];
       let mutated = false;
       for (const t of targets) {
         if (!t?.type || !t?.id) continue;
         const stats = await fetchStats(t.type, t.id);
         if (!stats) continue;
-        const before = (t.lastMalCount == null) ? null : { malicious: t.lastMalCount };
+        const before = t.lastMalCount == null ? null : { malicious: t.lastMalCount };
         // First check: just record baseline (no alert)
         if (before == null) {
           t.lastMalCount = stats.malicious;
@@ -115,8 +122,11 @@ async function checkAndDeliver(sock) {
           continue;
         }
         if (stats.malicious !== t.lastMalCount) {
-          try { await sock.sendMessage(jid, { text: formatAlert(t.type, t.id, before, stats) }); }
-          catch (err) { logger.warn({ jid, err: err.message }, 'vt alert send failed'); }
+          try {
+            await sock.sendMessage(jid, { text: formatAlert(t.type, t.id, before, stats) });
+          } catch (err) {
+            logger.warn({ jid, err: err.message }, 'vt alert send failed');
+          }
           t.lastMalCount = stats.malicious;
           mutated = true;
         }

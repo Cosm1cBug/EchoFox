@@ -21,7 +21,7 @@
 const axios = require('axios');
 const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 const APTOIDE_URL = 'https://ws75.aptoide.com/api/7/apps/search';
-const APP_INFO    = 'https://ws75.aptoide.com/api/7/app/get';
+const APP_INFO = 'https://ws75.aptoide.com/api/7/app/get';
 
 module.exports = {
   name: 'apk',
@@ -40,9 +40,9 @@ module.exports = {
     let hits;
     try {
       const r = await axiosWithBreaker('aptoide-search', {
-        method:  'GET',
-        url:     APTOIDE_URL,
-        params:  { query: q, limit: 5 },
+        method: 'GET',
+        url: APTOIDE_URL,
+        params: { query: q, limit: 5 },
         timeout: 10_000,
         headers: { 'User-Agent': 'EchoFox/1.0' },
       });
@@ -64,13 +64,15 @@ module.exports = {
     let details = top;
     try {
       const r = await axiosWithBreaker('aptoide-info', {
-        method:  'GET',
-        url:     APP_INFO,
-        params:  { app_id: top.id },
+        method: 'GET',
+        url: APP_INFO,
+        params: { app_id: top.id },
         timeout: 10_000,
       });
       details = r.data?.nodes?.meta?.data || top;
-    } catch { /* fall back to search-result fields */ }
+    } catch {
+      /* fall back to search-result fields */
+    }
 
     const lines = [
       `📦 *${details.name}*`,
@@ -90,22 +92,30 @@ module.exports = {
       try {
         const img = await axios.get(iconUrl, { responseType: 'arraybuffer', timeout: 6000 });
         thumb = Buffer.from(img.data);
-      } catch { /* not fatal */ }
+      } catch {
+        /* not fatal */
+      }
     }
 
-    await sock.sendMessage(ctx.from, {
-      text: lines.join('\n'),
-      contextInfo: thumb ? {
-        externalAdReply: {
-          showAdAttribution: false,
-          renderLargerThumbnail: false,
-          title:  details.name,
-          body:   details.developer?.name || details.store?.name || '',
-          previewType: 0,
-          mediaType: 1,
-          thumbnail: thumb,
-        },
-      } : undefined,
-    }, { quoted: m });
+    await sock.sendMessage(
+      ctx.from,
+      {
+        text: lines.join('\n'),
+        contextInfo: thumb
+          ? {
+              externalAdReply: {
+                showAdAttribution: false,
+                renderLargerThumbnail: false,
+                title: details.name,
+                body: details.developer?.name || details.store?.name || '',
+                previewType: 0,
+                mediaType: 1,
+                thumbnail: thumb,
+              },
+            }
+          : undefined,
+      },
+      { quoted: m },
+    );
   },
 };

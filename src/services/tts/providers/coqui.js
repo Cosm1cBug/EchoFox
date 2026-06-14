@@ -34,15 +34,16 @@ const { config } = require('../../../lib/configLoader');
 
 async function coquiToWav(text, pythonBin, model, wavPath) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(pythonBin, [
-      '-m', 'TTS.bin.synthesize',
-      '--text', text,
-      '--model_name', model,
-      '--out_path', wavPath,
-    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn(
+      pythonBin,
+      ['-m', 'TTS.bin.synthesize', '--text', text, '--model_name', model, '--out_path', wavPath],
+      { stdio: ['pipe', 'pipe', 'pipe'] },
+    );
 
     let stderr = '';
-    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
     proc.on('error', reject);
     proc.on('close', (code) => {
       if (code !== 0) {
@@ -84,8 +85,12 @@ async function synthesize(text, _opts = {}) {
     await wavToMp3(wavPath, mp3Path);
     return fs.readFileSync(mp3Path);
   } finally {
-    try { fs.rmSync(wavPath, { force: true }); } catch {}
-    try { fs.rmSync(mp3Path, { force: true }); } catch {}
+    try {
+      fs.rmSync(wavPath, { force: true });
+    } catch {}
+    try {
+      fs.rmSync(mp3Path, { force: true });
+    } catch {}
   }
 }
 

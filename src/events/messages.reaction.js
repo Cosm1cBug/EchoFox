@@ -29,16 +29,12 @@ module.exports = async function onMessageReaction({ sock: _sock, store, payload 
     const reactionMsg = r?.reaction;
     if (!target?.id || !target?.remoteJid) continue;
 
-    const reactor = reactionMsg?.key?.participant
-                 || reactionMsg?.key?.remoteJid
-                 || null;
-    const emoji   = reactionMsg?.text || '';                  // '' = removal
-    const ts      = Math.floor((Number(reactionMsg?.senderTimestampMs) || Date.now()) / 1000);
+    const reactor = reactionMsg?.key?.participant || reactionMsg?.key?.remoteJid || null;
+    const emoji = reactionMsg?.text || ''; // '' = removal
+    const ts = Math.floor((Number(reactionMsg?.senderTimestampMs) || Date.now()) / 1000);
 
     try {
-      await store.recordMessageReaction?.(
-        target.remoteJid, target.id, reactor, emoji || null, ts,
-      );
+      await store.recordMessageReaction?.(target.remoteJid, target.id, reactor, emoji || null, ts);
       logger.debug(
         { jid: target.remoteJid, id: target.id, reactor, emoji: emoji || '(removed)' },
         emoji ? '👍 reaction added' : '🚫 reaction removed',

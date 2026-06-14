@@ -4,11 +4,11 @@ EchoFox ships with three M6 scripts for long-running stability validation.
 
 ## Quick reference
 
-| Script | Purpose |
-|---|---|
-| `scripts/heap-snapshot.js` | One-shot v8 heap snapshot to disk |
-| `scripts/heap-diff.js` | Compare two snapshots, report class-level growth |
-| `scripts/soak.js` | Synthetic load harness with periodic sampling |
+| Script                     | Purpose                                          |
+| -------------------------- | ------------------------------------------------ |
+| `scripts/heap-snapshot.js` | One-shot v8 heap snapshot to disk                |
+| `scripts/heap-diff.js`     | Compare two snapshots, report class-level growth |
+| `scripts/soak.js`          | Synthetic load harness with periodic sampling    |
 
 ## In-process leak detector
 
@@ -85,6 +85,7 @@ node scripts/soak.js --durationMin=60 --rate=10 --snapshot=15
 ```
 
 Options:
+
 - `--durationMin` — how long to run (default 60)
 - `--rate` — synthetic messages per minute (default 10)
 - `--snapshot` — take a heap snapshot every N minutes (default 0 = off)
@@ -99,12 +100,12 @@ The harness uses an in-memory SQLite + mock socket, fires synthetic
 
 ### Recommended soak profiles
 
-| Profile | Command |
-|---|---|
-| Smoke (5 min) | `node scripts/soak.js --durationMin=5 --rate=20` |
-| Short (1 h) | `node scripts/soak.js --durationMin=60 --rate=10 --snapshot=15` |
-| Medium (8 h) | `node scripts/soak.js --durationMin=480 --rate=5 --snapshot=60` |
-| Long (24 h) | `node scripts/soak.js --durationMin=1440 --rate=2 --snapshot=180` |
+| Profile       | Command                                                           |
+| ------------- | ----------------------------------------------------------------- |
+| Smoke (5 min) | `node scripts/soak.js --durationMin=5 --rate=20`                  |
+| Short (1 h)   | `node scripts/soak.js --durationMin=60 --rate=10 --snapshot=15`   |
+| Medium (8 h)  | `node scripts/soak.js --durationMin=480 --rate=5 --snapshot=60`   |
+| Long (24 h)   | `node scripts/soak.js --durationMin=1440 --rate=2 --snapshot=180` |
 
 ## Production soak
 

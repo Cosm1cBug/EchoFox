@@ -30,18 +30,18 @@
 const logger = require('../../core/logger').child({ mod: 'ai' });
 const { config } = require('../../lib/configLoader');
 
-const conv      = require('./conversationStore');
-const router    = require('./router');
-const cost      = require('./costTracker');
-const personas  = require('./personas');
-const tools     = require('./toolRegistry');
-const metrics   = require('../metrics');
+const conv = require('./conversationStore');
+const router = require('./router');
+const cost = require('./costTracker');
+const personas = require('./personas');
+const tools = require('./toolRegistry');
+const metrics = require('../metrics');
 
 const providers = {
-  openai:    require('./providers/openai'),
-  gemini:    require('./providers/gemini'),
+  openai: require('./providers/openai'),
+  gemini: require('./providers/gemini'),
   anthropic: require('./providers/anthropic'),
-  local:     require('./providers/local'),
+  local: require('./providers/local'),
 };
 
 const MAX_TOOL_ROUNDS = 3;
@@ -56,18 +56,30 @@ function _resolveSettings({ optIn, providerName, modelName, persona }) {
   const aiCfg = config.ai || {};
   return {
     provider: providerName || optIn?.provider || aiCfg.defaultProvider || 'openai',
-    model:    modelName    || optIn?.model    || aiCfg.model           || 'gpt-4o-mini',
-    persona:  persona      || optIn?.persona  || aiCfg.persona         || 'threat-intel',
+    model: modelName || optIn?.model || aiCfg.model || 'gpt-4o-mini',
+    persona: persona || optIn?.persona || aiCfg.persona || 'threat-intel',
   };
 }
 
 /**
  * Main entry point. Caller MUST have already gated through router.shouldRespond().
  */
-async function chat({ chatJid, userJid, text, optIn, providerName, modelName, persona: personaName }) {
+async function chat({
+  chatJid,
+  userJid,
+  text,
+  optIn,
+  providerName,
+  modelName,
+  persona: personaName,
+}) {
   metrics.incAiRequest('start');
   const aiCfg = config.ai || {};
-  const { provider, model, persona: pname } = _resolveSettings({ optIn, providerName, modelName, persona: personaName });
+  const {
+    provider,
+    model,
+    persona: pname,
+  } = _resolveSettings({ optIn, providerName, modelName, persona: personaName });
 
   const system = personas.pick({ persona: pname, customPersona: aiCfg.customPersona });
   const prov = _resolveProvider(provider);
@@ -84,11 +96,11 @@ async function chat({ chatJid, userJid, text, optIn, providerName, modelName, pe
   const toolSpec = aiCfg.enableToolCalling ? tools.getActiveSpec() : [];
 
   // 4) tool-call loop
-  const aggUsage   = { promptTokens: 0, completionTokens: 0, costUsd: 0 };
-  const toolTrace  = [];
+  const aggUsage = { promptTokens: 0, completionTokens: 0, costUsd: 0 };
+  const toolTrace = [];
   let rounds = 0;
   let finalContent = '';
-  const workingHistory = history.slice();   // local copy we mutate per round
+  const workingHistory = history.slice(); // local copy we mutate per round
 
   while (rounds < MAX_TOOL_ROUNDS) {
     rounds += 1;
@@ -96,18 +108,22 @@ async function chat({ chatJid, userJid, text, optIn, providerName, modelName, pe
     const resp = await prov.chat({
       system,
       history: workingHistory,
-      tools:   toolSpec,
+      tools: toolSpec,
       model,
       maxTokens: aiCfg.maxTokens,
     });
 
     // accumulate token + cost
-    const { costUsd } = await cost.record(provider, resp.model || model,
-      resp.usage?.promptTokens || 0, resp.usage?.completionTokens || 0);
+    const { costUsd } = await cost.record(
+      provider,
+      resp.model || model,
+      resp.usage?.promptTokens || 0,
+      resp.usage?.completionTokens || 0,
+    );
     metrics.incAiTokens(resp.usage?.promptTokens || 0, resp.usage?.completionTokens || 0);
-    aggUsage.promptTokens     += resp.usage?.promptTokens     || 0;
+    aggUsage.promptTokens += resp.usage?.promptTokens || 0;
     aggUsage.completionTokens += resp.usage?.completionTokens || 0;
-    aggUsage.costUsd          += costUsd;
+    aggUsage.costUsd += costUsd;
 
     // No tool calls → final answer
     if (!resp.toolCalls || !resp.toolCalls.length) {
@@ -117,14 +133,14 @@ async function chat({ chatJid, userJid, text, optIn, providerName, modelName, pe
 
     // Append the assistant tool-call turn to working history AND persist it
     const assistantTurn = {
-      role:      'assistant',
-      content:   resp.content || '',
+      role: 'assistant',
+      content: resp.content || '',
       toolCalls: resp.toolCalls,
-      model:     resp.model || model,
+      model: resp.model || model,
       provider,
-      promptTokens:     resp.usage?.promptTokens     || 0,
+      promptTokens: resp.usage?.promptTokens || 0,
       completionTokens: resp.usage?.completionTokens || 0,
-      ts:        Date.now(),
+      ts: Date.now(),
     };
     workingHistory.push(assistantTurn);
     await conv.append(chatJid, assistantTurn);
@@ -136,11 +152,11 @@ async function chat({ chatJid, userJid, text, optIn, providerName, modelName, pe
       const resultContent = r.ok ? JSON.stringify(r.result) : JSON.stringify({ error: r.error });
       toolTrace.push({ name: tc.name, args: tc.args, ok: r.ok, result: r.result, error: r.error });
       const toolTurn = {
-        role:     'tool',
-        content:  resultContent,
+        role: 'tool',
+        content: resultContent,
         toolName: tc.name,
-        toolId:   tc.id,
-        ts:       Date.now(),
+        toolId: tc.id,
+        ts: Date.now(),
       };
       workingHistory.push(toolTurn);
       await conv.append(chatJid, toolTurn);
@@ -156,26 +172,30 @@ async function chat({ chatJid, userJid, text, optIn, providerName, modelName, pe
   // 5) persist the final assistant turn (only if not already persisted as a tool-call turn)
   if (finalContent) {
     await conv.append(chatJid, {
-      role:     'assistant',
-      content:  finalContent,
+      role: 'assistant',
+      content: finalContent,
       model,
       provider,
-      promptTokens:     aggUsage.promptTokens,
+      promptTokens: aggUsage.promptTokens,
       completionTokens: aggUsage.completionTokens,
-      ts:       Date.now(),
+      ts: Date.now(),
     });
   }
 
   // 6) bump rate counters
-  try { router.noteSent({ chatJid, userJid }); } catch (e) { logger.warn({ err: e }, 'noteSent failed'); }
+  try {
+    router.noteSent({ chatJid, userJid });
+  } catch (e) {
+    logger.warn({ err: e }, 'noteSent failed');
+  }
 
   return {
-    reply:     finalContent,
+    reply: finalContent,
     rounds,
     provider,
     model,
-    persona:   pname,
-    usage:     aggUsage,
+    persona: pname,
+    usage: aggUsage,
     toolCalls: toolTrace,
   };
 }

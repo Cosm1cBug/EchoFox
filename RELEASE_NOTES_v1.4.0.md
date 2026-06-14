@@ -34,6 +34,7 @@ git push origin v1.4.0
 ```
 
 Within ~5 minutes:
+
 1. `release.yml` creates the GitHub Release with `RELEASE_NOTES_v1.4.0.md`
    as the body and `echofox-1.4.0.tar.gz` attached.
 2. `docker.yml` pushes `:1.4.0`, `:1.4`, `:latest`, `:sha-<short>`
@@ -51,9 +52,9 @@ Within ~5 minutes:
 
 `echofox` job now scrapes two targets:
 
-| Port | Source | Owns |
-|---|---|---|
-| `:3000` | supervisor (`bootstrap.js`) | `echofox_worker_up`, Node.js defaults |
+| Port    | Source                            | Owns                                      |
+| ------- | --------------------------------- | ----------------------------------------- |
+| `:3000` | supervisor (`bootstrap.js`)       | `echofox_worker_up`, Node.js defaults     |
 | `:3001` | dashboard (`dashboard/server.js`) | All `echofox_ai_*` + `echofox_telegram_*` |
 
 Both labelled with `job_part: supervisor|dashboard` so PromQL queries
@@ -75,9 +76,9 @@ you'll see two new sections at the bottom:
 
 ### Built-in alerts
 
-| Rule | Default trigger | Mirror destinations |
-|---|---|---|
-| `aiCostPct` | today's cost ≥ 80% of `costCapPerDayUsd` | WhatsApp `errLogs` + Telegram `errLogs` |
+| Rule                  | Default trigger                                       | Mirror destinations                     |
+| --------------------- | ----------------------------------------------------- | --------------------------------------- |
+| `aiCostPct`           | today's cost ≥ 80% of `costCapPerDayUsd`              | WhatsApp `errLogs` + Telegram `errLogs` |
 | `telegramFailureRate` | failure-rate ≥ 20% over alert window, with ≥ 10 sends | WhatsApp `errLogs` + Telegram `errLogs` |
 
 Both have independent `cooldownMinutes` (60 + 30 default). Disable
@@ -103,11 +104,11 @@ Either failure blocks the PR. If `headers:check` fails locally, run
 
 ## Required secrets (all optional)
 
-| Secret | Used by | Effect if missing |
-|---|---|---|
-| `NPM_TOKEN` | `npm-publish.yml` | npm publish step fails (other releases continue) |
-| `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN` | `docker.yml` | Docker Hub push fails; GHCR push still works |
-| `GITHUB_TOKEN` | release.yml, docker.yml | auto-injected by GitHub |
+| Secret                                   | Used by                 | Effect if missing                                |
+| ---------------------------------------- | ----------------------- | ------------------------------------------------ |
+| `NPM_TOKEN`                              | `npm-publish.yml`       | npm publish step fails (other releases continue) |
+| `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN` | `docker.yml`            | Docker Hub push fails; GHCR push still works     |
+| `GITHUB_TOKEN`                           | release.yml, docker.yml | auto-injected by GitHub                          |
 
 ## Docs site
 

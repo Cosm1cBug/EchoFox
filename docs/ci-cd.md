@@ -15,14 +15,17 @@ M4 introduces a professional, stable, and maintainable CI/CD pipeline for EchoFo
 **Purpose:** Continuous Integration — ensures code quality on every push and pull request.
 
 **Triggers:**
+
 - Push to `main` and `develop`
 - Pull requests to `main` and `develop`
 
 **Jobs:**
+
 - **Lint**: Runs ESLint and Prettier checks
 - **Test**: Runs tests on multiple Node.js versions using a matrix
 
 **Node.js Versions:**
+
 - Node 20
 - Node 22
 
@@ -37,10 +40,12 @@ M4 introduces a professional, stable, and maintainable CI/CD pipeline for EchoFo
 **Purpose:** Automatically creates GitHub Releases when the version in `package.json` is bumped.
 
 **Triggers:**
+
 - Push to `main`
 - Manual trigger (`workflow_dispatch`)
 
 **Behavior:**
+
 - Detects version changes in `package.json`
 - Creates a new Git tag (`vX.Y.Z`)
 - Creates a GitHub Release with auto-generated release notes
@@ -55,10 +60,12 @@ M4 introduces a professional, stable, and maintainable CI/CD pipeline for EchoFo
 **Purpose:** Builds and publishes multi-arch Docker images.
 
 **Triggers:**
+
 - Weekly schedule (every Monday at 00:00 UTC)
 - Manual trigger (`workflow_dispatch`)
 
 **Features:**
+
 - Multi-platform build (`linux/amd64` + `linux/arm64`)
 - Pushes to both **GHCR** and **Docker Hub**
 - Uses GitHub Actions caching for faster builds
@@ -73,10 +80,12 @@ M4 introduces a professional, stable, and maintainable CI/CD pipeline for EchoFo
 **Purpose:** Automated security scanning.
 
 **Jobs:**
+
 - **CodeQL Analysis**: Scans JavaScript code for vulnerabilities
 - **Dependency Review**: Runs on pull requests to block vulnerable dependencies
 
 **Triggers:**
+
 - Push to `main`
 - Pull requests
 - Weekly schedule (every Wednesday)
@@ -92,6 +101,7 @@ M4 introduces a professional, stable, and maintainable CI/CD pipeline for EchoFo
 **Tool Used:** TruffleHog
 
 **Triggers:**
+
 - Push to `main` and `develop`
 - Pull requests
 - Manual trigger
@@ -103,6 +113,7 @@ M4 introduces a professional, stable, and maintainable CI/CD pipeline for EchoFo
 **File:** `.github/dependabot.yml`
 
 **Improvements Made:**
+
 - Weekly updates for npm and GitHub Actions
 - Grouped dependency updates (production vs dev)
 - Reduced PR noise
@@ -126,4 +137,4 @@ M4 introduces a professional, stable, and maintainable CI/CD pipeline for EchoFo
 
 ---
 
-*Last updated: May 2026*
+_Last updated: May 2026_

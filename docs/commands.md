@@ -20,82 +20,82 @@
 
 ## admin
 
-| Command | Aliases | Description |
-|---|---|---|
+| Command           | Aliases  | Description          |
+| ----------------- | -------- | -------------------- |
 | **`.serverinfo`** | `.sinfo` | Check server status. |
 
 ## convert
 
-| Command | Aliases | Description |
-|---|---|---|
-| **`.sticker`** | `.s`, `.stiker` | Make stickers from provided image/video |
-| **`.sticker`** | `.st` | Convert Image, Video, Gif To Sticker |
-| **`.toimg`** | `.toimage` | Convert Sticker to Image |
-| **`.tts`** | `.text2speech`, `.speak` | Convert quoted text to speech. Optional: 2-letter language code translates first. _⏱️ 5s cooldown_ |
+| Command        | Aliases                  | Description                                                                                        |
+| -------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
+| **`.sticker`** | `.s`, `.stiker`          | Make stickers from provided image/video                                                            |
+| **`.sticker`** | `.st`                    | Convert Image, Video, Gif To Sticker                                                               |
+| **`.toimg`**   | `.toimage`               | Convert Sticker to Image                                                                           |
+| **`.tts`**     | `.text2speech`, `.speak` | Convert quoted text to speech. Optional: 2-letter language code translates first. _⏱️ 5s cooldown_ |
 
 ## download
 
-| Command | Aliases | Description |
-|---|---|---|
-| **`.apk`** | `.apkdl` | Search and download APKs from Aptoide. |
-| **`.dwnlod`** | `.fetchmedia` | Downloads media from quoted messages |
-| **`.mediafire`** | `.mfdl` | Download a file from MediaFire |
-| **`.pinterest`** | `.pinterestdl` | Downloads a song based on the given lyrics or name. |
-| **`.song`** | `.songdl`, `.yt` | Search YouTube for a song and reply with the audio (MP3). _⏱️ 15s cooldown_ |
-| **`.spotify`** | `.spotifydl` | Downloads song from given spotify URL. |
+| Command          | Aliases          | Description                                                                 |
+| ---------------- | ---------------- | --------------------------------------------------------------------------- |
+| **`.apk`**       | `.apkdl`         | Search and download APKs from Aptoide.                                      |
+| **`.dwnlod`**    | `.fetchmedia`    | Downloads media from quoted messages                                        |
+| **`.mediafire`** | `.mfdl`          | Download a file from MediaFire                                              |
+| **`.pinterest`** | `.pinterestdl`   | Downloads a song based on the given lyrics or name.                         |
+| **`.song`**      | `.songdl`, `.yt` | Search YouTube for a song and reply with the audio (MP3). _⏱️ 15s cooldown_ |
+| **`.spotify`**   | `.spotifydl`     | Downloads song from given spotify URL.                                      |
 
 ## entertainment
 
-| Command | Aliases | Description |
-|---|---|---|
+| Command     | Aliases                      | Description                            |
+| ----------- | ---------------------------- | -------------------------------------- |
 | **`.omdb`** | `.movie`, `.series`, `.imdb` | Fetches the OMDB info of Movie/Series. |
 
 ## general
 
-| Command | Aliases | Description |
-|---|---|---|
-| **`.alienvault`** | — | _(undocumented)_ |
-| **`.ctx`** | `.ctest` | _(undocumented)_ |
+| Command              | Aliases                             | Description                                                 |
+| -------------------- | ----------------------------------- | ----------------------------------------------------------- |
+| **`.alienvault`**    | —                                   | _(undocumented)_                                            |
+| **`.ctx`**           | `.ctest`                            | _(undocumented)_                                            |
 | **`.thehackernews`** | `.thn`, `.hackernews`, `.cybernews` | Fetch latest cybersecurity headlines from thehackernews.com |
-| **`.translate`** | `.tr`, `.trt` | Translate the quoted/replied text. |
-| **`.virustotal`** | `.vt` | Check IP/URL/Domains/Hashes in VirusTotal |
-| **`.wiki`** | `.wikipedia` | Search contents from wikipedia! |
+| **`.translate`**     | `.tr`, `.trt`                       | Translate the quoted/replied text.                          |
+| **`.virustotal`**    | `.vt`                               | Check IP/URL/Domains/Hashes in VirusTotal                   |
+| **`.wiki`**          | `.wikipedia`                        | Search contents from wikipedia!                             |
 
 ## group
 
-| Command | Aliases | Description |
-|---|---|---|
-| **`.approve`** | `.accept` | Approve a pending join request in this group _👥 group_ |
-| **`.link`** | `.grouplink` | Fetches group\ |
+| Command        | Aliases      | Description                                             |
+| -------------- | ------------ | ------------------------------------------------------- |
+| **`.approve`** | `.accept`    | Approve a pending join request in this group _👥 group_ |
+| **`.link`**    | `.grouplink` | Fetches group\                                          |
 
 ## main
 
-| Command | Aliases | Description |
-|---|---|---|
+| Command     | Aliases     | Description                       |
+| ----------- | ----------- | --------------------------------- |
 | **`.menu`** | `.listmenu` | Shows all the available features. |
 
 ## misc
 
-| Command | Aliases | Description |
-|---|---|---|
-| **`.antiViewOnce`** | `.vv`, `.avv` | _(undocumented)_ |
-| **`.exec`** | `.>` | _(undocumented)_ |
-| **`.ping`** | `.p` | Check ping in ms |
-| **`.dlang`** | `.mov` | _(undocumented)_ |
-| **`.sendstory`** | `.send`, `.savestory` | Reply to a quoted status (story) to get the media in DM |
-| **`.ctx`** | `.ctest` | _(undocumented)_ |
+| Command             | Aliases               | Description                                             |
+| ------------------- | --------------------- | ------------------------------------------------------- |
+| **`.antiViewOnce`** | `.vv`, `.avv`         | _(undocumented)_                                        |
+| **`.exec`**         | `.>`                  | _(undocumented)_                                        |
+| **`.ping`**         | `.p`                  | Check ping in ms                                        |
+| **`.dlang`**        | `.mov`                | _(undocumented)_                                        |
+| **`.sendstory`**    | `.send`, `.savestory` | Reply to a quoted status (story) to get the media in DM |
+| **`.ctx`**          | `.ctest`              | _(undocumented)_                                        |
 
 ## tools
 
-| Command | Aliases | Description |
-|---|---|---|
+| Command      | Aliases            | Description                              |
+| ------------ | ------------------ | ---------------------------------------- |
 | **`.ssweb`** | `.ssw`, `.webshot` | Takes a screenshot of the provided link. |
 
 ## user
 
-| Command | Aliases | Description |
-|---|---|---|
-| **`.profile`** | `.me` | _(undocumented)_ |
+| Command        | Aliases | Description      |
+| -------------- | ------- | ---------------- |
+| **`.profile`** | `.me`   | _(undocumented)_ |
 
 ---
 

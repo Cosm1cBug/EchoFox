@@ -26,8 +26,9 @@ function _build() {
   const ax = configuredAxios();
 
   let axiosRetry;
-  try { axiosRetry = require('axios-retry'); }
-  catch {
+  try {
+    axiosRetry = require('axios-retry');
+  } catch {
     logger.warn('axios-retry not installed — running without retries');
     return ax;
   }
@@ -36,7 +37,7 @@ function _build() {
     retries: 3,
     retryDelay: (count) => {
       // Exponential backoff with jitter, capped at 10s.
-      const base = 1000 * (2 ** count);
+      const base = 1000 * 2 ** count;
       const jitter = Math.random() * 1000;
       return Math.min(base + jitter, 10_000);
     },
@@ -49,10 +50,16 @@ function _build() {
       return false;
     },
     onRetry: (count, err, cfg) => {
-      logger.debug({
-        attempt: count, url: cfg.url, method: cfg.method,
-        code: err.code, status: err.response?.status,
-      }, 'axios retry');
+      logger.debug(
+        {
+          attempt: count,
+          url: cfg.url,
+          method: cfg.method,
+          code: err.code,
+          status: err.response?.status,
+        },
+        'axios retry',
+      );
     },
   });
 

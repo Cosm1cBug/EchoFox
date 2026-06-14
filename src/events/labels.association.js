@@ -39,8 +39,12 @@ module.exports = async ({ u }) => {
   const events = Array.isArray(u) ? u : [u];
   let count = 0;
   for (const ev of events) {
-    try { await processOne(store, ev); count++; }
-    catch (err) { logger.debug({ err }, 'label association failed for one event'); }
+    try {
+      await processOne(store, ev);
+      count++;
+    } catch (err) {
+      logger.debug({ err }, 'label association failed for one event');
+    }
   }
   if (count) logger.debug({ count }, 'labels.association processed');
 };

@@ -10,24 +10,27 @@ const { Pool } = require('pg');
 const { proto } = require('@whiskeysockets/baileys');
 const { SQL_DDL: PARTICIPANTS_DDL } = require('./schema/participants');
 const { makeBatcher } = require('../lib/backpressure');
-const { SQL_DDL: STATS_DDL }        = require('./schema/stats');
-const { SQL_DDL: EXTRAS_DDL, applyMessagesMigration_postgres } = require('./schema/messages-extras');
+const { SQL_DDL: STATS_DDL } = require('./schema/stats');
+const {
+  SQL_DDL: EXTRAS_DDL,
+  applyMessagesMigration_postgres,
+} = require('./schema/messages-extras');
 
 function makePostgresStore(url, logger, groupCache) {
   const pool = new Pool({
-    connectionString:        url,
-    max:                     20,
-    idleTimeoutMillis:       30_000,
+    connectionString: url,
+    max: 20,
+    idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 2_000,
-    allowExitOnIdle:         false,
+    allowExitOnIdle: false,
   });
   pool.on('error', (e) => logger.error({ err: e }, 'pg pool error (idle client)'));
 
   const batchCfg = config.processing?.messageBatch || {};
   const messageBatcher = makeBatcher({
     name: 'pg-messages',
-    maxBatch:      batchCfg.maxBatch      ?? 100,
-    maxWaitMs:     batchCfg.maxWaitMs     ?? 250,
+    maxBatch: batchCfg.maxBatch ?? 100,
+    maxWaitMs: batchCfg.maxWaitMs ?? 250,
     maxBufferSize: batchCfg.maxBufferSize ?? 5_000,
     onDrop: (n) => logger.warn({ dropped: n }, 'pg message batcher overflow'),
     flush: async (rows) => {
@@ -51,7 +54,9 @@ function makePostgresStore(url, logger, groupCache) {
     },
   });
 
-  pool.query(`
+  pool
+    .query(
+      `
     CREATE TABLE IF NOT EXISTS messages (
       jid TEXT, id TEXT, from_me BOOLEAN, participant TEXT,
       msg BYTEA, ts BIGINT, PRIMARY KEY (jid, id));
@@ -93,28 +98,27 @@ function makePostgresStore(url, logger, groupCache) {
       sent_at  BIGINT NOT NULL,
       PRIMARY KEY (service, jid, item_url)
     );
-  `).then(() => applyMessagesMigration_postgres(pool))
+  `,
+    )
+    .then(() => applyMessagesMigration_postgres(pool))
     .catch((e) => logger.error({ err: e }, 'Postgres init failed'));
 
   return {
     async hasContact(jid) {
       try {
-        const res = await this.pool.query(
-          'SELECT 1 FROM contacts WHERE jid = $1 LIMIT 1',
-          [jid]
-        );
+        const res = await this.pool.query('SELECT 1 FROM contacts WHERE jid = $1 LIMIT 1', [jid]);
         return res.rowCount > 0;
       } catch (e) {
         logger.warn({ err: e, jid }, 'hasContact failed');
         return false;
       }
     },
-    
+
     async getMessage(key) {
-      const r = await pool.query(
-        'SELECT msg FROM messages WHERE jid = $1 AND id = $2',
-        [key.remoteJid, key.id],
-      );
+      const r = await pool.query('SELECT msg FROM messages WHERE jid = $1 AND id = $2', [
+        key.remoteJid,
+        key.id,
+      ]);
       if (!r.rows[0]) return undefined;
       return proto.Message.decode(r.rows[0].msg);
     },
@@ -143,10 +147,11 @@ function makePostgresStore(url, logger, groupCache) {
         await pool.query(
           `INSERT INTO group_participants_events (group_jid, participant, action, actor, ts)
            VALUES ($1, $2, $3, $4, $5)`,
-          [groupJid, participant, action, actor || null,
-           ts ?? Math.floor(Date.now() / 1000)],
+          [groupJid, participant, action, actor || null, ts ?? Math.floor(Date.now() / 1000)],
         );
-      } catch (e) { logger.warn({ err: e }, 'participant event insert failed'); }
+      } catch (e) {
+        logger.warn({ err: e }, 'participant event insert failed');
+      }
     },
 
     async getParticipantHistory(groupJid, limit = 500) {
@@ -157,7 +162,10 @@ function makePostgresStore(url, logger, groupCache) {
           [groupJid, limit],
         );
         return r.rows;
-      } catch (e) { logger.warn({ err: e }, 'history query failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'history query failed');
+        return [];
+      }
     },
 
     async getCurrentParticipants(groupJid) {
@@ -170,20 +178,28 @@ function makePostgresStore(url, logger, groupCache) {
           [groupJid],
         );
         return r.rows.filter(
-          (row) => row.last_action !== 'leave' && row.last_action !== 'kick' && row.last_action !== 'reject',
+          (row) =>
+            row.last_action !== 'leave' &&
+            row.last_action !== 'kick' &&
+            row.last_action !== 'reject',
         );
-      } catch (e) { logger.warn({ err: e }, 'current participants query failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'current participants query failed');
+        return [];
+      }
     },
 
     async listGroups() {
       try {
         const r = await pool.query(`SELECT jid, subject, meta FROM groups ORDER BY subject`);
         return r.rows.map((row) => ({
-          jid:              row.jid,
-          subject:          row.subject || row.meta?.subject || '(unnamed)',
+          jid: row.jid,
+          subject: row.subject || row.meta?.subject || '(unnamed)',
           participantCount: row.meta?.participants?.length || 0,
         }));
-      } catch { return []; }
+      } catch {
+        return [];
+      }
     },
 
     // labels ─────────────────────────────────────────
@@ -200,12 +216,19 @@ function makePostgresStore(url, logger, groupCache) {
              updated_at = EXCLUDED.updated_at`,
           [labelId, name, color ?? null, Date.now()],
         );
-      } catch (e) { logger.warn({ err: e, labelId }, 'upsertLabel failed'); }
+      } catch (e) {
+        logger.warn({ err: e, labelId }, 'upsertLabel failed');
+      }
     },
     async deleteLabel(labelId) {
       try {
-        await pool.query('UPDATE labels SET deleted = TRUE, updated_at = $1 WHERE label_id = $2', [Date.now(), labelId]);
-      } catch (e) { logger.warn({ err: e, labelId }, 'deleteLabel failed'); }
+        await pool.query('UPDATE labels SET deleted = TRUE, updated_at = $1 WHERE label_id = $2', [
+          Date.now(),
+          labelId,
+        ]);
+      } catch (e) {
+        logger.warn({ err: e, labelId }, 'deleteLabel failed');
+      }
     },
     async getLabel(labelId) {
       try {
@@ -214,7 +237,10 @@ function makePostgresStore(url, logger, groupCache) {
           [labelId],
         );
         return rows[0] || null;
-      } catch (e) { logger.warn({ err: e, labelId }, 'getLabel failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, labelId }, 'getLabel failed');
+        return null;
+      }
     },
     async listLabels() {
       try {
@@ -222,7 +248,10 @@ function makePostgresStore(url, logger, groupCache) {
           'SELECT label_id, name, color, deleted, updated_at FROM labels WHERE deleted = FALSE ORDER BY name',
         );
         return rows;
-      } catch (e) { logger.warn({ err: e }, 'listLabels failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'listLabels failed');
+        return [];
+      }
     },
     async associateLabel(labelId, targetType, targetJid, targetMsgId = null) {
       try {
@@ -232,7 +261,9 @@ function makePostgresStore(url, logger, groupCache) {
            ON CONFLICT (label_id, target_type, target_jid, target_msg_id) DO NOTHING`,
           [labelId, targetType, targetJid, targetMsgId || '', Date.now()],
         );
-      } catch (e) { logger.warn({ err: e, labelId, targetJid }, 'associateLabel failed'); }
+      } catch (e) {
+        logger.warn({ err: e, labelId, targetJid }, 'associateLabel failed');
+      }
     },
     async disassociateLabel(labelId, targetType, targetJid, targetMsgId = null) {
       try {
@@ -242,7 +273,9 @@ function makePostgresStore(url, logger, groupCache) {
              AND COALESCE(target_msg_id, '') = COALESCE($4, '')`,
           [labelId, targetType, targetJid, targetMsgId || ''],
         );
-      } catch (e) { logger.warn({ err: e, labelId, targetJid }, 'disassociateLabel failed'); }
+      } catch (e) {
+        logger.warn({ err: e, labelId, targetJid }, 'disassociateLabel failed');
+      }
     },
     async getLabelAssociations(labelId) {
       try {
@@ -251,7 +284,10 @@ function makePostgresStore(url, logger, groupCache) {
           [labelId],
         );
         return rows;
-      } catch (e) { logger.warn({ err: e, labelId }, 'getLabelAssociations failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e, labelId }, 'getLabelAssociations failed');
+        return [];
+      }
     },
     async getLabelsForTarget(targetJid) {
       try {
@@ -263,7 +299,10 @@ function makePostgresStore(url, logger, groupCache) {
           [targetJid],
         );
         return rows;
-      } catch (e) { logger.warn({ err: e, targetJid }, 'getLabelsForTarget failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e, targetJid }, 'getLabelsForTarget failed');
+        return [];
+      }
     },
 
     // newsletters ────────────────────────────────────
@@ -295,7 +334,9 @@ function makePostgresStore(url, logger, groupCache) {
             ts,
           ],
         );
-      } catch (e) { logger.warn({ err: e, newsletterId }, 'upsertNewsletter failed'); }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId }, 'upsertNewsletter failed');
+      }
     },
     async updateNewsletter(newsletterId, partial = {}) {
       return this.upsertNewsletter(newsletterId, partial);
@@ -307,7 +348,10 @@ function makePostgresStore(url, logger, groupCache) {
           [newsletterId],
         );
         return rows[0] || null;
-      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletter failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId }, 'getNewsletter failed');
+        return null;
+      }
     },
     async listNewsletters() {
       try {
@@ -315,7 +359,10 @@ function makePostgresStore(url, logger, groupCache) {
           'SELECT newsletter_id, name, description, picture_url, verification, subscribers, created_at, updated_at FROM newsletters ORDER BY updated_at DESC',
         );
         return rows;
-      } catch (e) { logger.warn({ err: e }, 'listNewsletters failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'listNewsletters failed');
+        return [];
+      }
     },
     async incrementNewsletterView(newsletterId, messageId) {
       try {
@@ -327,7 +374,9 @@ function makePostgresStore(url, logger, groupCache) {
              updated_at = EXCLUDED.updated_at`,
           [newsletterId, messageId, Date.now()],
         );
-      } catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'incrementNewsletterView failed'); }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId, messageId }, 'incrementNewsletterView failed');
+      }
     },
     async getNewsletterViews(newsletterId, messageId, limit = 100) {
       try {
@@ -343,7 +392,10 @@ function makePostgresStore(url, logger, groupCache) {
           [newsletterId, limit],
         );
         return rows;
-      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletterViews failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId }, 'getNewsletterViews failed');
+        return [];
+      }
     },
     async recordNewsletterReaction(newsletterId, messageId, emoji, count = 1) {
       try {
@@ -351,7 +403,9 @@ function makePostgresStore(url, logger, groupCache) {
           'INSERT INTO newsletter_reactions (newsletter_id, message_id, emoji, count, recorded_at) VALUES ($1, $2, $3, $4, $5)',
           [newsletterId, messageId, emoji || null, count || 1, Date.now()],
         );
-      } catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'recordNewsletterReaction failed'); }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId, messageId }, 'recordNewsletterReaction failed');
+      }
     },
     async getNewsletterReactions(newsletterId, messageId) {
       try {
@@ -363,7 +417,10 @@ function makePostgresStore(url, logger, groupCache) {
           [newsletterId, messageId],
         );
         return rows;
-      } catch (e) { logger.warn({ err: e, newsletterId, messageId }, 'getNewsletterReactions failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId, messageId }, 'getNewsletterReactions failed');
+        return [];
+      }
     },
     async updateNewsletterSettings(newsletterId, settings = {}) {
       try {
@@ -373,7 +430,9 @@ function makePostgresStore(url, logger, groupCache) {
            ON CONFLICT (newsletter_id) DO UPDATE SET settings_json = EXCLUDED.settings_json, updated_at = EXCLUDED.updated_at`,
           [newsletterId, JSON.stringify(settings || {}), Date.now()],
         );
-      } catch (e) { logger.warn({ err: e, newsletterId }, 'updateNewsletterSettings failed'); }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId }, 'updateNewsletterSettings failed');
+      }
     },
     async getNewsletterSettings(newsletterId) {
       try {
@@ -382,7 +441,10 @@ function makePostgresStore(url, logger, groupCache) {
           [newsletterId],
         );
         return rows[0] || null;
-      } catch (e) { logger.warn({ err: e, newsletterId }, 'getNewsletterSettings failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, newsletterId }, 'getNewsletterSettings failed');
+        return null;
+      }
     },
 
     // lid-mapping ────────────────────────────────────
@@ -394,19 +456,27 @@ function makePostgresStore(url, logger, groupCache) {
            ON CONFLICT (lid) DO UPDATE SET jid = EXCLUDED.jid, updated_at = EXCLUDED.updated_at`,
           [lid, jid, Date.now()],
         );
-      } catch (e) { logger.warn({ err: e, lid, jid }, 'setLidMapping failed'); }
+      } catch (e) {
+        logger.warn({ err: e, lid, jid }, 'setLidMapping failed');
+      }
     },
     async getLidMapping(lid) {
       try {
         const { rows } = await pool.query('SELECT jid FROM lid_mapping WHERE lid = $1', [lid]);
         return rows[0]?.jid || null;
-      } catch (e) { logger.warn({ err: e, lid }, 'getLidMapping failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, lid }, 'getLidMapping failed');
+        return null;
+      }
     },
     async getReverseLidMapping(jid) {
       try {
         const { rows } = await pool.query('SELECT lid FROM lid_mapping WHERE jid = $1', [jid]);
         return rows[0]?.lid || null;
-      } catch (e) { logger.warn({ err: e, jid }, 'getReverseLidMapping failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'getReverseLidMapping failed');
+        return null;
+      }
     },
 
     // message-capping ────────────────────────────────
@@ -418,7 +488,9 @@ function makePostgresStore(url, logger, groupCache) {
            ON CONFLICT (jid) DO UPDATE SET cap_value = EXCLUDED.cap_value, updated_at = EXCLUDED.updated_at`,
           [jid, Number(capValue), Date.now()],
         );
-      } catch (e) { logger.warn({ err: e, jid }, 'setMessageCap failed'); }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'setMessageCap failed');
+      }
     },
     async getMessageCap(jid) {
       try {
@@ -427,7 +499,10 @@ function makePostgresStore(url, logger, groupCache) {
           [jid],
         );
         return rows[0] || null;
-      } catch (e) { logger.warn({ err: e, jid }, 'getMessageCap failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'getMessageCap failed');
+        return null;
+      }
     },
 
     // blocklist ───────────────────────────────────────────────
@@ -439,18 +514,23 @@ function makePostgresStore(url, logger, groupCache) {
           await client.query('BEGIN');
           await client.query('DELETE FROM blocklist');
           const ts = Date.now();
-          for (const j of jids) if (j) {
-            await client.query(
-              'INSERT INTO blocklist (jid, added_at) VALUES ($1, $2) ON CONFLICT (jid) DO NOTHING',
-              [j, ts],
-            );
-          }
+          for (const j of jids)
+            if (j) {
+              await client.query(
+                'INSERT INTO blocklist (jid, added_at) VALUES ($1, $2) ON CONFLICT (jid) DO NOTHING',
+                [j, ts],
+              );
+            }
           await client.query('COMMIT');
         } catch (e) {
           await client.query('ROLLBACK').catch(() => {});
           throw e;
-        } finally { client.release(); }
-      } catch (e) { logger.warn({ err: e }, 'setBlocklist failed'); }
+        } finally {
+          client.release();
+        }
+      } catch (e) {
+        logger.warn({ err: e }, 'setBlocklist failed');
+      }
     },
     async addToBlocklist(jid) {
       try {
@@ -458,23 +538,36 @@ function makePostgresStore(url, logger, groupCache) {
           'INSERT INTO blocklist (jid, added_at) VALUES ($1, $2) ON CONFLICT (jid) DO NOTHING',
           [jid, Date.now()],
         );
-      } catch (e) { logger.warn({ err: e, jid }, 'addToBlocklist failed'); }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'addToBlocklist failed');
+      }
     },
     async removeFromBlocklist(jid) {
-      try { await pool.query('DELETE FROM blocklist WHERE jid = $1', [jid]); }
-      catch (e) { logger.warn({ err: e, jid }, 'removeFromBlocklist failed'); }
+      try {
+        await pool.query('DELETE FROM blocklist WHERE jid = $1', [jid]);
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'removeFromBlocklist failed');
+      }
     },
     async getBlocklist() {
       try {
-        const { rows } = await pool.query('SELECT jid, added_at FROM blocklist ORDER BY added_at DESC');
+        const { rows } = await pool.query(
+          'SELECT jid, added_at FROM blocklist ORDER BY added_at DESC',
+        );
         return rows;
-      } catch (e) { logger.warn({ err: e }, 'getBlocklist failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'getBlocklist failed');
+        return [];
+      }
     },
     async isBlocked(jid) {
       try {
         const { rows } = await pool.query('SELECT 1 FROM blocklist WHERE jid = $1 LIMIT 1', [jid]);
         return rows.length > 0;
-      } catch (e) { logger.warn({ err: e, jid }, 'isBlocked failed'); return false; }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'isBlocked failed');
+        return false;
+      }
     },
 
     // presence ────────────────────────────────────────────────
@@ -490,7 +583,9 @@ function makePostgresStore(url, logger, groupCache) {
              updated_at = EXCLUDED.updated_at`,
           [jid, state || null, lastSeenTs || null, chatJid || null, Date.now()],
         );
-      } catch (e) { logger.warn({ err: e, jid }, 'recordPresence failed'); }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'recordPresence failed');
+      }
     },
     async getPresence(jid) {
       try {
@@ -499,7 +594,10 @@ function makePostgresStore(url, logger, groupCache) {
           [jid],
         );
         return rows[0] || null;
-      } catch (e) { logger.warn({ err: e, jid }, 'getPresence failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'getPresence failed');
+        return null;
+      }
     },
     async getPresenceInChat(chatJid) {
       try {
@@ -508,7 +606,10 @@ function makePostgresStore(url, logger, groupCache) {
           [chatJid],
         );
         return rows;
-      } catch (e) { logger.warn({ err: e }, 'getPresenceInChat failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'getPresenceInChat failed');
+        return [];
+      }
     },
     async getRecentPresence(limit = 50) {
       try {
@@ -517,7 +618,10 @@ function makePostgresStore(url, logger, groupCache) {
           [limit],
         );
         return rows;
-      } catch (e) { logger.warn({ err: e }, 'getRecentPresence failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'getRecentPresence failed');
+        return [];
+      }
     },
 
     // chat state ──────────────────────────────────────────────
@@ -539,16 +643,21 @@ function makePostgresStore(url, logger, groupCache) {
             name ?? null,
             unread ?? null,
             ts ?? null,
-            pinned == null ? null : (pinned ? 1 : 0),
+            pinned == null ? null : pinned ? 1 : 0,
             muted_until ?? null,
-            archived == null ? null : (archived ? 1 : 0),
+            archived == null ? null : archived ? 1 : 0,
           ],
         );
-      } catch (e) { logger.warn({ err: e, jid }, 'updateChat failed'); }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'updateChat failed');
+      }
     },
     async markChatDeleted(jid) {
-      try { await pool.query('UPDATE chats SET deleted_at = $1 WHERE jid = $2', [Date.now(), jid]); }
-      catch (e) { logger.warn({ err: e, jid }, 'markChatDeleted failed'); }
+      try {
+        await pool.query('UPDATE chats SET deleted_at = $1 WHERE jid = $2', [Date.now(), jid]);
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'markChatDeleted failed');
+      }
     },
     async listChats() {
       try {
@@ -556,7 +665,10 @@ function makePostgresStore(url, logger, groupCache) {
           'SELECT jid, name, unread, ts, pinned, muted_until, archived, deleted_at FROM chats ORDER BY ts DESC NULLS LAST',
         );
         return rows;
-      } catch (e) { logger.warn({ err: e }, 'listChats failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'listChats failed');
+        return [];
+      }
     },
     async getChat(jid) {
       try {
@@ -565,7 +677,10 @@ function makePostgresStore(url, logger, groupCache) {
           [jid],
         );
         return rows[0] || null;
-      } catch (e) { logger.warn({ err: e, jid }, 'getChat failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'getChat failed');
+        return null;
+      }
     },
 
     // contacts (bulk + extended) ─────────────────────────────
@@ -587,7 +702,14 @@ function makePostgresStore(url, logger, groupCache) {
                  img_url = COALESCE(EXCLUDED.img_url, contacts.img_url),
                  status = COALESCE(EXCLUDED.status, contacts.status),
                  verified_name = COALESCE(EXCLUDED.verified_name, contacts.verified_name)`,
-              [c.id, c.name ?? null, c.notify ?? null, c.imgUrl ?? null, c.status ?? null, c.verifiedName ?? null],
+              [
+                c.id,
+                c.name ?? null,
+                c.notify ?? null,
+                c.imgUrl ?? null,
+                c.status ?? null,
+                c.verifiedName ?? null,
+              ],
             );
             n++;
           }
@@ -595,9 +717,14 @@ function makePostgresStore(url, logger, groupCache) {
         } catch (e) {
           await client.query('ROLLBACK').catch(() => {});
           throw e;
-        } finally { client.release(); }
+        } finally {
+          client.release();
+        }
         return n;
-      } catch (e) { logger.warn({ err: e }, 'bulkUpsertContacts failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e }, 'bulkUpsertContacts failed');
+        return 0;
+      }
     },
     async getContact(jid) {
       try {
@@ -606,7 +733,10 @@ function makePostgresStore(url, logger, groupCache) {
           [jid],
         );
         return rows[0] || null;
-      } catch (e) { logger.warn({ err: e, jid }, 'getContact failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'getContact failed');
+        return null;
+      }
     },
     async listContacts({ limit = 100, offset = 0 } = {}) {
       try {
@@ -615,13 +745,19 @@ function makePostgresStore(url, logger, groupCache) {
           [limit, offset],
         );
         return rows;
-      } catch (e) { logger.warn({ err: e }, 'listContacts failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'listContacts failed');
+        return [];
+      }
     },
     async countContacts() {
       try {
         const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM contacts');
         return rows[0]?.n || 0;
-      } catch (e) { logger.warn({ err: e }, 'countContacts failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e }, 'countContacts failed');
+        return 0;
+      }
     },
 
     // v1.2.0 AI ──────────────────────────────────────────────
@@ -636,7 +772,11 @@ function makePostgresStore(url, logger, groupCache) {
             String(turn.role || ''),
             String(turn.content == null ? '' : turn.content),
             turn.toolName || null,
-            turn.toolArgs ? (typeof turn.toolArgs === 'string' ? turn.toolArgs : JSON.stringify(turn.toolArgs)) : null,
+            turn.toolArgs
+              ? typeof turn.toolArgs === 'string'
+                ? turn.toolArgs
+                : JSON.stringify(turn.toolArgs)
+              : null,
             turn.toolId || null,
             turn.model || null,
             turn.provider || null,
@@ -646,7 +786,10 @@ function makePostgresStore(url, logger, groupCache) {
           ],
         );
         return true;
-      } catch (e) { logger.warn({ err: e, chatJid }, 'appendAiTurn failed'); return false; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'appendAiTurn failed');
+        return false;
+      }
     },
     async getRecentAiTurns(chatJid, limit = 20) {
       try {
@@ -657,25 +800,40 @@ function makePostgresStore(url, logger, groupCache) {
           [chatJid, Number(limit) || 20],
         );
         return rows.reverse().map((r) => ({
-          role:     r.role,
-          content:  r.content,
+          role: r.role,
+          content: r.content,
           toolName: r.tool_name || undefined,
           toolArgs: r.tool_args || undefined,
-          toolId:   r.tool_id   || undefined,
-          model:    r.model     || undefined,
-          provider: r.provider  || undefined,
-          promptTokens:     r.prompt_tokens     || 0,
+          toolId: r.tool_id || undefined,
+          model: r.model || undefined,
+          provider: r.provider || undefined,
+          promptTokens: r.prompt_tokens || 0,
           completionTokens: r.completion_tokens || 0,
-          ts:       Number(r.ts),
+          ts: Number(r.ts),
         }));
-      } catch (e) { logger.warn({ err: e, chatJid }, 'getRecentAiTurns failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'getRecentAiTurns failed');
+        return [];
+      }
     },
     async clearAiTurns(chatJid) {
-      try { await pool.query(`DELETE FROM ai_conversations WHERE chat_jid = $1`, [chatJid]); return true; }
-      catch (e) { logger.warn({ err: e, chatJid }, 'clearAiTurns failed'); return false; }
+      try {
+        await pool.query(`DELETE FROM ai_conversations WHERE chat_jid = $1`, [chatJid]);
+        return true;
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'clearAiTurns failed');
+        return false;
+      }
     },
 
-    async recordAiUsage({ day, provider, model, promptTokens = 0, completionTokens = 0, costUsd = 0 }) {
+    async recordAiUsage({
+      day,
+      provider,
+      model,
+      promptTokens = 0,
+      completionTokens = 0,
+      costUsd = 0,
+    }) {
       try {
         await pool.query(
           `INSERT INTO ai_usage_daily (day, provider, model, prompt_tokens, completion_tokens, cost_usd, calls)
@@ -685,11 +843,20 @@ function makePostgresStore(url, logger, groupCache) {
              completion_tokens = ai_usage_daily.completion_tokens + EXCLUDED.completion_tokens,
              cost_usd = ai_usage_daily.cost_usd + EXCLUDED.cost_usd,
              calls    = ai_usage_daily.calls + 1`,
-          [String(day), String(provider || ''), String(model || ''),
-           Number(promptTokens) || 0, Number(completionTokens) || 0, Number(costUsd) || 0],
+          [
+            String(day),
+            String(provider || ''),
+            String(model || ''),
+            Number(promptTokens) || 0,
+            Number(completionTokens) || 0,
+            Number(costUsd) || 0,
+          ],
         );
         return true;
-      } catch (e) { logger.warn({ err: e }, 'recordAiUsage failed'); return false; }
+      } catch (e) {
+        logger.warn({ err: e }, 'recordAiUsage failed');
+        return false;
+      }
     },
     async getAiUsageDayTotal(day) {
       try {
@@ -698,7 +865,10 @@ function makePostgresStore(url, logger, groupCache) {
           [String(day)],
         );
         return Number(rows[0]?.total || 0);
-      } catch (e) { logger.warn({ err: e }, 'getAiUsageDayTotal failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e }, 'getAiUsageDayTotal failed');
+        return 0;
+      }
     },
     async getAiUsageSince(day) {
       try {
@@ -708,7 +878,10 @@ function makePostgresStore(url, logger, groupCache) {
           [String(day)],
         );
         return rows;
-      } catch (e) { logger.warn({ err: e }, 'getAiUsageSince failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'getAiUsageSince failed');
+        return [];
+      }
     },
     async getAiUsageByDay(limit = 30) {
       try {
@@ -722,10 +895,16 @@ function makePostgresStore(url, logger, groupCache) {
           [Number(limit) || 30],
         );
         return rows;
-      } catch (e) { logger.warn({ err: e }, 'getAiUsageByDay failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'getAiUsageByDay failed');
+        return [];
+      }
     },
 
-    async setAiChatOptIn(chatJid, { enabled = false, persona = null, provider = null, model = null } = {}) {
+    async setAiChatOptIn(
+      chatJid,
+      { enabled = false, persona = null, provider = null, model = null } = {},
+    ) {
       try {
         const overrides = { persona, provider, model };
         await pool.query(
@@ -738,7 +917,10 @@ function makePostgresStore(url, logger, groupCache) {
           [chatJid, !!enabled, JSON.stringify(overrides), Date.now()],
         );
         return true;
-      } catch (e) { logger.warn({ err: e, chatJid }, 'setAiChatOptIn failed'); return false; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'setAiChatOptIn failed');
+        return false;
+      }
     },
     async getAiChatOptIn(chatJid) {
       try {
@@ -749,13 +931,16 @@ function makePostgresStore(url, logger, groupCache) {
         if (!rows[0]) return null;
         const o = rows[0].overrides || {};
         return {
-          enabled:  !!rows[0].enabled,
-          persona:  o.persona  ?? null,
+          enabled: !!rows[0].enabled,
+          persona: o.persona ?? null,
           provider: o.provider ?? null,
-          model:    o.model    ?? null,
+          model: o.model ?? null,
           updatedAt: Number(rows[0].updated_at),
         };
-      } catch (e) { logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed'); return null; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed');
+        return null;
+      }
     },
     async listAiOptedInChats(limit = 100) {
       try {
@@ -767,15 +952,18 @@ function makePostgresStore(url, logger, groupCache) {
         return rows.map((r) => {
           const o = r.overrides || {};
           return {
-            chatJid:   r.chat_jid,
-            enabled:   !!r.enabled,
-            persona:   o.persona  ?? null,
-            provider:  o.provider ?? null,
-            model:     o.model    ?? null,
+            chatJid: r.chat_jid,
+            enabled: !!r.enabled,
+            persona: o.persona ?? null,
+            provider: o.provider ?? null,
+            model: o.model ?? null,
             updatedAt: Number(r.updated_at),
           };
         });
-      } catch (e) { logger.warn({ err: e }, 'listAiOptedInChats failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'listAiOptedInChats failed');
+        return [];
+      }
     },
 
     // v1.3.0 AI persistent rate-limit ────────────────────────
@@ -790,7 +978,10 @@ function makePostgresStore(url, logger, groupCache) {
           [String(userJid), Number(hourBucket), exp],
         );
         return Number(rows[0]?.count || 0);
-      } catch (e) { logger.warn({ err: e, userJid }, 'incrAiRateUser failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e, userJid }, 'incrAiRateUser failed');
+        return 0;
+      }
     },
     async getAiRateUser(userJid, hourBucket) {
       try {
@@ -799,7 +990,10 @@ function makePostgresStore(url, logger, groupCache) {
           [String(userJid), Number(hourBucket)],
         );
         return Number(rows[0]?.count || 0);
-      } catch (e) { logger.warn({ err: e, userJid }, 'getAiRateUser failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e, userJid }, 'getAiRateUser failed');
+        return 0;
+      }
     },
     async incrAiRateChat(chatJid, dayBucket) {
       try {
@@ -812,7 +1006,10 @@ function makePostgresStore(url, logger, groupCache) {
           [String(chatJid), Number(dayBucket), exp],
         );
         return Number(rows[0]?.count || 0);
-      } catch (e) { logger.warn({ err: e, chatJid }, 'incrAiRateChat failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'incrAiRateChat failed');
+        return 0;
+      }
     },
     async getAiRateChat(chatJid, dayBucket) {
       try {
@@ -821,62 +1018,84 @@ function makePostgresStore(url, logger, groupCache) {
           [String(chatJid), Number(dayBucket)],
         );
         return Number(rows[0]?.count || 0);
-      } catch (e) { logger.warn({ err: e, chatJid }, 'getAiRateChat failed'); return 0; }
+      } catch (e) {
+        logger.warn({ err: e, chatJid }, 'getAiRateChat failed');
+        return 0;
+      }
     },
     async pruneAiRate(now = Date.now()) {
       try {
         const a = await pool.query(`DELETE FROM ai_rate_user WHERE expires_at < $1`, [Number(now)]);
         const b = await pool.query(`DELETE FROM ai_rate_chat WHERE expires_at < $1`, [Number(now)]);
         return { users: a.rowCount || 0, chats: b.rowCount || 0 };
-      } catch (e) { logger.warn({ err: e }, 'pruneAiRate failed'); return { users: 0, chats: 0 }; }
+      } catch (e) {
+        logger.warn({ err: e }, 'pruneAiRate failed');
+        return { users: 0, chats: 0 };
+      }
     },
 
     recordStat(key, inc = 1) {
-      pool.query(
-        `INSERT INTO stats (key, value) VALUES ($1, $2)
+      pool
+        .query(
+          `INSERT INTO stats (key, value) VALUES ($1, $2)
          ON CONFLICT (key) DO UPDATE SET value = stats.value + EXCLUDED.value`,
-        [key, inc],
-      ).catch((e) => logger.warn({ err: e, key }, 'recordStat failed'));
+          [key, inc],
+        )
+        .catch((e) => logger.warn({ err: e, key }, 'recordStat failed'));
     },
 
     async getStats() {
       try {
         const r = await pool.query('SELECT key, value FROM stats');
-        return r.rows.reduce((acc, row) => (acc[row.key] = Number(row.value), acc), {});
-      } catch { return {}; }
+        return r.rows.reduce((acc, row) => ((acc[row.key] = Number(row.value)), acc), {});
+      } catch {
+        return {};
+      }
     },
 
     setGauge(key, value) {
-      pool.query(
-        `INSERT INTO stats_gauges (key, value, updated_at) VALUES ($1, $2, $3)
+      pool
+        .query(
+          `INSERT INTO stats_gauges (key, value, updated_at) VALUES ($1, $2, $3)
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
-        [key, value, Math.floor(Date.now() / 1000)],
-      ).catch((e) => logger.warn({ err: e, key }, 'setGauge failed'));
+          [key, value, Math.floor(Date.now() / 1000)],
+        )
+        .catch((e) => logger.warn({ err: e, key }, 'setGauge failed'));
     },
 
     async getGauges() {
       try {
         const r = await pool.query('SELECT key, value FROM stats_gauges');
-        return r.rows.reduce((acc, row) => (acc[row.key] = Number(row.value), acc), {});
-      } catch { return {}; }
+        return r.rows.reduce((acc, row) => ((acc[row.key] = Number(row.value)), acc), {});
+      } catch {
+        return {};
+      }
     },
 
     async countGroups() {
-      try { const r = await pool.query('SELECT COUNT(*) AS n FROM groups'); return Number(r.rows[0].n); }
-      catch { return 0; }
+      try {
+        const r = await pool.query('SELECT COUNT(*) AS n FROM groups');
+        return Number(r.rows[0].n);
+      } catch {
+        return 0;
+      }
     },
 
     async countUniqueUsers() {
       try {
-        const r = await pool.query('SELECT COUNT(DISTINCT participant) AS n FROM group_participants_events');
+        const r = await pool.query(
+          'SELECT COUNT(DISTINCT participant) AS n FROM group_participants_events',
+        );
         return Number(r.rows[0].n);
-      } catch { return 0; }
+      } catch {
+        return 0;
+      }
     },
 
     bind(ev) {
       ev.on('messages.upsert', ({ messages }) => {
         const storeBodies = config.privacy?.storeMessageBodies !== false;
-        const excluded    = new Set(config.privacy?.excludeFromStore || []);
+        const excluded = new Set(config.privacy?.excludeFromStore || []);
         for (const m of messages) {
           if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
           if (excluded.has(m.key.remoteJid)) continue;
@@ -898,8 +1117,12 @@ function makePostgresStore(url, logger, groupCache) {
               `INSERT INTO chats (jid, name, unread, ts) VALUES ($1, $2, $3, $4)
                ON CONFLICT (jid) DO UPDATE SET name=EXCLUDED.name,
                  unread=EXCLUDED.unread, ts=EXCLUDED.ts`,
-              [c.id, c.name ?? null, Number(c.unreadCount) || 0,
-               Number(c.conversationTimestamp) || Math.floor(Date.now() / 1000)],
+              [
+                c.id,
+                c.name ?? null,
+                Number(c.unreadCount) || 0,
+                Number(c.conversationTimestamp) || Math.floor(Date.now() / 1000),
+              ],
             );
           } catch {}
         }
@@ -930,26 +1153,44 @@ function makePostgresStore(url, logger, groupCache) {
         await pool.query(
           `INSERT INTO message_edits (jid, message_id, editor, old_body, new_body, ts)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [jid, messageId, editor || null, oldBody || '', newBody || '',
-           ts ?? Math.floor(Date.now()/1000)]);
-      } catch (e) { logger.warn({err:e}, 'edit insert failed'); }
+          [
+            jid,
+            messageId,
+            editor || null,
+            oldBody || '',
+            newBody || '',
+            ts ?? Math.floor(Date.now() / 1000),
+          ],
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'edit insert failed');
+      }
     },
     async getMessageEdits(jid, messageId) {
       try {
         const r = await pool.query(
           `SELECT editor, old_body, new_body, ts FROM message_edits
            WHERE jid = $1 AND message_id = $2 ORDER BY ts ASC`,
-          [jid, messageId]);
+          [jid, messageId],
+        );
         return r.rows;
-      } catch (e) { logger.warn({err:e}, 'edits query failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'edits query failed');
+        return [];
+      }
     },
     async updateMessageBody(jid, messageId, message, ts) {
       try {
         const buf = Buffer.from(proto.Message.encode(message).finish());
-        await pool.query(
-          `UPDATE messages SET msg = $1, ts = $2 WHERE jid = $3 AND id = $4`,
-          [buf, ts ?? Math.floor(Date.now()/1000), jid, messageId]);
-      } catch (e) { logger.warn({err:e}, 'updateMessageBody failed'); }
+        await pool.query(`UPDATE messages SET msg = $1, ts = $2 WHERE jid = $3 AND id = $4`, [
+          buf,
+          ts ?? Math.floor(Date.now() / 1000),
+          jid,
+          messageId,
+        ]);
+      } catch (e) {
+        logger.warn({ err: e }, 'updateMessageBody failed');
+      }
     },
 
     // ── Reactions ──────────────────────────────────────────────────────
@@ -958,18 +1199,24 @@ function makePostgresStore(url, logger, groupCache) {
         await pool.query(
           `INSERT INTO message_reactions (jid, message_id, reactor, emoji, ts)
            VALUES ($1, $2, $3, $4, $5)`,
-          [jid, messageId, reactor || '', emoji || null,
-           ts ?? Math.floor(Date.now()/1000)]);
-      } catch (e) { logger.warn({err:e}, 'reaction insert failed'); }
+          [jid, messageId, reactor || '', emoji || null, ts ?? Math.floor(Date.now() / 1000)],
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'reaction insert failed');
+      }
     },
     async getMessageReactions(jid, messageId) {
       try {
         const r = await pool.query(
           `SELECT reactor, emoji, ts FROM message_reactions
            WHERE jid = $1 AND message_id = $2 ORDER BY ts ASC`,
-          [jid, messageId]);
+          [jid, messageId],
+        );
         return r.rows;
-      } catch (e) { logger.warn({err:e}, 'reactions query failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'reactions query failed');
+        return [];
+      }
     },
 
     // ── Receipts ───────────────────────────────────────────────────────
@@ -981,17 +1228,24 @@ function makePostgresStore(url, logger, groupCache) {
            ON CONFLICT (jid, message_id, recipient) DO UPDATE
              SET status = GREATEST(message_receipts.status, EXCLUDED.status),
                  ts = EXCLUDED.ts`,
-          [jid, messageId, recipient, status, ts ?? Math.floor(Date.now()/1000)]);
-      } catch (e) { logger.warn({err:e}, 'receipt upsert failed'); }
+          [jid, messageId, recipient, status, ts ?? Math.floor(Date.now() / 1000)],
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'receipt upsert failed');
+      }
     },
     async getMessageReceipts(jid, messageId) {
       try {
         const r = await pool.query(
           `SELECT recipient, status, ts FROM message_receipts
            WHERE jid = $1 AND message_id = $2 ORDER BY ts ASC`,
-          [jid, messageId]);
+          [jid, messageId],
+        );
         return r.rows;
-      } catch (e) { logger.warn({err:e}, 'receipts query failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'receipts query failed');
+        return [];
+      }
     },
 
     // ── Deletions ──────────────────────────────────────────────────────
@@ -1000,15 +1254,21 @@ function makePostgresStore(url, logger, groupCache) {
         await pool.query(
           `UPDATE messages SET deleted_at = $1
            WHERE jid = $2 AND id = $3 AND deleted_at IS NULL`,
-          [ts ?? Math.floor(Date.now()/1000), jid, messageId]);
-      } catch (e) { logger.warn({err:e}, 'markMessageDeleted failed'); }
+          [ts ?? Math.floor(Date.now() / 1000), jid, messageId],
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'markMessageDeleted failed');
+      }
     },
     async markChatMessagesDeleted(jid, ts) {
       try {
         await pool.query(
           `UPDATE messages SET deleted_at = $1 WHERE jid = $2 AND deleted_at IS NULL`,
-          [ts ?? Math.floor(Date.now()/1000), jid]);
-      } catch (e) { logger.warn({err:e}, 'markChatMessagesDeleted failed'); }
+          [ts ?? Math.floor(Date.now() / 1000), jid],
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'markChatMessagesDeleted failed');
+      }
     },
     async getDeletedInGroup(jid, limit = 100) {
       try {
@@ -1016,9 +1276,13 @@ function makePostgresStore(url, logger, groupCache) {
           `SELECT id, participant, deleted_at FROM messages
            WHERE jid = $1 AND deleted_at IS NOT NULL
            ORDER BY deleted_at DESC LIMIT $2`,
-          [jid, limit]);
+          [jid, limit],
+        );
         return r.rows;
-      } catch (e) { logger.warn({err:e}, 'deletedInGroup failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e }, 'deletedInGroup failed');
+        return [];
+      }
     },
 
     // ── Aggregate status ───────────────────────────────────────────────
@@ -1027,22 +1291,29 @@ function makePostgresStore(url, logger, groupCache) {
         await pool.query(
           `UPDATE messages SET status = GREATEST(COALESCE(status,0), $1)
            WHERE jid = $2 AND id = $3`,
-          [Number(status), jid, messageId]);
-      } catch (e) { logger.warn({err:e}, 'updateMessageStatus failed'); }
+          [Number(status), jid, messageId],
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'updateMessageStatus failed');
+      }
     },
 
     async getSubscribers(service) {
       try {
         const r = await pool.query(
           'SELECT jid, last_seen_pulse_ts, meta FROM service_subscribers WHERE service = $1',
-          [service]);
+          [service],
+        );
         return r.rows.map((row) => ({
           jid: row.jid,
-          last_seen_pulse_ts: row.last_seen_pulse_ts == null
-            ? null : Number(row.last_seen_pulse_ts),
+          last_seen_pulse_ts:
+            row.last_seen_pulse_ts == null ? null : Number(row.last_seen_pulse_ts),
           meta: row.meta || null,
         }));
-      } catch (e) { logger.warn({ err: e, service }, 'getSubscribers failed'); return []; }
+      } catch (e) {
+        logger.warn({ err: e, service }, 'getSubscribers failed');
+        return [];
+      }
     },
     async addSubscriber(service, jid, meta) {
       try {
@@ -1050,56 +1321,77 @@ function makePostgresStore(url, logger, groupCache) {
           `INSERT INTO service_subscribers (service, jid, last_seen_pulse_ts, meta)
            VALUES ($1, $2, NULL, $3)
            ON CONFLICT (service, jid) DO NOTHING`,
-          [service, jid, meta == null ? null : meta]);
-      } catch (e) { logger.warn({ err: e, service, jid }, 'addSubscriber failed'); }
+          [service, jid, meta == null ? null : meta],
+        );
+      } catch (e) {
+        logger.warn({ err: e, service, jid }, 'addSubscriber failed');
+      }
     },
     async removeSubscriber(service, jid) {
       try {
-        await pool.query(
-          'DELETE FROM service_subscribers WHERE service = $1 AND jid = $2',
-          [service, jid]);
-      } catch (e) { logger.warn({ err: e, service, jid }, 'removeSubscriber failed'); }
+        await pool.query('DELETE FROM service_subscribers WHERE service = $1 AND jid = $2', [
+          service,
+          jid,
+        ]);
+      } catch (e) {
+        logger.warn({ err: e, service, jid }, 'removeSubscriber failed');
+      }
     },
     async updateSubscriberTimestamp(service, jid, ts) {
       try {
         await pool.query(
           `UPDATE service_subscribers SET last_seen_pulse_ts = $1
            WHERE service = $2 AND jid = $3`,
-          [ts, service, jid]);
-      } catch (e) { logger.warn({ err: e }, 'updateSubscriberTimestamp failed'); }
+          [ts, service, jid],
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'updateSubscriberTimestamp failed');
+      }
     },
-        async isSubscriber(service, jid) {
+    async isSubscriber(service, jid) {
       try {
         const r = await pool.query(
           'SELECT 1 FROM service_subscribers WHERE service = $1 AND jid = $2 LIMIT 1',
-          [service, jid]);
+          [service, jid],
+        );
         return r.rowCount > 0;
-      } catch { return false; }
+      } catch {
+        return false;
+      }
     },
     async getSubscriberMeta(service, jid) {
       try {
         const r = await pool.query(
           'SELECT meta FROM service_subscribers WHERE service = $1 AND jid = $2',
-          [service, jid]);
+          [service, jid],
+        );
         if (r.rowCount === 0) return null;
         return r.rows[0].meta || null;
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     },
     async updateSubscriberMeta(service, jid, meta) {
       try {
         await pool.query(
           'UPDATE service_subscribers SET meta = $1 WHERE service = $2 AND jid = $3',
-          [meta == null ? null : meta, service, jid]);
-      } catch (e) { logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed'); }
+          [meta == null ? null : meta, service, jid],
+        );
+      } catch (e) {
+        logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed');
+      }
     },
     async hasSentItem(service, jid, itemUrl) {
       try {
         const r = await pool.query(
           `SELECT 1 FROM service_sent_items
            WHERE service = $1 AND jid = $2 AND item_url = $3 LIMIT 1`,
-          [service, jid, itemUrl]);
+          [service, jid, itemUrl],
+        );
         return r.rowCount > 0;
-      } catch { return false; }
+      } catch {
+        return false;
+      }
     },
     async recordSentItem(service, jid, itemUrl) {
       try {
@@ -1107,20 +1399,26 @@ function makePostgresStore(url, logger, groupCache) {
           `INSERT INTO service_sent_items (service, jid, item_url, sent_at)
            VALUES ($1, $2, $3, $4)
            ON CONFLICT (service, jid, item_url) DO NOTHING`,
-          [service, jid, itemUrl, Math.floor(Date.now() / 1000)]);
-      } catch (e) { logger.warn({ err: e, service, jid }, 'recordSentItem failed'); }
+          [service, jid, itemUrl, Math.floor(Date.now() / 1000)],
+        );
+      } catch (e) {
+        logger.warn({ err: e, service, jid }, 'recordSentItem failed');
+      }
     },
 
-    async hasSentArticle(service, jid, articleUrl) { return this.hasSentItem(service, jid, articleUrl); },
-    async recordSentArticle(service, jid, articleUrl) { return this.recordSentItem(service, jid, articleUrl); },
+    async hasSentArticle(service, jid, articleUrl) {
+      return this.hasSentItem(service, jid, articleUrl);
+    },
+    async recordSentArticle(service, jid, articleUrl) {
+      return this.recordSentItem(service, jid, articleUrl);
+    },
 
     pool,
     async close() {
-      try { 
-        await messageBatcher.drain(); 
-      }
-      catch (e) { 
-        logger.warn({ err: e }, 'pg batcher drain failed'); 
+      try {
+        await messageBatcher.drain();
+      } catch (e) {
+        logger.warn({ err: e }, 'pg batcher drain failed');
       }
       pool.end();
     },

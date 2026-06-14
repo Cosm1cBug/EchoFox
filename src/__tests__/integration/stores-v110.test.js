@@ -26,19 +26,30 @@
  *   Run:  node --test src/__tests__/integration/stores-v110.test.js
  */
 
-const test   = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs     = require('node:fs');
-const os     = require('node:os');
-const path   = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { makeSQLiteStore } = require('../../store/sqliteStore');
 
 function newStore() {
-  const dbPath = path.join(os.tmpdir(), `echofox-v110-test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.db`);
-  const stub   = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, child: function() { return this; } };
-  const cache  = { get: () => null, set: () => null };
-  const store  = makeSQLiteStore({ dbPath, logger: stub, groupCache: cache });
+  const dbPath = path.join(
+    os.tmpdir(),
+    `echofox-v110-test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.db`,
+  );
+  const stub = {
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    debug: () => {},
+    child: function () {
+      return this;
+    },
+  };
+  const cache = { get: () => null, set: () => null };
+  const store = makeSQLiteStore({ dbPath, logger: stub, groupCache: cache });
   return {
     store,
     cleanup() {
@@ -64,7 +75,9 @@ test('v1.1.0: blocklist round-trips', async () => {
     const bl = await store.getBlocklist();
     assert.equal(bl.length, 3);
     assert.equal(await store.isBlocked('b@s.whatsapp.net'), false); // wiped by setBlocklist
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('v1.1.0: presence persists per-user per-chat', async () => {
@@ -85,14 +98,18 @@ test('v1.1.0: presence persists per-user per-chat', async () => {
     // Update u1 — same row, new state
     await store.recordPresence('u1@x', 'paused', null, 'chat1@g.us');
     assert.equal((await store.getPresence('u1@x')).last_state, 'paused');
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('v1.1.0: chat extended fields update + mark deleted', async () => {
   const { store, cleanup } = newStore();
   try {
     // updateChat only updates existing rows, so seed via the baseline prepared stmt
-    store.db.prepare('INSERT INTO chats (jid, name, unread, ts) VALUES (?, ?, ?, ?)').run('chat1@g.us', 'Original', 0, 100);
+    store.db
+      .prepare('INSERT INTO chats (jid, name, unread, ts) VALUES (?, ?, ?, ?)')
+      .run('chat1@g.us', 'Original', 0, 100);
 
     await store.updateChat('chat1@g.us', { pinned: true, muted_until: 9999, archived: false });
     const c = await store.getChat('chat1@g.us');
@@ -106,7 +123,9 @@ test('v1.1.0: chat extended fields update + mark deleted', async () => {
     assert.ok(c2.deleted_at > 0);
 
     assert.ok((await store.listChats()).length >= 1);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('v1.1.0: contacts bulk + extended fields', async () => {
@@ -114,7 +133,7 @@ test('v1.1.0: contacts bulk + extended fields', async () => {
   try {
     const n = await store.bulkUpsertContacts([
       { id: 'a@x', name: 'Alice', verifiedName: 'Alice Corp' },
-      { id: 'b@x', name: 'Bob',   status: 'busy' },
+      { id: 'b@x', name: 'Bob', status: 'busy' },
       { id: 'c@x', notify: 'C C', imgUrl: 'http://x/c.jpg' },
     ]);
     assert.equal(n, 3);
@@ -130,7 +149,9 @@ test('v1.1.0: contacts bulk + extended fields', async () => {
     assert.equal(bob.status, 'available');
 
     assert.equal((await store.listContacts({ limit: 10 })).length, 3);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('v1.1.0: labels CRUD + soft delete', async () => {
@@ -155,7 +176,9 @@ test('v1.1.0: labels CRUD + soft delete', async () => {
     assert.equal((await store.listLabels()).length, 1); // lbl2 hidden
     const l2 = await store.getLabel('lbl2');
     assert.equal(l2.deleted, 1); // but row still queryable directly
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('v1.1.0: label associations (chat + message)', async () => {
@@ -177,7 +200,9 @@ test('v1.1.0: label associations (chat + message)', async () => {
 
     await store.disassociateLabel('important', 'chat', 'chat2@g.us');
     assert.equal((await store.getLabelAssociations('important')).length, 2);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('v1.1.0: newsletter upsert + meta JSON round-trip', async () => {
@@ -202,7 +227,9 @@ test('v1.1.0: newsletter upsert + meta JSON round-trip', async () => {
 
     await store.upsertNewsletter('news2@nl', { name: 'Tech Weekly' });
     assert.ok((await store.listNewsletters()).length >= 2);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('v1.1.0: newsletter views increment + reactions aggregate', async () => {
@@ -229,7 +256,9 @@ test('v1.1.0: newsletter views increment + reactions aggregate', async () => {
     const thumbs = rx.find((r) => r.emoji === 'THUMBS_UP');
     assert.equal(heart.total, 7);
     assert.equal(thumbs.total, 3);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('v1.1.0: newsletter settings round-trip', async () => {
@@ -242,7 +271,9 @@ test('v1.1.0: newsletter settings round-trip', async () => {
     await store.updateNewsletterSettings('n1@nl', { muted: false });
     const s2 = await store.getNewsletterSettings('n1@nl');
     assert.deepEqual(s2.settings, { muted: false }); // full replace, not merge
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('v1.1.0: lid-mapping bidirectional + upsert', async () => {
@@ -257,7 +288,9 @@ test('v1.1.0: lid-mapping bidirectional + upsert', async () => {
     assert.equal(await store.getLidMapping('lid-abc'), '67890@s.whatsapp.net');
 
     assert.equal(await store.getLidMapping('nope'), null);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('v1.1.0: message-capping per-chat', async () => {
@@ -272,5 +305,7 @@ test('v1.1.0: message-capping per-chat', async () => {
     assert.equal((await store.getMessageCap('chat1@g.us')).cap_value, 10000);
 
     assert.equal(await store.getMessageCap('nonexistent@g.us'), null);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });

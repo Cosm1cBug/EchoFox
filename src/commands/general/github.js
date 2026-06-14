@@ -17,13 +17,13 @@
  */
 
 const { getStore } = require('../../store/instance');
-const { config }   = require('../../lib/configLoader');
+const { config } = require('../../lib/configLoader');
 const logger = require('../../core/logger').child({ mod: 'github-cmd' });
 
 const SERVICE = 'github';
 const REPO_RE = /^([a-zA-Z0-9][a-zA-Z0-9._-]{0,38})\/([a-zA-Z0-9._-]{1,100})$/;
 const VERBS_STATUS = new Set(['status', '-status', '--status', 'list']);
-const VERBS_HELP   = new Set(['help', '-help', '--help', '?', '']);
+const VERBS_HELP = new Set(['help', '-help', '--help', '?', '']);
 
 function parseRepo(rest) {
   const target = rest.split(/\s+/)[0] || '';
@@ -58,12 +58,12 @@ async function addOrUpdate(store, jid, owner, repo, kind) {
   const repos = Array.isArray(existingMeta.repos) ? [...existingMeta.repos] : [];
   const dupIdx = repos.findIndex((r) => r.owner === owner && r.repo === repo);
   if (dupIdx >= 0) repos[dupIdx] = { owner, repo, kind };
-  else             repos.push({ owner, repo, kind });
+  else repos.push({ owner, repo, kind });
 
   const meta = { ...existingMeta, repos };
   const isSub = await store.isSubscriber(SERVICE, jid);
   if (isSub) await store.updateSubscriberMeta(SERVICE, jid, meta);
-  else       await store.addSubscriber(SERVICE, jid, meta);
+  else await store.addSubscriber(SERVICE, jid, meta);
   return dupIdx >= 0 ? 'updated' : 'added';
 }
 
@@ -75,8 +75,11 @@ module.exports = {
   info: 'Subscribe to GitHub releases + security advisories.',
   start: async (sock, m, { text }) => {
     if (!m.isPrivate) {
-      return await sock.sendMessage(m.chat,
-        { text: '❌ Can only be used in Private Chats.' }, { quoted: m });
+      return await sock.sendMessage(
+        m.chat,
+        { text: '❌ Can only be used in Private Chats.' },
+        { quoted: m },
+      );
     }
 
     const jid = String(m.sender || m.from);
@@ -90,23 +93,35 @@ module.exports = {
     if (KIND[verb]) {
       const target = parseRepo(rest);
       if (!target) {
-        return await sock.sendMessage(m.chat,
-          { text: `Usage: \`.github ${verb} <owner/repo>\` (e.g. \`.github ${verb} nodejs/node\`)` },
-          { quoted: m });
+        return await sock.sendMessage(
+          m.chat,
+          {
+            text: `Usage: \`.github ${verb} <owner/repo>\` (e.g. \`.github ${verb} nodejs/node\`)`,
+          },
+          { quoted: m },
+        );
       }
       const action = await addOrUpdate(store, jid, target.owner, target.repo, KIND[verb]);
-      logger.info({ jid, action: 'subscribe-' + action, target, kind: KIND[verb] }, 'github subscription changed');
+      logger.info(
+        { jid, action: 'subscribe-' + action, target, kind: KIND[verb] },
+        'github subscription changed',
+      );
       const kindLabel = KIND[verb] === 'both' ? 'releases + advisories' : KIND[verb];
-      return await sock.sendMessage(m.chat,
+      return await sock.sendMessage(
+        m.chat,
         { text: `✅ Subscribed to *${target.owner}/${target.repo}* (${kindLabel}).` },
-        { quoted: m });
+        { quoted: m },
+      );
     }
 
     if (verb === 'remove' || verb === 'rm') {
       const target = parseRepo(rest);
       if (!target) {
-        return await sock.sendMessage(m.chat,
-          { text: 'Usage: `.github remove <owner/repo>`' }, { quoted: m });
+        return await sock.sendMessage(
+          m.chat,
+          { text: 'Usage: `.github remove <owner/repo>`' },
+          { quoted: m },
+        );
       }
       const meta = (await store.getSubscriberMeta(SERVICE, jid)) || {};
       const repos = Array.isArray(meta.repos)
@@ -114,43 +129,62 @@ module.exports = {
         : [];
       if (!repos.length) {
         await store.removeSubscriber(SERVICE, jid);
-        return await sock.sendMessage(m.chat,
+        return await sock.sendMessage(
+          m.chat,
           { text: `❌ Removed last repo; you are no longer subscribed to .github.` },
-          { quoted: m });
+          { quoted: m },
+        );
       }
       await store.updateSubscriberMeta(SERVICE, jid, { ...meta, repos });
       logger.info({ jid, action: 'remove-repo', target }, 'github repo removed');
-      return await sock.sendMessage(m.chat,
+      return await sock.sendMessage(
+        m.chat,
         { text: `❌ Removed *${target.owner}/${target.repo}*. (${repos.length} remaining.)` },
-        { quoted: m });
+        { quoted: m },
+      );
     }
 
     if (VERBS_STATUS.has(verb)) {
       const isSub = await store.isSubscriber(SERVICE, jid);
       if (!isSub) {
-        return await sock.sendMessage(m.chat,
-          { text: '📭 *GitHub subscription*\n\nYou have no repos. Use `.github watch <owner/repo>` to subscribe.' },
-          { quoted: m });
+        return await sock.sendMessage(
+          m.chat,
+          {
+            text: '📭 *GitHub subscription*\n\nYou have no repos. Use `.github watch <owner/repo>` to subscribe.',
+          },
+          { quoted: m },
+        );
       }
       const meta = (await store.getSubscriberMeta(SERVICE, jid)) || {};
       const repos = Array.isArray(meta.repos) ? meta.repos : [];
       if (!repos.length) {
-        return await sock.sendMessage(m.chat,
-          { text: '📭 *GitHub subscription*\n\nYou have no repos.' }, { quoted: m });
+        return await sock.sendMessage(
+          m.chat,
+          { text: '📭 *GitHub subscription*\n\nYou have no repos.' },
+          { quoted: m },
+        );
       }
-      const lines = repos.map((r, i) =>
-        `${i + 1}. *${r.owner}/${r.repo}* — ${r.kind === 'both' ? 'releases + advisories' : r.kind}`);
-      return await sock.sendMessage(m.chat, {
-        text: [`📬 *GitHub subscriptions* (${repos.length})`, '', ...lines].join('\n'),
-      }, { quoted: m });
+      const lines = repos.map(
+        (r, i) =>
+          `${i + 1}. *${r.owner}/${r.repo}* — ${r.kind === 'both' ? 'releases + advisories' : r.kind}`,
+      );
+      return await sock.sendMessage(
+        m.chat,
+        {
+          text: [`📬 *GitHub subscriptions* (${repos.length})`, '', ...lines].join('\n'),
+        },
+        { quoted: m },
+      );
     }
 
     if (VERBS_HELP.has(verb)) {
       return await sock.sendMessage(m.chat, { text: helpPanel() }, { quoted: m });
     }
 
-    return await sock.sendMessage(m.chat,
+    return await sock.sendMessage(
+      m.chat,
       { text: `Unknown verb *${verb}*. Use \`.github help\` to see options.` },
-      { quoted: m });
+      { quoted: m },
+    );
   },
 };

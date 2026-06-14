@@ -27,14 +27,13 @@
 
 const logger = require('../core/logger').child({ mod: 'msg.update' });
 
-const STUB_REVOKE = 68;  // proto.WebMessageInfo.StubType.REVOKE in Baileys 7.x
+const STUB_REVOKE = 68; // proto.WebMessageInfo.StubType.REVOKE in Baileys 7.x
 
 // Extract the text body from a (possibly edited) message payload.
 function extractBody(message) {
   if (!message) return '';
   // editedMessage wrapper appeared in WA 2024+
-  const edited = message.editedMessage?.message
-              || message.protocolMessage?.editedMessage;
+  const edited = message.editedMessage?.message || message.protocolMessage?.editedMessage;
   const target = edited || message;
   return (
     target.conversation ||
@@ -52,23 +51,32 @@ module.exports = async function onMessagesUpdate({ sock: _sock, store, payload }
     if (!update?.key?.id || !update?.key?.remoteJid) continue;
 
     const jid = update.key.remoteJid;
-    const id  = update.key.id;
-    const ts  = Math.floor(Date.now() / 1000);
+    const id = update.key.id;
+    const ts = Math.floor(Date.now() / 1000);
 
     // ─── Branch 1: edit ──────────────────────────────────────────────
     const newMessage = update.update?.message || update.message;
-    const newBody    = extractBody(newMessage);
+    const newBody = extractBody(newMessage);
 
     if (newMessage && newBody) {
       try {
-        const oldMsg  = await store.getMessage(update.key);
+        const oldMsg = await store.getMessage(update.key);
         const oldBody = extractBody(oldMsg);
 
         if (oldBody !== newBody) {
-          await store.recordMessageEdit?.(jid, id, update.key.participant || jid, oldBody, newBody, ts);
+          await store.recordMessageEdit?.(
+            jid,
+            id,
+            update.key.participant || jid,
+            oldBody,
+            newBody,
+            ts,
+          );
           await store.updateMessageBody?.(jid, id, newMessage, ts);
-          logger.info({ jid, id, oldLen: oldBody.length, newLen: newBody.length },
-            '✏️ message edited');
+          logger.info(
+            { jid, id, oldLen: oldBody.length, newLen: newBody.length },
+            '✏️ message edited',
+          );
         }
       } catch (e) {
         logger.warn({ err: e, jid, id }, 'failed to record edit');

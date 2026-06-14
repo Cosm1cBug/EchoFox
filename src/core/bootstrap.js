@@ -31,12 +31,18 @@ const MIN_BACKOFF_MS = 2_000;
 // ─── Banner ───────────────────────────────────────────────────────────────
 console.clear();
 CFonts.say('EchoFox', {
-  font: 'shade', align: 'center',
-  gradient: ['#12c2e9', '#c471ed'], transitionGradient: true, letterSpacing: 3,
+  font: 'shade',
+  align: 'center',
+  gradient: ['#12c2e9', '#c471ed'],
+  transitionGradient: true,
+  letterSpacing: 3,
 });
 CFonts.say('v6.0 · Baileys 7.x · Production', {
-  font: 'tiny', align: 'center',
-  gradient: ['#DCE35B', '#45B649'], transitionGradient: true, letterSpacing: 2,
+  font: 'tiny',
+  align: 'center',
+  gradient: ['#DCE35B', '#45B649'],
+  transitionGradient: true,
+  letterSpacing: 2,
 });
 
 // ─── Prometheus registry ──────────────────────────────────────────────────
@@ -72,7 +78,7 @@ function spawnWorker() {
   worker.on('message', (msg) => {
     if (msg === 'ready') {
       lastReadyAt = Date.now();
-      backoff = MIN_BACKOFF_MS;          // reset backoff after stable run
+      backoff = MIN_BACKOFF_MS; // reset backoff after stable run
     }
   });
 
@@ -87,8 +93,7 @@ function spawnWorker() {
     else backoff = MIN_BACKOFF_MS;
 
     console.error(
-      `[supervisor] worker exited (code=${code}, signal=${signal}). ` +
-      `Restart in ${backoff}ms`,
+      `[supervisor] worker exited (code=${code}, signal=${signal}). ` + `Restart in ${backoff}ms`,
     );
     setTimeout(spawnWorker, backoff);
   });
@@ -118,7 +123,10 @@ function shutdown(signal) {
   if (worker && !worker.killed) {
     worker.send('shutdown');
     const t = setTimeout(() => worker.kill('SIGKILL'), 10_000);
-    worker.on('exit', () => { clearTimeout(t); process.exit(0); });
+    worker.on('exit', () => {
+      clearTimeout(t);
+      process.exit(0);
+    });
   } else {
     process.exit(0);
   }

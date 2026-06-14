@@ -85,4 +85,4 @@ If you cannot agree to all of the above, **do not use this software**.
 
 ---
 
-*Last updated: 2026-05-29*
+_Last updated: 2026-05-29_

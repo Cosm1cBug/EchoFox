@@ -33,15 +33,17 @@ const { Worker } = require('node:worker_threads');
 const logger = require('../core/logger').child({ mod: 'workerPool' });
 
 let _seq = 0;
-function nextId() { return ++_seq; }
+function nextId() {
+  return ++_seq;
+}
 
 class WorkerSlot {
   constructor(pool, index) {
-    this.pool        = pool;
-    this.index       = index;
-    this.worker      = null;
-    this.inflight    = new Map();      // jobId → { resolve, reject, timer, label }
-    this.respawnHits = [];             // timestamps; capped 5/min
+    this.pool = pool;
+    this.index = index;
+    this.worker = null;
+    this.inflight = new Map(); // jobId → { resolve, reject, timer, label }
+    this.respawnHits = []; // timestamps; capped 5/min
     this._spawn();
   }
 
@@ -79,8 +81,10 @@ class WorkerSlot {
       const now = Date.now();
       this.respawnHits = this.respawnHits.filter((t) => now - t < 60_000);
       if (this.respawnHits.length >= 5) {
-        logger.error({ workerIndex: this.index },
-          'too many respawns in last minute — leaving worker dead until pool restart');
+        logger.error(
+          { workerIndex: this.index },
+          'too many respawns in last minute — leaving worker dead until pool restart',
+        );
         this.worker = null;
         return;
       }
@@ -100,8 +104,12 @@ class WorkerSlot {
     this.inflight.clear();
   }
 
-  isAlive() { return !!this.worker; }
-  get depth() { return this.inflight.size; }
+  isAlive() {
+    return !!this.worker;
+  }
+  get depth() {
+    return this.inflight.size;
+  }
 
   send(payload, timeoutMs) {
     if (!this.worker) {
@@ -115,7 +123,9 @@ class WorkerSlot {
         e.code = 'ETIMEDOUT';
         reject(e);
         // Suspect this worker is wedged — terminate so it respawns.
-        try { this.worker.terminate().catch(() => {}); } catch {}
+        try {
+          this.worker.terminate().catch(() => {});
+        } catch {}
       }, timeoutMs).unref();
 
       this.inflight.set(id, { resolve, reject, timer, label: payload.op });
@@ -129,22 +139,31 @@ class WorkerSlot {
     });
   }
 
-  async terminate() { try { if (this.worker) await this.worker.terminate(); } catch {} this.worker = null; }
+  async terminate() {
+    try {
+      if (this.worker) await this.worker.terminate();
+    } catch {}
+    this.worker = null;
+  }
 }
 
 class WorkerPool {
   constructor({ script, size = 2, defaultTimeoutMs = 60_000 }) {
     if (!script) throw new Error('WorkerPool: script path required');
-    this.script           = script;
+    this.script = script;
     this.defaultTimeoutMs = defaultTimeoutMs;
-    this._shuttingDown    = false;
-    this._rr              = 0;
+    this._shuttingDown = false;
+    this._rr = 0;
     this.slots = Array.from({ length: Math.max(1, size) }, (_, i) => new WorkerSlot(this, i));
     logger.info({ size: this.slots.length, script }, 'worker pool started');
   }
 
-  get size()       { return this.slots.filter((s) => s.isAlive()).length; }
-  get queueDepth() { return this.slots.reduce((a, s) => a + s.depth, 0); }
+  get size() {
+    return this.slots.filter((s) => s.isAlive()).length;
+  }
+  get queueDepth() {
+    return this.slots.reduce((a, s) => a + s.depth, 0);
+  }
 
   /**
    * Run a job on the least-busy alive worker. Falls back to round-robin

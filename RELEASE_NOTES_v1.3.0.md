@@ -48,11 +48,11 @@ chosen store flavour.
 
 ## What's mirrored to Telegram today
 
-| Source | Channel key | Level |
-|---|---|---|
-| Command crash stack-traces (from `commandRunner.js`) | `errLogs` | `error` |
-| Alert engine — alert triggered | `errLogs` | `error` |
-| Alert engine — alert cleared | `errLogs` | `info` |
+| Source                                               | Channel key | Level   |
+| ---------------------------------------------------- | ----------- | ------- |
+| Command crash stack-traces (from `commandRunner.js`) | `errLogs`   | `error` |
+| Alert engine — alert triggered                       | `errLogs`   | `error` |
+| Alert engine — alert cleared                         | `errLogs`   | `info`  |
 
 This list will grow in v1.3.x as more WA log producers get tapped.
 
@@ -77,12 +77,12 @@ Two store tables/collections (per flavour):
 
 ### Behaviour by store
 
-| Store    | Persistence    | Auto-expiry          |
-|----------|----------------|----------------------|
+| Store    | Persistence      | Auto-expiry                           |
+| -------- | ---------------- | ------------------------------------- |
 | sqlite   | ✅ Migration 006 | Lazy via `pruneAiRate()` every 10 min |
 | postgres | ✅ Migration 006 | Lazy via `pruneAiRate()` every 10 min |
-| mongo    | ✅ Migration 006 | Native TTL index on `expires_at` |
-| redis    | ✅ Lazy keys     | Native `EXPIREAT` per bucket |
+| mongo    | ✅ Migration 006 | Native TTL index on `expires_at`      |
+| redis    | ✅ Lazy keys     | Native `EXPIREAT` per bucket          |
 
 If you're running a store flavour without migration 006 applied for
 some reason, the router **transparently falls back** to in-memory
@@ -117,6 +117,7 @@ $ npm test
 ```
 
 16 new tests in this release:
+
 - `__tests__/integration/telegram.test.js` (12): routing, batching,
   immediate-flush on error, chunking, retry, HTML render, drain.
 - `__tests__/integration/ai-rate-persist.test.js` (4): counter

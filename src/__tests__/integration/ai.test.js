@@ -16,18 +16,23 @@
  *   • Exercise: router decisions, tool-call loop, memory persistence,
  *               cost tracking, admin/user commands
  */
-const test   = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
-const path   = require('node:path');
-const fs     = require('node:fs');
-const os     = require('node:os');
-const pino   = require('pino');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+const pino = require('pino');
 const { LRUCache } = require('lru-cache');
 
 // ─── helpers ──────────────────────────────────────────────────────
 function freshStore() {
-  const tmp = path.join(os.tmpdir(), `echofox_ai_test_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}.db`);
-  try { fs.rmSync(tmp, { force: true }); } catch (_) {}
+  const tmp = path.join(
+    os.tmpdir(),
+    `echofox_ai_test_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}.db`,
+  );
+  try {
+    fs.rmSync(tmp, { force: true });
+  } catch (_) {}
   const { makeSQLiteStore } = require('../../store/sqliteStore');
   const store = makeSQLiteStore({
     dbPath: tmp,
@@ -65,10 +70,10 @@ function applyAiConfig(patch = {}) {
       rateLimitPerUserPerHour: 30,
       rateLimitPerChatPerDay: 100,
       providers: {
-        openai:    { apiKey: 'test', baseUrl: '' },
-        gemini:    { apiKey: '',     baseUrl: '' },
-        anthropic: { apiKey: '',     baseUrl: '' },
-        local:     { baseUrl: 'http://localhost:11434', model: 'llama3.2' },
+        openai: { apiKey: 'test', baseUrl: '' },
+        gemini: { apiKey: '', baseUrl: '' },
+        anthropic: { apiKey: '', baseUrl: '' },
+        local: { baseUrl: 'http://localhost:11434', model: 'llama3.2' },
       },
       ...patch,
     },
@@ -89,58 +94,104 @@ function freshAi() {
 // ─── tests ────────────────────────────────────────────────────────
 
 test('router: respects ai.enabled=false', async () => {
-  const s = freshStore(); installStore(s); applyAiConfig({ enabled: false });
+  const s = freshStore();
+  installStore(s);
+  applyAiConfig({ enabled: false });
   const ai = freshAi();
-  const d = await ai.router.shouldRespond({ chatJid: 'c@s.whatsapp.net', userJid: 'u@s.whatsapp.net', text: 'hi bot' });
+  const d = await ai.router.shouldRespond({
+    chatJid: 'c@s.whatsapp.net',
+    userJid: 'u@s.whatsapp.net',
+    text: 'hi bot',
+  });
   assert.equal(d.respond, false);
   assert.equal(d.reason, 'disabled');
 });
 
 test('router: rejects commands (text starts with prefix)', async () => {
-  const s = freshStore(); installStore(s); applyAiConfig();
+  const s = freshStore();
+  installStore(s);
+  applyAiConfig();
   const ai = freshAi();
-  const d = await ai.router.shouldRespond({ chatJid: 'c@s.whatsapp.net', userJid: 'u@s.whatsapp.net', text: '.help' });
+  const d = await ai.router.shouldRespond({
+    chatJid: 'c@s.whatsapp.net',
+    userJid: 'u@s.whatsapp.net',
+    text: '.help',
+  });
   assert.equal(d.respond, false);
   assert.equal(d.reason, 'is_command');
 });
 
 test('router: bot-name mention triggers opt-in', async () => {
-  const s = freshStore(); installStore(s); applyAiConfig({ optInDefault: 'off' });
+  const s = freshStore();
+  installStore(s);
+  applyAiConfig({ optInDefault: 'off' });
   const ai = freshAi();
-  const d = await ai.router.shouldRespond({ chatJid: 'c1@s.whatsapp.net', userJid: 'u@s.whatsapp.net', text: 'hey echofox, what time is it' });
+  const d = await ai.router.shouldRespond({
+    chatJid: 'c1@s.whatsapp.net',
+    userJid: 'u@s.whatsapp.net',
+    text: 'hey echofox, what time is it',
+  });
   assert.equal(d.respond, true);
 });
 
 test('router: per-chat opt-in row overrides default', async () => {
-  const s = freshStore(); installStore(s); applyAiConfig({ optInDefault: 'off' });
+  const s = freshStore();
+  installStore(s);
+  applyAiConfig({ optInDefault: 'off' });
   await s.setAiChatOptIn('c@s.whatsapp.net', { enabled: true });
   const ai = freshAi();
-  const d = await ai.router.shouldRespond({ chatJid: 'c@s.whatsapp.net', userJid: 'u@s.whatsapp.net', text: 'random message' });
+  const d = await ai.router.shouldRespond({
+    chatJid: 'c@s.whatsapp.net',
+    userJid: 'u@s.whatsapp.net',
+    text: 'random message',
+  });
   assert.equal(d.respond, true);
 });
 
 test('ai.chat: tool-call loop persists memory + aggregates cost', async () => {
-  const s = freshStore(); installStore(s); applyAiConfig({ optInDefault: 'on' });
+  const s = freshStore();
+  installStore(s);
+  applyAiConfig({ optInDefault: 'on' });
   const ai = freshAi();
   const oai = require('../../services/ai/providers/openai');
 
   let call = 0;
   oai.__testOverride({
-    chat: { completions: { create: async (_req) => {
-      call += 1;
-      if (call === 1) {
-        return {
-          choices: [{ message: { content: '', tool_calls: [{ id: 'tc1', type: 'function', function: { name: 'get_blocklist', arguments: '{}' } }] }, finish_reason: 'tool_calls' }],
-          usage: { prompt_tokens: 100, completion_tokens: 10 },
-          model: 'gpt-4o-mini',
-        };
-      }
-      return {
-        choices: [{ message: { content: 'You have 0 blocked contacts.' }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 150, completion_tokens: 20 },
-        model: 'gpt-4o-mini',
-      };
-    } } },
+    chat: {
+      completions: {
+        create: async (_req) => {
+          call += 1;
+          if (call === 1) {
+            return {
+              choices: [
+                {
+                  message: {
+                    content: '',
+                    tool_calls: [
+                      {
+                        id: 'tc1',
+                        type: 'function',
+                        function: { name: 'get_blocklist', arguments: '{}' },
+                      },
+                    ],
+                  },
+                  finish_reason: 'tool_calls',
+                },
+              ],
+              usage: { prompt_tokens: 100, completion_tokens: 10 },
+              model: 'gpt-4o-mini',
+            };
+          }
+          return {
+            choices: [
+              { message: { content: 'You have 0 blocked contacts.' }, finish_reason: 'stop' },
+            ],
+            usage: { prompt_tokens: 150, completion_tokens: 20 },
+            model: 'gpt-4o-mini',
+          };
+        },
+      },
+    },
   });
 
   const chatJid = 'g1@s.whatsapp.net';
@@ -155,7 +206,10 @@ test('ai.chat: tool-call loop persists memory + aggregates cost', async () => {
 
   const turns = await s.getRecentAiTurns(chatJid, 20);
   assert.equal(turns.length, 4);
-  assert.deepEqual(turns.map((t) => t.role), ['user', 'assistant', 'tool', 'assistant']);
+  assert.deepEqual(
+    turns.map((t) => t.role),
+    ['user', 'assistant', 'tool', 'assistant'],
+  );
   assert.equal(turns[2].toolName, 'get_blocklist');
 
   const today = new Date().toISOString().slice(0, 10);
@@ -164,18 +218,29 @@ test('ai.chat: tool-call loop persists memory + aggregates cost', async () => {
 });
 
 test('ai.chat: respects rate-limit gate before calling provider', async () => {
-  const s = freshStore(); installStore(s); applyAiConfig({ optInDefault: 'on', rateLimitPerUserPerHour: 2 });
+  const s = freshStore();
+  installStore(s);
+  applyAiConfig({ optInDefault: 'on', rateLimitPerUserPerHour: 2 });
   const ai = freshAi();
   const oai = require('../../services/ai/providers/openai');
   let calls = 0;
   oai.__testOverride({
-    chat: { completions: { create: async () => {
-      calls += 1;
-      return { choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 1 }, model: 'gpt-4o-mini' };
-    } } },
+    chat: {
+      completions: {
+        create: async () => {
+          calls += 1;
+          return {
+            choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 5, completion_tokens: 1 },
+            model: 'gpt-4o-mini',
+          };
+        },
+      },
+    },
   });
 
-  const chat = 'c@s.whatsapp.net'; const user = 'u@s.whatsapp.net';
+  const chat = 'c@s.whatsapp.net';
+  const user = 'u@s.whatsapp.net';
   for (let i = 0; i < 2; i += 1) {
     const dec = await ai.router.shouldRespond({ chatJid: chat, userJid: user, text: 'hello' });
     assert.equal(dec.respond, true);
@@ -185,14 +250,16 @@ test('ai.chat: respects rate-limit gate before calling provider', async () => {
   const dec3 = await ai.router.shouldRespond({ chatJid: chat, userJid: user, text: 'hello' });
   assert.equal(dec3.respond, false);
   assert.equal(dec3.reason, 'rate_limit_user');
-  assert.equal(calls, 2);  // provider was not called for the rate-limited turn
+  assert.equal(calls, 2); // provider was not called for the rate-limited turn
 });
 
 test('ai.clearMemory removes all turns for the chat', async () => {
-  const s = freshStore(); installStore(s); applyAiConfig();
+  const s = freshStore();
+  installStore(s);
+  applyAiConfig();
   const ai = freshAi();
   const chat = 'm@s.whatsapp.net';
-  await s.appendAiTurn(chat, { role: 'user',      content: 'a', ts: Date.now() });
+  await s.appendAiTurn(chat, { role: 'user', content: 'a', ts: Date.now() });
   await s.appendAiTurn(chat, { role: 'assistant', content: 'b', ts: Date.now() });
   assert.equal((await s.getRecentAiTurns(chat, 10)).length, 2);
   await ai.clearMemory(chat);
@@ -200,9 +267,18 @@ test('ai.clearMemory removes all turns for the chat', async () => {
 });
 
 test('toolRegistry: SSRF guard rejects private hosts in fetch_url', async () => {
-  const s = freshStore(); installStore(s); applyAiConfig();
+  const s = freshStore();
+  installStore(s);
+  applyAiConfig();
   const ai = freshAi();
-  for (const host of ['127.0.0.1', '10.0.0.1', '192.168.1.1', '169.254.169.254', 'localhost', '172.16.0.1']) {
+  for (const host of [
+    '127.0.0.1',
+    '10.0.0.1',
+    '192.168.1.1',
+    '169.254.169.254',
+    'localhost',
+    '172.16.0.1',
+  ]) {
     const r = await ai.tools.invoke('fetch_url', { url: `http://${host}/x` });
     assert.equal(r.ok, true, `invoke should return wrapper for ${host}`);
     assert.equal(r.result.error, 'private_host_blocked', `expected SSRF block for ${host}`);
@@ -210,7 +286,9 @@ test('toolRegistry: SSRF guard rejects private hosts in fetch_url', async () => 
 });
 
 test('toolRegistry: getActiveSpec hides tools whose API key is missing', async () => {
-  const s = freshStore(); installStore(s); applyAiConfig();
+  const s = freshStore();
+  installStore(s);
+  applyAiConfig();
   const ai = freshAi();
   const names = ai.tools.getActiveSpec().map((t) => t.name);
   // toolWhitelist only allows get_blocklist + latest_hackernews; VT/OTX would
@@ -222,9 +300,9 @@ test('toolRegistry: getActiveSpec hides tools whose API key is missing', async (
 test('cost tracker: priceFor returns Ollama=$0 and matches default fallback for unknown model', () => {
   const ai = freshAi();
   assert.deepEqual(ai.cost.priceFor('local', 'anything'), [0, 0]);
-  assert.deepEqual(ai.cost.priceFor('openai', 'gpt-4o-mini'), [0.15, 0.60]);
+  assert.deepEqual(ai.cost.priceFor('openai', 'gpt-4o-mini'), [0.15, 0.6]);
   // unknown model -> fallback (gpt-4o-mini rates)
-  assert.deepEqual(ai.cost.priceFor('openai', 'totally-not-a-real-model'), [0.15, 0.60]);
+  assert.deepEqual(ai.cost.priceFor('openai', 'totally-not-a-real-model'), [0.15, 0.6]);
 });
 
 test('personas.pick: returns hardcoded GENERAL for general, THREAT_INTEL for default', () => {

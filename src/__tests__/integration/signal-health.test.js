@@ -10,7 +10,7 @@
  *
  *   Run:  node --test src/__tests__/integration/signal-health.test.js
  */
-const test   = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const signalHealth = require('../../services/signalHealth');
@@ -21,7 +21,9 @@ function makeMockSock() {
   return {
     deletions,
     signalRepository: {
-      async deleteSession(jid) { deletions.push(jid); },
+      async deleteSession(jid) {
+        deletions.push(jid);
+      },
     },
   };
 }
@@ -30,13 +32,13 @@ function badMacLogObj(participant) {
   return {
     err: new Error('Bad MAC'),
     key: {
-      remoteJid:    '120363324400552303@g.us',
-      fromMe:       false,
-      id:           'TEST_ID',
+      remoteJid: '120363324400552303@g.us',
+      fromMe: false,
+      id: 'TEST_ID',
       participant,
     },
     messageType: 'pkmsg',
-    author:      participant,
+    author: participant,
   };
 }
 
@@ -51,7 +53,10 @@ function noSessionLogObj(participant) {
 
 test('_isDecryptionFailure recognises known patterns', () => {
   assert.equal(signalHealth._isDecryptionFailure(new Error('Bad MAC')), true);
-  assert.equal(signalHealth._isDecryptionFailure(new Error('No session found to decrypt message')), true);
+  assert.equal(
+    signalHealth._isDecryptionFailure(new Error('No session found to decrypt message')),
+    true,
+  );
   assert.equal(signalHealth._isDecryptionFailure(new Error('No matching sessions found')), true);
   assert.equal(signalHealth._isDecryptionFailure(new Error('InvalidSignedPreKeyId')), true);
   assert.equal(signalHealth._isDecryptionFailure(new Error('Some other error')), false);
@@ -61,8 +66,14 @@ test('_isDecryptionFailure recognises known patterns', () => {
 
 test('_normaliseJid strips device tags', () => {
   assert.equal(signalHealth._normaliseJid('262516991086663:74@lid'), '262516991086663@lid');
-  assert.equal(signalHealth._normaliseJid('5511960847865:42@s.whatsapp.net'), '5511960847865@s.whatsapp.net');
-  assert.equal(signalHealth._normaliseJid('5511960847865@s.whatsapp.net'), '5511960847865@s.whatsapp.net');
+  assert.equal(
+    signalHealth._normaliseJid('5511960847865:42@s.whatsapp.net'),
+    '5511960847865@s.whatsapp.net',
+  );
+  assert.equal(
+    signalHealth._normaliseJid('5511960847865@s.whatsapp.net'),
+    '5511960847865@s.whatsapp.net',
+  );
   assert.equal(signalHealth._normaliseJid('alice:1'), 'alice');
   assert.equal(signalHealth._normaliseJid(''), '');
   assert.equal(signalHealth._normaliseJid(null), '');

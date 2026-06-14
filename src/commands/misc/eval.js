@@ -22,7 +22,7 @@ const { format, promisify } = require('node:util');
 
 const execAsync = promisify(exec);
 
-const MAX_OUT = 3500;        // WhatsApp soft text-message ceiling
+const MAX_OUT = 3500; // WhatsApp soft text-message ceiling
 const SHELL_TIMEOUT = 30_000;
 
 function truncate(s) {
@@ -69,8 +69,7 @@ module.exports = {
       const { stdout, stderr } = await execAsync(text, { timeout: SHELL_TIMEOUT, shell: true });
       const out =
         (stdout ? `*stdout*\n\`\`\`\n${truncate(stdout)}\n\`\`\`\n` : '') +
-        (stderr ? `*stderr*\n\`\`\`\n${truncate(stderr)}\n\`\`\`\n` : '') ||
-        '_(no output)_';
+          (stderr ? `*stderr*\n\`\`\`\n${truncate(stderr)}\n\`\`\`\n` : '') || '_(no output)_';
       await ctx.reply(out);
     } catch (err) {
       await ctx.reply('💥 *exec failed*\n```\n' + truncate(err.message) + '\n```');

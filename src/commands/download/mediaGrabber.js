@@ -17,8 +17,11 @@
  */
 
 const ALLOWED = new Set([
-  'imageMessage', 'videoMessage', 'audioMessage',
-  'documentMessage', 'stickerMessage',
+  'imageMessage',
+  'videoMessage',
+  'audioMessage',
+  'documentMessage',
+  'stickerMessage',
 ]);
 
 module.exports = {
@@ -32,7 +35,9 @@ module.exports = {
   async start(sock, m, { ctx }) {
     const srcType = ctx.quoted?.type || ctx.mtype;
     if (!ALLOWED.has(srcType)) {
-      return ctx.reply('↩️ Reply to a *media* message (image / video / audio / document / sticker).');
+      return ctx.reply(
+        '↩️ Reply to a *media* message (image / video / audio / document / sticker).',
+      );
     }
 
     await ctx.react('⬇️');
@@ -46,20 +51,27 @@ module.exports = {
 
     // Pick the right send-shape per media type
     const quotedMsg = ctx.quoted?.message?.[srcType] || ctx.raw.message?.[srcType] || {};
-    const mimetype  = quotedMsg.mimetype;
-    const fileName  = quotedMsg.fileName;
-    const caption   = quotedMsg.caption || '✅ Saved';
+    const mimetype = quotedMsg.mimetype;
+    const fileName = quotedMsg.fileName;
+    const caption = quotedMsg.caption || '✅ Saved';
 
     const kind = srcType.replace('Message', '');
     const payload =
-      kind === 'image'    ? { image:    buf, mimetype: mimetype || 'image/jpeg', caption } :
-      kind === 'video'    ? { video:    buf, mimetype: mimetype || 'video/mp4',  caption } :
-      kind === 'audio'    ? { audio:    buf, mimetype: mimetype || 'audio/mpeg', ptt: !!quotedMsg.ptt } :
-      kind === 'document' ? { document: buf, mimetype: mimetype || 'application/octet-stream',
-                              fileName: fileName || 'file' } :
-      kind === 'sticker'  ? { sticker:  buf } :
-                            { document: buf, mimetype: 'application/octet-stream',
-                              fileName: 'media' };
+      kind === 'image'
+        ? { image: buf, mimetype: mimetype || 'image/jpeg', caption }
+        : kind === 'video'
+          ? { video: buf, mimetype: mimetype || 'video/mp4', caption }
+          : kind === 'audio'
+            ? { audio: buf, mimetype: mimetype || 'audio/mpeg', ptt: !!quotedMsg.ptt }
+            : kind === 'document'
+              ? {
+                  document: buf,
+                  mimetype: mimetype || 'application/octet-stream',
+                  fileName: fileName || 'file',
+                }
+              : kind === 'sticker'
+                ? { sticker: buf }
+                : { document: buf, mimetype: 'application/octet-stream', fileName: 'media' };
 
     await sock.sendMessage(ctx.from, payload, { quoted: m });
     await ctx.react('✅');

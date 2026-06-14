@@ -33,22 +33,22 @@ const routing = require('./routing');
 const transport = require('./transport');
 const metrics = require('../metrics');
 
-const _buffers = new Map();    // channelKey -> [{ text, level, source, ts }]
-const _timers  = new Map();    // channelKey -> Timeout
+const _buffers = new Map(); // channelKey -> [{ text, level, source, ts }]
+const _timers = new Map(); // channelKey -> Timeout
 
 const LEVEL_ICON = Object.freeze({
   fatal: '💀',
   error: '❌',
-  warn:  '⚠️',
-  info:  'ℹ️',
+  warn: '⚠️',
+  info: 'ℹ️',
   debug: '🐛',
 });
 
 function _renderEntry({ text, level, source, ts }, parseMode) {
   const t = new Date(Number(ts || Date.now())).toISOString().replace('T', ' ').replace('Z', '');
   const icon = LEVEL_ICON[level] || '•';
-  const lvl  = String(level || 'info').toUpperCase();
-  const src  = source ? `[${source}]` : '';
+  const lvl = String(level || 'info').toUpperCase();
+  const src = source ? `[${source}]` : '';
 
   if (parseMode === 'HTML') {
     return `${icon} <b>${transport.escapeHtml(lvl)}</b> <code>${transport.escapeHtml(t)}</code> ${transport.escapeHtml(src)}\n${transport.escapeHtml(text)}`;
@@ -65,7 +65,10 @@ async function _flushChannel(channelKey) {
   if (!buf || !buf.length) return;
   _buffers.set(channelKey, []);
   const timer = _timers.get(channelKey);
-  if (timer) { clearTimeout(timer); _timers.delete(channelKey); }
+  if (timer) {
+    clearTimeout(timer);
+    _timers.delete(channelKey);
+  }
 
   const chatId = routing.resolve(channelKey);
   if (!chatId) return;
@@ -105,7 +108,9 @@ function _scheduleFlush(channelKey) {
   const ms = Math.max(0, Number(config.telegram?.batchMs) || 0);
   if (ms === 0) {
     // immediate mode — flush on next tick to coalesce same-tick pushes
-    setImmediate(() => _flushChannel(channelKey).catch((e) => logger.warn({ err: e }, 'flush failed')));
+    setImmediate(() =>
+      _flushChannel(channelKey).catch((e) => logger.warn({ err: e }, 'flush failed')),
+    );
     return;
   }
   const t = setTimeout(() => {
@@ -125,18 +130,22 @@ function forward(channelKey, payload) {
     if (!config.telegram?.enabled) return false;
     if (!routing.resolve(channelKey)) return false;
     const entry = {
-      text:   String(payload?.text || ''),
-      level:  String(payload?.level || 'info').toLowerCase(),
+      text: String(payload?.text || ''),
+      level: String(payload?.level || 'info').toLowerCase(),
       source: payload?.source ? String(payload.source) : '',
-      ts:     Number(payload?.ts) || Date.now(),
+      ts: Number(payload?.ts) || Date.now(),
     };
     _ensureBuf(channelKey).push(entry);
     if (entry.level === 'error' || entry.level === 'fatal') {
       // Immediate flush — clear any pending timer first.
       const t = _timers.get(channelKey);
-      if (t) { clearTimeout(t); _timers.delete(channelKey); }
-      setImmediate(() => _flushChannel(channelKey).catch((e) =>
-        logger.warn({ err: e }, 'urgent flush failed')));
+      if (t) {
+        clearTimeout(t);
+        _timers.delete(channelKey);
+      }
+      setImmediate(() =>
+        _flushChannel(channelKey).catch((e) => logger.warn({ err: e }, 'urgent flush failed')),
+      );
     } else {
       _scheduleFlush(channelKey);
     }
@@ -151,8 +160,11 @@ function forward(channelKey, payload) {
 
 async function flushAll() {
   for (const key of [..._buffers.keys()]) {
-    try { await _flushChannel(key); }
-    catch (e) { logger.warn({ err: e, key }, 'flushAll failed for channel'); }
+    try {
+      await _flushChannel(key);
+    } catch (e) {
+      logger.warn({ err: e, key }, 'flushAll failed for channel');
+    }
   }
 }
 
@@ -168,5 +180,5 @@ module.exports = {
   routing,
   transport,
   _resetForTests,
-  _renderEntry,   // exported for tests
+  _renderEntry, // exported for tests
 };

@@ -25,13 +25,13 @@
  */
 
 const { getStore } = require('../../store/instance');
-const { config }   = require('../../lib/configLoader');
+const { config } = require('../../lib/configLoader');
 const logger = require('../../core/logger').child({ mod: 'vtwatch-cmd' });
 
 const SERVICE = 'vtwatch';
 const TYPE_RE = /^(hash|ip|domain|url):(.+)$/i;
 const VERBS_STATUS = new Set(['status', '-status', '--status', 'list']);
-const VERBS_HELP   = new Set(['help', '-help', '--help', '?', '']);
+const VERBS_HELP = new Set(['help', '-help', '--help', '?', '']);
 
 function parseTarget(rest) {
   const tok = rest.split(/\s+/)[0] || '';
@@ -71,8 +71,11 @@ module.exports = {
   info: 'Watch VirusTotal verdict changes on hashes/IPs/domains/URLs.',
   start: async (sock, m, { text }) => {
     if (!m.isPrivate) {
-      return await sock.sendMessage(m.chat,
-        { text: '❌ Can only be used in Private Chats.' }, { quoted: m });
+      return await sock.sendMessage(
+        m.chat,
+        { text: '❌ Can only be used in Private Chats.' },
+        { quoted: m },
+      );
     }
 
     const jid = String(m.sender || m.from);
@@ -85,34 +88,45 @@ module.exports = {
     if (verb === 'add') {
       const target = parseTarget(rest);
       if (!target) {
-        return await sock.sendMessage(m.chat,
+        return await sock.sendMessage(
+          m.chat,
           { text: 'Usage: `.vtwatch add <hash|ip|domain|url>:<value>`' },
-          { quoted: m });
+          { quoted: m },
+        );
       }
       const existingMeta = (await store.getSubscriberMeta(SERVICE, jid)) || {};
       const targets = Array.isArray(existingMeta.targets) ? [...existingMeta.targets] : [];
       const dup = targets.find((t) => t.type === target.type && t.id === target.id);
       if (dup) {
-        return await sock.sendMessage(m.chat,
+        return await sock.sendMessage(
+          m.chat,
           { text: `☑️ Already watching \`${target.type}:${target.id}\`.` },
-          { quoted: m });
+          { quoted: m },
+        );
       }
       targets.push({ type: target.type, id: target.id, lastMalCount: null });
       const meta = { ...existingMeta, targets };
       const isSub = await store.isSubscriber(SERVICE, jid);
       if (isSub) await store.updateSubscriberMeta(SERVICE, jid, meta);
-      else       await store.addSubscriber(SERVICE, jid, meta);
+      else await store.addSubscriber(SERVICE, jid, meta);
       logger.info({ jid, action: 'add-target', target }, 'vtwatch target added');
-      return await sock.sendMessage(m.chat,
-        { text: `✅ Watching \`${target.type}:${target.id}\`.\n_You'll be alerted when malicious-engine count changes._` },
-        { quoted: m });
+      return await sock.sendMessage(
+        m.chat,
+        {
+          text: `✅ Watching \`${target.type}:${target.id}\`.\n_You'll be alerted when malicious-engine count changes._`,
+        },
+        { quoted: m },
+      );
     }
 
     if (verb === 'remove' || verb === 'rm') {
       const target = parseTarget(rest);
       if (!target) {
-        return await sock.sendMessage(m.chat,
-          { text: 'Usage: `.vtwatch remove <type:id>`' }, { quoted: m });
+        return await sock.sendMessage(
+          m.chat,
+          { text: 'Usage: `.vtwatch remove <type:id>`' },
+          { quoted: m },
+        );
       }
       const meta = (await store.getSubscriberMeta(SERVICE, jid)) || {};
       const targets = Array.isArray(meta.targets)
@@ -120,45 +134,60 @@ module.exports = {
         : [];
       if (!targets.length) {
         await store.removeSubscriber(SERVICE, jid);
-        return await sock.sendMessage(m.chat,
+        return await sock.sendMessage(
+          m.chat,
           { text: `❌ Removed last target; you are no longer subscribed to .vtwatch.` },
-          { quoted: m });
+          { quoted: m },
+        );
       }
       await store.updateSubscriberMeta(SERVICE, jid, { ...meta, targets });
       logger.info({ jid, action: 'remove-target', target }, 'vtwatch target removed');
-      return await sock.sendMessage(m.chat,
+      return await sock.sendMessage(
+        m.chat,
         { text: `❌ Removed \`${target.type}:${target.id}\`. (${targets.length} remaining.)` },
-        { quoted: m });
+        { quoted: m },
+      );
     }
 
     if (VERBS_STATUS.has(verb)) {
       const isSub = await store.isSubscriber(SERVICE, jid);
       if (!isSub) {
-        return await sock.sendMessage(m.chat,
+        return await sock.sendMessage(
+          m.chat,
           { text: '📭 *VT-watch*\n\nYou have no targets. Use `.vtwatch add <type:id>` to start.' },
-          { quoted: m });
+          { quoted: m },
+        );
       }
       const meta = (await store.getSubscriberMeta(SERVICE, jid)) || {};
       const targets = Array.isArray(meta.targets) ? meta.targets : [];
       if (!targets.length) {
-        return await sock.sendMessage(m.chat,
-          { text: '📭 *VT-watch*\n\nYou have no targets.' }, { quoted: m });
+        return await sock.sendMessage(
+          m.chat,
+          { text: '📭 *VT-watch*\n\nYou have no targets.' },
+          { quoted: m },
+        );
       }
       const lines = targets.map((t, i) => {
         const seen = t.lastMalCount == null ? '_(not yet checked)_' : `mal=*${t.lastMalCount}*`;
         return `${i + 1}. \`${t.type}:${t.id}\` — ${seen}`;
       });
-      return await sock.sendMessage(m.chat, {
-        text: [`📬 *VT-watch targets* (${targets.length})`, '', ...lines].join('\n'),
-      }, { quoted: m });
+      return await sock.sendMessage(
+        m.chat,
+        {
+          text: [`📬 *VT-watch targets* (${targets.length})`, '', ...lines].join('\n'),
+        },
+        { quoted: m },
+      );
     }
 
     if (VERBS_HELP.has(verb)) {
       return await sock.sendMessage(m.chat, { text: helpPanel() }, { quoted: m });
     }
 
-    return await sock.sendMessage(m.chat,
+    return await sock.sendMessage(
+      m.chat,
       { text: `Unknown verb *${verb}*. Use \`.vtwatch help\` to see options.` },
-      { quoted: m });
+      { quoted: m },
+    );
   },
 };

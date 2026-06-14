@@ -17,18 +17,26 @@
  *     the values match what the store reports
  *   - Test that pruneAiRate() respects expires_at
  */
-const test   = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
-const path   = require('node:path');
-const fs     = require('node:fs');
-const os     = require('node:os');
-const pino   = require('pino');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+const pino = require('pino');
 const { LRUCache } = require('lru-cache');
 
 function freshStore(dbPath) {
-  const tmp = dbPath || path.join(os.tmpdir(),
-    `echofox_rate_persist_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}.db`);
-  if (!dbPath) { try { fs.rmSync(tmp, { force: true }); } catch (_) {} }
+  const tmp =
+    dbPath ||
+    path.join(
+      os.tmpdir(),
+      `echofox_rate_persist_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}.db`,
+    );
+  if (!dbPath) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch (_) {}
+  }
   const { makeSQLiteStore } = require('../../store/sqliteStore');
   const store = makeSQLiteStore({
     dbPath: tmp,
@@ -54,7 +62,7 @@ function applyAiConfig(patch = {}) {
       defaultProvider: 'openai',
       model: 'gpt-4o-mini',
       maxTokens: 800,
-      costCapPerDayUsd: 0,                 // disable cap for these tests
+      costCapPerDayUsd: 0, // disable cap for these tests
       persona: 'general',
       customPersona: '',
       memoryTurns: 20,
@@ -66,10 +74,10 @@ function applyAiConfig(patch = {}) {
       rateLimitPerUserPerHour: 3,
       rateLimitPerChatPerDay: 5,
       providers: {
-        openai:    { apiKey: '', baseUrl: '' },
-        gemini:    { apiKey: '', baseUrl: '' },
+        openai: { apiKey: '', baseUrl: '' },
+        gemini: { apiKey: '', baseUrl: '' },
         anthropic: { apiKey: '', baseUrl: '' },
-        local:     { baseUrl: 'http://x', model: 'llama3.2' },
+        local: { baseUrl: 'http://x', model: 'llama3.2' },
       },
       ...patch,
     },
@@ -99,10 +107,13 @@ test('store: counter survives a process-restart (re-open same sqlite file)', asy
 });
 
 test('router: routes through store-backed counters when store has methods', async () => {
-  const s = freshStore(); installStore(s); applyAiConfig();
+  const s = freshStore();
+  installStore(s);
+  applyAiConfig();
   const router = freshRouter();
 
-  const chat = 'c@x'; const user = 'u@x';
+  const chat = 'c@x';
+  const user = 'u@x';
   for (let i = 0; i < 3; i += 1) {
     const d = await router.shouldRespond({ chatJid: chat, userJid: user, text: 'echofox hi' });
     assert.equal(d.respond, true);
@@ -128,7 +139,8 @@ test('router: falls back to in-memory when store lacks methods', async () => {
   });
   applyAiConfig({ rateLimitPerUserPerHour: 2 });
   const router = freshRouter();
-  const chat = 'fc@x'; const user = 'fu@x';
+  const chat = 'fc@x';
+  const user = 'fu@x';
   for (let i = 0; i < 2; i += 1) {
     const d = await router.shouldRespond({ chatJid: chat, userJid: user, text: 'echofox hi' });
     assert.equal(d.respond, true);
@@ -143,11 +155,11 @@ test('pruneAiRate: deletes only expired rows', async () => {
   const s = freshStore();
   // Two rows: one with expires_at in the past, one in the future
   const now = Date.now();
-  await s.incrAiRateUser('past@x', 100);  // expires_at = 102 * 3600 * 1000 (~year 1970)
+  await s.incrAiRateUser('past@x', 100); // expires_at = 102 * 3600 * 1000 (~year 1970)
   await s.incrAiRateUser('future@x', Math.floor(now / 3_600_000));
 
   const pruned = await s.pruneAiRate(now);
   assert.equal(pruned.users, 1, `expected 1 pruned, got ${pruned.users}`);
-  assert.equal(await s.getAiRateUser('past@x',   100), 0);
+  assert.equal(await s.getAiRateUser('past@x', 100), 0);
   assert.equal(await s.getAiRateUser('future@x', Math.floor(now / 3_600_000)), 1);
 });

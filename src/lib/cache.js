@@ -12,6 +12,6 @@
 const c = require('../core/caches');
 
 module.exports = {
-  metadataCache:   c.groupMetadataCache,
-  retryCache:      c.msgRetryCounterCache,
+  metadataCache: c.groupMetadataCache,
+  retryCache: c.msgRetryCounterCache,
 };

@@ -1,69 +1,69 @@
 version: 2
 updates:
   # npm dependencies — weekly
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "07:00"
-      timezone: "Asia/Kolkata"
+      interval: 'weekly'
+      day: 'monday'
+      time: '07:00'
+      timezone: 'Asia/Kolkata'
     open-pull-requests-limit: 5
-    versioning-strategy: "increase"
+    versioning-strategy: 'increase'
     labels:
-      - "dependencies"
-      - "needs-triage"
+      - 'dependencies'
+      - 'needs-triage'
     commit-message:
-      prefix: "chore(deps)"
-      include: "scope"
+      prefix: 'chore(deps)'
+      include: 'scope'
     groups:
       # Group all minor/patch dev-tooling bumps to reduce PR noise
       dev-tooling:
         patterns:
-          - "eslint*"
-          - "prettier"
-          - "husky"
-          - "lint-staged"
+          - 'eslint*'
+          - 'prettier'
+          - 'husky'
+          - 'lint-staged'
         update-types:
-          - "minor"
-          - "patch"
+          - 'minor'
+          - 'patch'
       # Group all minor/patch baileys-related bumps
       baileys-stack:
         patterns:
-          - "@whiskeysockets/*"
-          - "@hapi/boom"
-          - "pino*"
-          - "ws"
+          - '@whiskeysockets/*'
+          - '@hapi/boom'
+          - 'pino*'
+          - 'ws'
         update-types:
-          - "minor"
-          - "patch"
+          - 'minor'
+          - 'patch'
     ignore:
       # Pin music-metadata below 11.12.2 — see Baileys issue #2410
-      - dependency-name: "music-metadata"
-        versions: [">=11.12.2"]
+      - dependency-name: 'music-metadata'
+        versions: ['>=11.12.2']
 
   # GitHub Actions workflows
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: 'weekly'
+      day: 'monday'
     open-pull-requests-limit: 3
     labels:
-      - "github-actions"
-      - "dependencies"
+      - 'github-actions'
+      - 'dependencies'
     commit-message:
-      prefix: "chore(ci)"
+      prefix: 'chore(ci)'
 
   # Docker (Dockerfile base image)
-  - package-ecosystem: "docker"
-    directory: "/"
+  - package-ecosystem: 'docker'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: 'weekly'
+      day: 'monday'
     open-pull-requests-limit: 2
     labels:
-      - "docker"
-      - "dependencies"
+      - 'docker'
+      - 'dependencies'
     commit-message:
-      prefix: "chore(docker)"
+      prefix: 'chore(docker)'

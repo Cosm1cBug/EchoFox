@@ -25,7 +25,7 @@ const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 const MF_URL = /^https?:\/\/(www\.)?mediafire\.com\//i;
 const HREF_RE = /id=["']downloadButton["'][^>]*href=["']([^"']+)["']/i;
-const ALT_RE  = /aria-label=["']Download file["'][^>]*href=["']([^"']+)["']/i;
+const ALT_RE = /aria-label=["']Download file["'][^>]*href=["']([^"']+)["']/i;
 const NAME_RE = /<div class=["']filename["'][^>]*>([^<]+)<\/div>/i;
 const SIZE_RE = /<li>\s*<span>File size:\s*<\/span>\s*([\d.]+)\s*(MB|KB|GB)\s*<\/li>/i;
 
@@ -38,20 +38,20 @@ async function resolveDirect(url) {
     timeout: 15_000,
     maxRedirects: 5,
     headers: { 'User-Agent': 'Mozilla/5.0 EchoFox/0.4' },
-    validateStatus:(s) => s < 400,
+    validateStatus: (s) => s < 400,
   });
   const html = r.data || '';
   const m = HREF_RE.exec(html) || ALT_RE.exec(html);
   if (!m) throw new Error('could not extract download link from page');
   const direct = m[1];
-  const name   = (NAME_RE.exec(html) || ['mediafire-file'])[1].trim();
-  const sizeM  = SIZE_RE.exec(html);
+  const name = (NAME_RE.exec(html) || ['mediafire-file'])[1].trim();
+  const sizeM = SIZE_RE.exec(html);
   return {
     direct,
     name,
-    sizeBytes: sizeM ? Math.round(
-      parseFloat(sizeM[1]) * (sizeM[2] === 'MB' ? 1e6 : sizeM[2] === 'KB' ? 1e3 : 1e9),
-    ) : null,
+    sizeBytes: sizeM
+      ? Math.round(parseFloat(sizeM[1]) * (sizeM[2] === 'MB' ? 1e6 : sizeM[2] === 'KB' ? 1e3 : 1e9))
+      : null,
   };
 }
 
@@ -91,16 +91,16 @@ module.exports = {
     await ctx.reply(`⏬ *${info.name}*\n_Downloading…_`);
 
     let payload;
-    
+
     try {
       const dl = await axiosWithBreaker('mediafire-download', {
-        method:           'GET',
-        url:              info.direct,
-        responseType:     'arraybuffer',
-        timeout:          200_000,
+        method: 'GET',
+        url: info.direct,
+        responseType: 'arraybuffer',
+        timeout: 200_000,
         maxContentLength: MAX_BYTES,
-        maxBodyLength:    MAX_BYTES,
-        headers:          { 'User-Agent': 'Mozilla/5.0 EchoFox/0.4' },
+        maxBodyLength: MAX_BYTES,
+        headers: { 'User-Agent': 'Mozilla/5.0 EchoFox/0.4' },
       });
       payload = {
         document: Buffer.from(dl.data),

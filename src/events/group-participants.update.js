@@ -21,8 +21,8 @@
  */
 
 const { classifyAction } = require('../store/schema/participants');
-const { config }         = require('../lib/configLoader');
-const logger             = require('../core/logger').child({ mod: 'gp.update' });
+const { config } = require('../lib/configLoader');
+const logger = require('../core/logger').child({ mod: 'gp.update' });
 
 module.exports = async function onGroupParticipants({ sock, store, u }) {
   if (!u || !u.id || !Array.isArray(u.participants) || !u.participants.length) return;
@@ -36,8 +36,10 @@ module.exports = async function onGroupParticipants({ sock, store, u }) {
     try {
       await store.recordParticipantEvent(groupJid, p, action, author || null, ts);
     } catch (e) {
-      logger.warn({ err: e, groupJid, participant: p, action },
-        'failed to record participant event');
+      logger.warn(
+        { err: e, groupJid, participant: p, action },
+        'failed to record participant event',
+      );
     }
   }
 
@@ -52,30 +54,37 @@ module.exports = async function onGroupParticipants({ sock, store, u }) {
   // ─── 3. Structured log + optional channel notification
   const classified = participants.map((p) => ({
     participant: p,
-    action:      classifyAction(rawAction, author, p),
+    action: classifyAction(rawAction, author, p),
   }));
-  logger.info({ groupJid, rawAction, author, classified, count: participants.length },
-    'participants changed');
+  logger.info(
+    { groupJid, rawAction, author, classified, count: participants.length },
+    'participants changed',
+  );
 
   if (config.channels.groupUpdates) {
-    const lines = classified.map(({ participant, action }) => {
-      const verb = {
-        add:     '➕ added',
-        join:    '🚪 joined',
-        leave:   '👋 left',
-        kick:    '🚫 kicked',
-        promote: '⭐ promoted',
-        demote:  '⬇️ demoted',
-        approve: '✅ approved',
-        reject:  '❌ rejected',
-        request: '📥 requested',
-      }[action] || `(${action})`;
-      const who = participant.split('@')[0];
-      return `• ${verb} *${who}*${author && action === 'kick' ? ` (by ${author.split('@')[0]})` : ''}`;
-    }).join('\n');
+    const lines = classified
+      .map(({ participant, action }) => {
+        const verb =
+          {
+            add: '➕ added',
+            join: '🚪 joined',
+            leave: '👋 left',
+            kick: '🚫 kicked',
+            promote: '⭐ promoted',
+            demote: '⬇️ demoted',
+            approve: '✅ approved',
+            reject: '❌ rejected',
+            request: '📥 requested',
+          }[action] || `(${action})`;
+        const who = participant.split('@')[0];
+        return `• ${verb} *${who}*${author && action === 'kick' ? ` (by ${author.split('@')[0]})` : ''}`;
+      })
+      .join('\n');
 
-    sock.sendMessage(config.channels.groupUpdates, {
-      text: `*${groupJid.split('@')[0]}* — participants updated\n${lines}`,
-    }).catch((e) => logger.debug({ err: e }, 'failed to post groupUpdates notification'));
+    sock
+      .sendMessage(config.channels.groupUpdates, {
+        text: `*${groupJid.split('@')[0]}* — participants updated\n${lines}`,
+      })
+      .catch((e) => logger.debug({ err: e }, 'failed to post groupUpdates notification'));
   }
 };

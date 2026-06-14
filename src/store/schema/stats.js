@@ -87,13 +87,19 @@ const GAUGES = Object.freeze([
  */
 function commandKey(name) {
   // Sanitize to prevent storage layer surprises: only [a-z0-9_]
-  const safe = String(name).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  const safe = String(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_');
   return `commands_per_name__${safe}`;
 }
 
 /** Quick validity check used by typed helpers. */
-function isCounter(k) { return COUNTERS.includes(k) || k.startsWith('commands_per_name__'); }
-function isGauge(k)   { return GAUGES.includes(k); }
+function isCounter(k) {
+  return COUNTERS.includes(k) || k.startsWith('commands_per_name__');
+}
+function isGauge(k) {
+  return GAUGES.includes(k);
+}
 
 const SQL_DDL = {
   sqlite: `

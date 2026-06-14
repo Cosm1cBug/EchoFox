@@ -24,22 +24,31 @@ function _getClient() {
   if (_override) return _override;
   if (_client) return _client;
   const { GoogleGenerativeAI } = require('@google/generative-ai');
-  _client = new GoogleGenerativeAI(config.ai?.providers?.gemini?.apiKey || process.env.GEMINI_API_KEY || '');
+  _client = new GoogleGenerativeAI(
+    config.ai?.providers?.gemini?.apiKey || process.env.GEMINI_API_KEY || '',
+  );
   return _client;
 }
 
-function _resetClientForTests() { _client = null; _override = null; }
-function __testOverride(client) { _override = client; }
+function _resetClientForTests() {
+  _client = null;
+  _override = null;
+}
+function __testOverride(client) {
+  _override = client;
+}
 
 function _toolsToGemini(tools = []) {
   if (!tools.length) return undefined;
-  return [{
-    functionDeclarations: tools.map((t) => ({
-      name:        t.name,
-      description: t.description,
-      parameters:  t.parameters,
-    })),
-  }];
+  return [
+    {
+      functionDeclarations: tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+      })),
+    },
+  ];
 }
 
 function _historyToGemini(history) {
@@ -51,14 +60,23 @@ function _historyToGemini(history) {
     if (t.role === 'tool') {
       out.push({
         role: 'user',
-        parts: [{
-          functionResponse: {
-            name:     t.toolName || 'tool',
-            response: typeof t.content === 'string'
-                          ? (() => { try { return JSON.parse(t.content); } catch { return { result: t.content }; } })()
-                          : t.content,
+        parts: [
+          {
+            functionResponse: {
+              name: t.toolName || 'tool',
+              response:
+                typeof t.content === 'string'
+                  ? (() => {
+                      try {
+                        return JSON.parse(t.content);
+                      } catch {
+                        return { result: t.content };
+                      }
+                    })()
+                  : t.content,
+            },
           },
-        }],
+        ],
       });
     } else if (t.role === 'assistant' && t.toolCalls && t.toolCalls.length) {
       const parts = [];
@@ -69,7 +87,7 @@ function _historyToGemini(history) {
       out.push({ role: 'model', parts });
     } else {
       out.push({
-        role:  t.role === 'assistant' ? 'model' : 'user',
+        role: t.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: t.content || '' }],
       });
     }
@@ -80,10 +98,10 @@ function _historyToGemini(history) {
 async function chat({ system, history = [], tools = [], model, maxTokens, temperature }) {
   const client = _getClient();
   const m = client.getGenerativeModel({
-    model:             model || config.ai?.model || 'gemini-2.0-flash',
+    model: model || config.ai?.model || 'gemini-2.0-flash',
     systemInstruction: system || undefined,
-    tools:             _toolsToGemini(tools),
-    generationConfig:  {
+    tools: _toolsToGemini(tools),
+    generationConfig: {
       maxOutputTokens: Number(maxTokens) || Number(config.ai?.maxTokens) || 800,
       ...(typeof temperature === 'number' ? { temperature } : {}),
     },
@@ -102,7 +120,7 @@ async function chat({ system, history = [], tools = [], model, maxTokens, temper
     if (p.text) text += p.text;
     if (p.functionCall) {
       toolCalls.push({
-        id:   `gem_${toolCalls.length}_${Date.now()}`,
+        id: `gem_${toolCalls.length}_${Date.now()}`,
         name: p.functionCall.name,
         args: p.functionCall.args || {},
       });
@@ -110,14 +128,14 @@ async function chat({ system, history = [], tools = [], model, maxTokens, temper
   }
 
   return {
-    content:   text,
+    content: text,
     toolCalls: toolCalls.length ? toolCalls : undefined,
     usage: {
-      promptTokens:     resp?.usageMetadata?.promptTokenCount     || 0,
+      promptTokens: resp?.usageMetadata?.promptTokenCount || 0,
       completionTokens: resp?.usageMetadata?.candidatesTokenCount || 0,
     },
     finishReason: cand?.finishReason,
-    model:        model || config.ai?.model || 'gemini-2.0-flash',
+    model: model || config.ai?.model || 'gemini-2.0-flash',
   };
 }
 

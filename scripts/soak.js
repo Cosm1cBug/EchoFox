@@ -31,9 +31,9 @@
  *   to catch memory leaks in YOUR code before a real-world soak.
  */
 
-const fs   = require('node:fs');
+const fs = require('node:fs');
 const path = require('node:path');
-const v8   = require('node:v8');
+const v8 = require('node:v8');
 
 function arg(flag, def) {
   const a = process.argv.find((x) => x.startsWith(`--${flag}=`));
@@ -55,10 +55,12 @@ __testOverride({ storeDB: { sqlitePath: ':memory:', runMigrationsOnBoot: true } 
 const lifecycle = require('../src/core/lifecycle');
 const { makeMockSock, makeMockMessage } = require('../src/__tests__/helpers/mockSock');
 
-console.log(`[soak] starting — duration=${DURATION_MIN}min, rate=${RATE_PER_MIN}/min, snapshots every ${SNAP_EVERY_MIN || 'off'}min`);
+console.log(
+  `[soak] starting — duration=${DURATION_MIN}min, rate=${RATE_PER_MIN}/min, snapshots every ${SNAP_EVERY_MIN || 'off'}min`,
+);
 console.log(`[soak] output → ${OUT_DIR}`);
 
-const samples = [];        // { minute, rssMB, heapUsedMB, heapTotalMB, sentCount, recvCount }
+const samples = []; // { minute, rssMB, heapUsedMB, heapTotalMB, sentCount, recvCount }
 let sentCount = 0;
 
 async function run() {
@@ -77,11 +79,16 @@ async function run() {
       sentCount++;
       const m = makeMockMessage({
         text: `.ping soak-${sentCount}`,
-        jid:  `soak-${sentCount % 50}@s.whatsapp.net`,  // 50 unique chats
+        jid: `soak-${sentCount % 50}@s.whatsapp.net`, // 50 unique chats
       });
       // Fire-and-forget; soak doesn't care about per-message timing
-      handleMessage({ sock, m, commands: { resolve: () => null, all: () => [] }, store, logger: { debug() {}, info() {}, warn() {}, error() {} } })
-        .catch(() => {});
+      handleMessage({
+        sock,
+        m,
+        commands: { resolve: () => null, all: () => [] },
+        store,
+        logger: { debug() {}, info() {}, warn() {}, error() {} },
+      }).catch(() => {});
     }
   }, 1000);
   fireTick.unref();
@@ -92,13 +99,15 @@ async function run() {
     const mem = process.memoryUsage();
     const sample = {
       minute: elapsedMin,
-      rssMB:        Math.round(mem.rss / 1e6),
-      heapUsedMB:   Math.round(mem.heapUsed / 1e6),
-      heapTotalMB:  Math.round(mem.heapTotal / 1e6),
+      rssMB: Math.round(mem.rss / 1e6),
+      heapUsedMB: Math.round(mem.heapUsed / 1e6),
+      heapTotalMB: Math.round(mem.heapTotal / 1e6),
       sentCount,
     };
     samples.push(sample);
-    console.log(`[soak T+${elapsedMin}m] rss=${sample.rssMB}MB heap=${sample.heapUsedMB}/${sample.heapTotalMB}MB msgs=${sentCount}`);
+    console.log(
+      `[soak T+${elapsedMin}m] rss=${sample.rssMB}MB heap=${sample.heapUsedMB}/${sample.heapTotalMB}MB msgs=${sentCount}`,
+    );
 
     if (SNAP_EVERY_MIN > 0 && elapsedMin > 0 && elapsedMin % SNAP_EVERY_MIN === 0) {
       const snapPath = path.join(OUT_DIR, `heap-T${elapsedMin}.heapsnapshot`);
@@ -109,40 +118,46 @@ async function run() {
   sampleTick.unref();
 
   // Finish
-  setTimeout(async () => {
-    clearInterval(fireTick);
-    clearInterval(sampleTick);
-    try { await store.close?.(); } catch {}
+  setTimeout(
+    async () => {
+      clearInterval(fireTick);
+      clearInterval(sampleTick);
+      try {
+        await store.close?.();
+      } catch {}
 
-    fs.writeFileSync(
-      path.join(OUT_DIR, 'report.json'),
-      JSON.stringify({ durationMin: DURATION_MIN, ratePerMin: RATE_PER_MIN, samples }, null, 2),
-    );
+      fs.writeFileSync(
+        path.join(OUT_DIR, 'report.json'),
+        JSON.stringify({ durationMin: DURATION_MIN, ratePerMin: RATE_PER_MIN, samples }, null, 2),
+      );
 
-    // Summary
-    const first = samples[0];
-    const last  = samples[samples.length - 1];
-    const heapGrowth = last ? last.heapUsedMB - (first?.heapUsedMB || 0) : 0;
-    const rssGrowth  = last ? last.rssMB - (first?.rssMB || 0) : 0;
-    const verdict = heapGrowth > 50
-      ? '❌ FAILED  — heap grew by more than 50 MB; likely a leak'
-      : heapGrowth > 20
-        ? '⚠️  WARN    — heap grew by 20-50 MB; investigate'
-        : '✓ PASSED  — heap stable';
+      // Summary
+      const first = samples[0];
+      const last = samples[samples.length - 1];
+      const heapGrowth = last ? last.heapUsedMB - (first?.heapUsedMB || 0) : 0;
+      const rssGrowth = last ? last.rssMB - (first?.rssMB || 0) : 0;
+      const verdict =
+        heapGrowth > 50
+          ? '❌ FAILED  — heap grew by more than 50 MB; likely a leak'
+          : heapGrowth > 20
+            ? '⚠️  WARN    — heap grew by 20-50 MB; investigate'
+            : '✓ PASSED  — heap stable';
 
-    const summary = [
-      `Soak summary (${new Date().toISOString()})`,
-      `Duration : ${DURATION_MIN} min`,
-      `Rate     : ${RATE_PER_MIN} msgs/min`,
-      `Sent     : ${sentCount} synthetic messages`,
-      `RSS  Δ   : ${rssGrowth >= 0 ? '+' : ''}${rssGrowth} MB  (${first?.rssMB} → ${last?.rssMB})`,
-      `Heap Δ   : ${heapGrowth >= 0 ? '+' : ''}${heapGrowth} MB  (${first?.heapUsedMB} → ${last?.heapUsedMB})`,
-      `Verdict  : ${verdict}`,
-    ].join('\n');
-    fs.writeFileSync(path.join(OUT_DIR, 'summary.txt'), summary);
-    console.log('\n' + summary);
-    process.exit(0);
-  }, DURATION_MIN * 60 * 1000 + 5000);
+      const summary = [
+        `Soak summary (${new Date().toISOString()})`,
+        `Duration : ${DURATION_MIN} min`,
+        `Rate     : ${RATE_PER_MIN} msgs/min`,
+        `Sent     : ${sentCount} synthetic messages`,
+        `RSS  Δ   : ${rssGrowth >= 0 ? '+' : ''}${rssGrowth} MB  (${first?.rssMB} → ${last?.rssMB})`,
+        `Heap Δ   : ${heapGrowth >= 0 ? '+' : ''}${heapGrowth} MB  (${first?.heapUsedMB} → ${last?.heapUsedMB})`,
+        `Verdict  : ${verdict}`,
+      ].join('\n');
+      fs.writeFileSync(path.join(OUT_DIR, 'summary.txt'), summary);
+      console.log('\n' + summary);
+      process.exit(0);
+    },
+    DURATION_MIN * 60 * 1000 + 5000,
+  );
 }
 
 run().catch((err) => {

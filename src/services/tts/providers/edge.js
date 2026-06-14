@@ -63,9 +63,7 @@ function pickVoice(lang, explicitVoice) {
 function parseFormat(formatStr) {
   // Convert config string like 'audio-24khz-48kbitrate-mono-mp3' to OUTPUT_FORMAT enum.
   // The enum key is uppercase+underscore form: 'AUDIO_24KHZ_48KBITRATE_MONO_MP3'.
-  const key = (formatStr || 'audio-24khz-48kbitrate-mono-mp3')
-    .toUpperCase()
-    .replace(/-/g, '_');
+  const key = (formatStr || 'audio-24khz-48kbitrate-mono-mp3').toUpperCase().replace(/-/g, '_');
   return OUTPUT_FORMAT[key] || OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3;
 }
 

@@ -19,14 +19,15 @@
  *
  * Failures fail the test suite (and in M4 will fail the CI build).
  */
-const test   = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs     = require('node:fs');
-const path   = require('node:path');
+const fs = require('node:fs');
+const path = require('node:path');
 
-const ROOT       = path.join(__dirname, '..');     // src/commands/
-const EXCLUDE    = new Set(['__tests__', '_disabled']);
-const categories = fs.readdirSync(ROOT, { withFileTypes: true })
+const ROOT = path.join(__dirname, '..'); // src/commands/
+const EXCLUDE = new Set(['__tests__', '_disabled']);
+const categories = fs
+  .readdirSync(ROOT, { withFileTypes: true })
   .filter((d) => d.isDirectory() && !EXCLUDE.has(d.name) && !d.name.startsWith('.'))
   .map((d) => d.name);
 
@@ -41,8 +42,11 @@ for (const cat of categories) {
 
     test(`[${cat}] ${file} — parses + exports a command object`, () => {
       let mod;
-      try { mod = require(full); }
-      catch (e) { assert.fail(`require() threw: ${e.message}`); }
+      try {
+        mod = require(full);
+      } catch (e) {
+        assert.fail(`require() threw: ${e.message}`);
+      }
 
       assert.equal(typeof mod, 'object', 'must export an object (not a function)');
       assert.equal(typeof mod.name, 'string', '`name` must be a string');
@@ -54,16 +58,19 @@ for (const cat of categories) {
         mod.alias.forEach((a) => assert.equal(typeof a, 'string', 'each alias must be a string'));
       }
       if ('requires' in mod) {
-        assert.ok(Array.isArray(mod.requires), '`requires` must be an array of dotted config paths');
+        assert.ok(
+          Array.isArray(mod.requires),
+          '`requires` must be an array of dotted config paths',
+        );
       }
-      if ('desc' in mod)          assert.equal(typeof mod.desc, 'string');
-      if ('category' in mod)      assert.equal(typeof mod.category, 'string');
-      if ('admin' in mod)         assert.equal(typeof mod.admin, 'boolean');
-      if ('group' in mod)         assert.equal(typeof mod.group, 'boolean');
+      if ('desc' in mod) assert.equal(typeof mod.desc, 'string');
+      if ('category' in mod) assert.equal(typeof mod.category, 'string');
+      if ('admin' in mod) assert.equal(typeof mod.admin, 'boolean');
+      if ('group' in mod) assert.equal(typeof mod.group, 'boolean');
       if ('needsMetadata' in mod) assert.equal(typeof mod.needsMetadata, 'boolean');
-      if ('noLimit' in mod)       assert.equal(typeof mod.noLimit, 'boolean');
-      if ('cooldown' in mod)      assert.equal(typeof mod.cooldown, 'number');
-      if ('timeout' in mod)       assert.equal(typeof mod.timeout, 'number');
+      if ('noLimit' in mod) assert.equal(typeof mod.noLimit, 'boolean');
+      if ('cooldown' in mod) assert.equal(typeof mod.cooldown, 'number');
+      if ('timeout' in mod) assert.equal(typeof mod.timeout, 'number');
 
       allCommands.push({ file, mod, cat });
     });
@@ -97,7 +104,7 @@ test('no alias collisions across the tree', () => {
   }
 });
 
-test('no alias shadowing another command\'s primary name', () => {
+test("no alias shadowing another command's primary name", () => {
   const names = new Set(allCommands.map((c) => c.mod.name.toLowerCase()));
   for (const { mod, cat, file } of allCommands) {
     for (const a of mod.alias || []) {
@@ -111,8 +118,11 @@ test('no alias shadowing another command\'s primary name', () => {
 test('every `requires` entry is a dotted config path (no leading dot)', () => {
   for (const { mod, cat, file } of allCommands) {
     for (const r of mod.requires || []) {
-      assert.match(r, /^[a-z][a-zA-Z0-9]*(\.[a-zA-Z0-9]+)+$/,
-        `${cat}/${file}: requires entry "${r}" is not a valid dotted path`);
+      assert.match(
+        r,
+        /^[a-z][a-zA-Z0-9]*(\.[a-zA-Z0-9]+)+$/,
+        `${cat}/${file}: requires entry "${r}" is not a valid dotted path`,
+      );
     }
   }
 });

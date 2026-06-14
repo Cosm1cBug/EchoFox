@@ -101,8 +101,7 @@ class RateLimitError extends BotError {
  *   isUserFacingError(err) === true  → don't ❌ react, don't post to errLogs
  */
 function isUserFacingError(err) {
-  return err instanceof UserError ||
-         err instanceof RateLimitError;
+  return err instanceof UserError || err instanceof RateLimitError;
 }
 
 /**
@@ -115,9 +114,9 @@ function isUserFacingError(err) {
  */
 function shouldCountAsFailure(err) {
   if (!err) return false;
-  if (err instanceof UserError)      return false;
-  if (err instanceof UpstreamError)  return false;
-  if (err instanceof ConfigError)    return false;
+  if (err instanceof UserError) return false;
+  if (err instanceof UpstreamError) return false;
+  if (err instanceof ConfigError) return false;
   if (err instanceof RateLimitError) return false;
   return true;
 }

@@ -17,8 +17,8 @@ const CHECK_INTERVAL = config.apis?.thehackersnews?.checkIntervalMin || 60;
 async function fetchLatestArticles(limit = 5) {
   try {
     const { data } = await axiosWithBreaker('thehackersnews', {
-      method:  'GET',
-      url:     THEHACKERSNEWS_RSS,
+      method: 'GET',
+      url: THEHACKERSNEWS_RSS,
       timeout: 15000,
     });
 
@@ -59,7 +59,7 @@ async function fetchLatestArticles(limit = 5) {
 async function sendArticle(sock, jid, article) {
   try {
     await sock.sendMessage(jid, {
-      text: `*${article.title}*\n\n${article.link}`
+      text: `*${article.title}*\n\n${article.link}`,
     });
     logger.info({ jid, title: article.title }, 'Article sent successfully');
   } catch (err) {
@@ -74,7 +74,7 @@ async function sendArticle(sock, jid, article) {
  *   Topic comparison is case-insensitive.
  */
 function matchesTopics(article, meta) {
-  const topics = (meta && Array.isArray(meta.topics)) ? meta.topics : [];
+  const topics = meta && Array.isArray(meta.topics) ? meta.topics : [];
   if (!topics.length) return true;
   if (!article.categories?.length) return false;
   const wanted = new Set(topics.map((t) => String(t).trim().toLowerCase()).filter(Boolean));

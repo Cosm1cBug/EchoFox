@@ -10,21 +10,25 @@
  *
  *   Run:  node --test src/__tests__/integration/metrics-alerts-v140.test.js
  */
-const test   = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
-const path   = require('node:path');
-const fs     = require('node:fs');
-const os     = require('node:os');
-const pino   = require('pino');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+const pino = require('pino');
 const { LRUCache } = require('lru-cache');
 
-const stats   = require('../../store/schema/stats');
+const stats = require('../../store/schema/stats');
 const metrics = require('../../services/metrics');
 
 function freshStore() {
-  const tmp = path.join(os.tmpdir(),
-    `echofox_v140_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}.db`);
-  try { fs.rmSync(tmp, { force: true }); } catch (_) {}
+  const tmp = path.join(
+    os.tmpdir(),
+    `echofox_v140_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}.db`,
+  );
+  try {
+    fs.rmSync(tmp, { force: true });
+  } catch (_) {}
   const { makeSQLiteStore } = require('../../store/sqliteStore');
   return makeSQLiteStore({
     dbPath: tmp,
@@ -44,32 +48,55 @@ function applyAlertCfg(patch = {}) {
   const { __testOverride } = require('../../lib/configLoader');
   __testOverride({
     ai: {
-      enabled: true, defaultProvider: 'openai', model: 'gpt-4o-mini', maxTokens: 800,
+      enabled: true,
+      defaultProvider: 'openai',
+      model: 'gpt-4o-mini',
+      maxTokens: 800,
       costCapPerDayUsd: 10,
-      persona: 'general', customPersona: '', memoryTurns: 20,
-      optInDefault: 'off', botNameRegex: 'echofox',
-      typingWhileGenerating: false, enableToolCalling: false, toolWhitelist: [],
-      rateLimitPerUserPerHour: 30, rateLimitPerChatPerDay: 100,
+      persona: 'general',
+      customPersona: '',
+      memoryTurns: 20,
+      optInDefault: 'off',
+      botNameRegex: 'echofox',
+      typingWhileGenerating: false,
+      enableToolCalling: false,
+      toolWhitelist: [],
+      rateLimitPerUserPerHour: 30,
+      rateLimitPerChatPerDay: 100,
       providers: {
-        openai: { apiKey: '', baseUrl: '' }, gemini: { apiKey: '', baseUrl: '' },
-        anthropic: { apiKey: '', baseUrl: '' }, local: { baseUrl: 'http://x', model: 'llama3.2' },
+        openai: { apiKey: '', baseUrl: '' },
+        gemini: { apiKey: '', baseUrl: '' },
+        anthropic: { apiKey: '', baseUrl: '' },
+        local: { baseUrl: 'http://x', model: 'llama3.2' },
       },
     },
     alerts: {
       enabled: true,
       windowMinutes: 60,
       minInvocations: 10,
-      failureRateThreshold: 0.30,
+      failureRateThreshold: 0.3,
       notifyChannel: '',
       rules: {
-        aiCostPct:           { enabled: true, threshold: 0.5, cooldownMinutes: 1 },
+        aiCostPct: { enabled: true, threshold: 0.5, cooldownMinutes: 1 },
         telegramFailureRate: { enabled: true, threshold: 0.2, minSends: 4, cooldownMinutes: 1 },
       },
       ...patch.alerts,
     },
-    telegram: { enabled: false, botToken: '', routing: {}, parseMode: 'HTML',
-                batchMs: 0, maxChunkChars: 3800, botUsername: '', userId: '',
-                apiId: '', apiHash: '', channelId: '', groupId: '', bridgedChats: {} },
+    telegram: {
+      enabled: false,
+      botToken: '',
+      routing: {},
+      parseMode: 'HTML',
+      batchMs: 0,
+      maxChunkChars: 3800,
+      botUsername: '',
+      userId: '',
+      apiId: '',
+      apiHash: '',
+      channelId: '',
+      groupId: '',
+      bridgedChats: {},
+    },
   });
 }
 
@@ -146,7 +173,9 @@ test('metrics: typed Telegram wrappers route to correct outcome counters', async
 // ─── alert rules ─────────────────────────────────────────────────
 
 test('alertEngine.aiCostPct: fires when daily cost >= threshold * cap', async () => {
-  const s = freshStore(); installStore(s); applyAlertCfg();
+  const s = freshStore();
+  installStore(s);
+  applyAlertCfg();
   // delete from require cache so cold engine sees fresh state
   for (const k of Object.keys(require.cache)) {
     if (k.endsWith(`${path.sep}alertEngine.js`)) delete require.cache[k];
@@ -156,15 +185,29 @@ test('alertEngine.aiCostPct: fires when daily cost >= threshold * cap', async ()
 
   // Below threshold — not active
   const today = new Date().toISOString().slice(0, 10);
-  await s.recordAiUsage({ day: today, provider: 'openai', model: 'gpt-4o-mini',
-                          promptTokens: 0, completionTokens: 0, costUsd: 1.0 });
+  await s.recordAiUsage({
+    day: today,
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    promptTokens: 0,
+    completionTokens: 0,
+    costUsd: 1.0,
+  });
   await ae._evaluateBuiltinRules();
-  assert.ok(!ae.getActiveAlerts().find((a) => a.command === '__ai_cost_pct'),
-    'should not be active when below threshold');
+  assert.ok(
+    !ae.getActiveAlerts().find((a) => a.command === '__ai_cost_pct'),
+    'should not be active when below threshold',
+  );
 
   // Above threshold (5 USD >= 0.5 * 10 USD cap) — fires
-  await s.recordAiUsage({ day: today, provider: 'openai', model: 'gpt-4o-mini',
-                          promptTokens: 0, completionTokens: 0, costUsd: 5.0 });
+  await s.recordAiUsage({
+    day: today,
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    promptTokens: 0,
+    completionTokens: 0,
+    costUsd: 5.0,
+  });
   await ae._evaluateBuiltinRules();
   const active = ae.getActiveAlerts().find((a) => a.command === '__ai_cost_pct');
   assert.ok(active, 'should be active when above threshold');
@@ -173,7 +216,9 @@ test('alertEngine.aiCostPct: fires when daily cost >= threshold * cap', async ()
 });
 
 test('alertEngine.telegramFailureRate: fires when failure rate >= threshold AND sends >= minSends', async () => {
-  const s = freshStore(); installStore(s); applyAlertCfg();
+  const s = freshStore();
+  installStore(s);
+  applyAlertCfg();
   for (const k of Object.keys(require.cache)) {
     if (k.endsWith(`${path.sep}alertEngine.js`)) delete require.cache[k];
   }
@@ -187,8 +232,10 @@ test('alertEngine.telegramFailureRate: fires when failure rate >= threshold AND 
   metrics.incTelegramForward('queued');
   metrics.incTelegramForward('failure');
   await ae._evaluateBuiltinRules();
-  assert.ok(!ae.getActiveAlerts().find((a) => a.command === '__telegram_failure_rate'),
-    'should not fire below minSends');
+  assert.ok(
+    !ae.getActiveAlerts().find((a) => a.command === '__telegram_failure_rate'),
+    'should not fire below minSends',
+  );
 
   // Push above minSends with high failure rate — fires
   // Add another 5 of each => totals: forwards_total=12, failures=6 → 50% rate
@@ -205,8 +252,11 @@ test('alertEngine.telegramFailureRate: fires when failure rate >= threshold AND 
 });
 
 test('alertEngine.aiCostPct: cooldown prevents re-firing within cooldown window', async () => {
-  const s = freshStore(); installStore(s);
-  applyAlertCfg({ alerts: { rules: { aiCostPct: { enabled: true, threshold: 0.1, cooldownMinutes: 60 } } } });
+  const s = freshStore();
+  installStore(s);
+  applyAlertCfg({
+    alerts: { rules: { aiCostPct: { enabled: true, threshold: 0.1, cooldownMinutes: 60 } } },
+  });
   for (const k of Object.keys(require.cache)) {
     if (k.endsWith(`${path.sep}alertEngine.js`)) delete require.cache[k];
   }
@@ -214,10 +264,19 @@ test('alertEngine.aiCostPct: cooldown prevents re-firing within cooldown window'
   ae.init({});
 
   const today = new Date().toISOString().slice(0, 10);
-  await s.recordAiUsage({ day: today, provider: 'openai', model: 'gpt-4o-mini',
-                          promptTokens: 0, completionTokens: 0, costUsd: 5.0 });
+  await s.recordAiUsage({
+    day: today,
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    promptTokens: 0,
+    completionTokens: 0,
+    costUsd: 5.0,
+  });
   await ae._evaluateBuiltinRules();
-  assert.ok(ae.getActiveAlerts().find((a) => a.command === '__ai_cost_pct'), 'first fire');
+  assert.ok(
+    ae.getActiveAlerts().find((a) => a.command === '__ai_cost_pct'),
+    'first fire',
+  );
 
   // Simulate the alert manually clearing (e.g. cap raised), then re-firing.
   // We can't easily clear via the test, but we can assert that an immediate

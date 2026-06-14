@@ -19,12 +19,14 @@ ERROR: failed to decrypt message
 ```
 
 Before v1.4.2:
+
 - These errors flooded the log stream at ERROR level
-- Baileys would *eventually* recover on its own (often within hours)
+- Baileys would _eventually_ recover on its own (often within hours)
 - One stuck sender = continuous noise until they sent another message
   or rotated keys
 
 After v1.4.2:
+
 - Errors are tracked silently (logged at DEBUG, not ERROR)
 - After **3 consecutive failures from the same sender within 5 minutes**,
   EchoFox automatically resets that sender's session
@@ -74,6 +76,7 @@ conditions. That's far below anything WhatsApp could plausibly flag.
 ### Logs
 
 Old (v1.4.1 and earlier):
+
 ```
 [12:34:56] ERROR: failed to decrypt message  ← every single failure
 [12:34:57] ERROR: failed to decrypt message
@@ -82,6 +85,7 @@ Old (v1.4.1 and earlier):
 ```
 
 New (v1.4.2):
+
 ```
 [12:34:59] WARN: 🩹 signal-health: session reset for sender after consecutive decryption failures
               jid: '262516991086663@lid', failuresInWindow: 3
@@ -96,6 +100,7 @@ Re-provision `docker/grafana/dashboards/echofox-overview.json` and you'll
 see a new row at the bottom: **Signal Protocol Health (v1.4.2+)**
 
 4 new panels:
+
 - Stat: **Decryption failures (24h)** — total raw failure events
 - Stat: **Auto session-recoveries (24h)** — total `deleteSession()` calls
 - Stat: **Recovery efficiency** — recoveries / failures (a useful ratio:
@@ -107,6 +112,7 @@ see a new row at the bottom: **Signal Protocol Health (v1.4.2+)**
 ### Metrics endpoints
 
 Two new Prometheus counters scrapable at `:3001/metrics`:
+
 - `echofox_signal_decryption_failures_total`
 - `echofox_signal_session_recoveries_total`
 
@@ -115,11 +121,9 @@ Two new Prometheus counters scrapable at `:3001/metrics`:
 Three real CI bugs that surfaced when v1.4.1 went through the release
 workflows:
 
-1. **`npm test` was using a glob (`src/**/*.test.js`) that Node.js
-   doesn't expand**, and bash on Ubuntu CI doesn't have `globstar`
-   enabled by default. The test job kept failing with
-   `Could not find 'src/**/*.test.js'`. Replaced with a pure-Node
-   recursive walker at `scripts/run-tests.js` — works on every shell
+1. **`npm test` was using a glob (`src/**/_.test.js`) that Node.js
+doesn't expand**, and bash on Ubuntu CI doesn't have `globstar`enabled by default. The test job kept failing with`Could not find 'src/\*\*/_.test.js'`. Replaced with a pure-Node
+recursive walker at `scripts/run-tests.js` — works on every shell
    and Node version we support, auto-discovers new test files.
 
 2. **TruffleHog secret scanning failed on every push to `main`**
@@ -171,6 +175,7 @@ $ npm test
 ```
 
 10 new tests in `src/__tests__/integration/signal-health.test.js` cover:
+
 - Pattern recognition for all 5 known error messages
 - JID normalisation (`:device` tag stripping for `@lid` and `@s.whatsapp.net`)
 - Per-JID failure counting

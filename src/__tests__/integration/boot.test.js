@@ -18,7 +18,7 @@
  *   Run:  node --test src/__tests__/integration/boot.test.js
  */
 
-const test   = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const { makeMockStore, makeMockSock } = require('../helpers/mockSock');
 
@@ -31,7 +31,10 @@ test('config loader returns frozen schema-validated object', () => {
   assert.ok(Array.isArray(config.admins));
   assert.equal(Object.isFrozen(config.bot), true, 'config.bot should be frozen');
   assert.equal(Object.isFrozen(config.features), true, 'config.features should be frozen');
-  assert.throws(() => { 'use strict'; config.foo = 'bar'; }, /read only|trap returned falsish/i);
+  assert.throws(() => {
+    'use strict';
+    config.foo = 'bar';
+  }, /read only|trap returned falsish/i);
 });
 
 test('metrics service init() then snapshot()', async () => {
@@ -40,7 +43,7 @@ test('metrics service init() then snapshot()', async () => {
   metrics.init(store);
   metrics.incReceived(3);
   metrics.incCommand('ping', 'success');
-  metrics.setGauge('groups_count', 42);   // known gauge, no warning
+  metrics.setGauge('groups_count', 42); // known gauge, no warning
   const snap = await metrics.snapshot();
   assert.ok(snap.counters);
   assert.ok(snap.gauges);
@@ -61,7 +64,10 @@ test('alertEngine: init → record many failures → triggers', () => {
   assert.equal(rate.invocations, 5);
   assert.equal(rate.failures, 3);
   const active = engine.getActiveAlerts();
-  assert.ok(active.some((a) => a.command === 'flaky'), 'flaky should be in active alerts');
+  assert.ok(
+    active.some((a) => a.command === 'flaky'),
+    'flaky should be in active alerts',
+  );
   engine.stop();
 });
 
@@ -80,26 +86,34 @@ test('diagnostics: with mock runtime context all checks ok or expected-degraded'
   const { runDiagnostics, bindRuntimeContext } = require('../../lib/diagnostics');
   const sock = makeMockSock();
   const store = makeMockStore();
-  const commands = { commands: new Map([['ping', { name: 'ping', start: () => {} }]]), aliases: new Map(), categories: new Map() };
+  const commands = {
+    commands: new Map([['ping', { name: 'ping', start: () => {} }]]),
+    aliases: new Map(),
+    categories: new Map(),
+  };
   const auth = { state: { creds: { registered: true } }, saveCreds: () => {} };
   const caches = require('../../core/caches');
   bindRuntimeContext({ sock, store, commands, auth, caches });
   const report = await runDiagnostics({ sock, store, commands, auth, caches });
   assert.equal(report.checks.baileys.ok, true);
-  assert.equal(report.checks.store.ok,   true);
+  assert.equal(report.checks.store.ok, true);
   assert.equal(report.checks.commands.ok, true);
-  assert.equal(report.checks.auth.ok,    true);
+  assert.equal(report.checks.auth.ok, true);
 });
 
 test('errors module: classification helpers', () => {
-  const { UserError, UpstreamError, isUserFacingError, shouldCountAsFailure } = require('../../lib/errors');
+  const {
+    UserError,
+    UpstreamError,
+    isUserFacingError,
+    shouldCountAsFailure,
+  } = require('../../lib/errors');
   assert.equal(isUserFacingError(new UserError('x')), true);
   assert.equal(isUserFacingError(new UpstreamError('x')), false);
   assert.equal(shouldCountAsFailure(new Error('x')), true);
   assert.equal(shouldCountAsFailure(new UserError('x')), false);
   assert.equal(shouldCountAsFailure(new UpstreamError('x')), false);
 });
-
 
 test('__testOverride: merges patch onto config and is visible via proxy', () => {
   process.env.NODE_ENV = 'test';
@@ -109,7 +123,10 @@ test('__testOverride: merges patch onto config and is visible via proxy', () => 
   loader.__testOverride({ bot: { prefix: '!!' } });
 
   assert.equal(loader.config.bot.prefix, '!!');
-  assert.equal(loader.config.bot.adminPrefix, originalPrefix === '!!' ? '$' : loader.config.bot.adminPrefix);
+  assert.equal(
+    loader.config.bot.adminPrefix,
+    originalPrefix === '!!' ? '$' : loader.config.bot.adminPrefix,
+  );
 
   loader.__resetForTests();
   assert.equal(loader.config.bot.prefix, originalPrefix);
@@ -133,7 +150,9 @@ test('__testOverride: warns when NODE_ENV !== "test"', () => {
   let captured = '';
   try {
     process.env.NODE_ENV = 'production';
-    console.warn = (msg) => { captured += String(msg) + '\n'; };
+    console.warn = (msg) => {
+      captured += String(msg) + '\n';
+    };
     loader.__testOverride({ bot: { prefix: '.' } });
   } finally {
     console.warn = origWarn;
@@ -143,14 +162,16 @@ test('__testOverride: warns when NODE_ENV !== "test"', () => {
   assert.match(captured, /__testOverride.*tests only.*production/i);
 });
 
-
 test('matchesTopics: empty topics → matches every article (incl. untagged)', () => {
   const { matchesTopics } = require('../../services/thehackersnewsService');
   assert.equal(matchesTopics({ categories: ['malware'] }, null), true);
   assert.equal(matchesTopics({ categories: ['malware'] }, {}), true);
   assert.equal(matchesTopics({ categories: ['malware'] }, { topics: [] }), true);
-  assert.equal(matchesTopics({ categories: [] }, null), true,
-    'untagged article + no filter = match');
+  assert.equal(
+    matchesTopics({ categories: [] }, null),
+    true,
+    'untagged article + no filter = match',
+  );
 });
 
 test('matchesTopics: OR-match on any tag overlap (case-insensitive)', () => {
@@ -159,17 +180,21 @@ test('matchesTopics: OR-match on any tag overlap (case-insensitive)', () => {
   assert.equal(matchesTopics({ categories: ['malware', 'apt'] }, meta), true);
   assert.equal(matchesTopics({ categories: ['Ransomware'] }, meta), true);
   assert.equal(matchesTopics({ categories: ['cloud-security'] }, meta), false);
-  assert.equal(matchesTopics({ categories: [] }, meta), false,
-    'untagged article + filter → no match');
+  assert.equal(
+    matchesTopics({ categories: [] }, meta),
+    false,
+    'untagged article + filter → no match',
+  );
 });
 
 test('event router: every worker emit has a registered handler', () => {
   const fs = require('node:fs');
   const path = require('node:path');
-  const workerSrc = fs.readFileSync(
-    path.join(__dirname, '..', '..', 'core', 'worker.js'), 'utf8');
+  const workerSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'core', 'worker.js'), 'utf8');
   const routerSrc = fs.readFileSync(
-    path.join(__dirname, '..', '..', 'events', 'router.js'), 'utf8');
+    path.join(__dirname, '..', '..', 'events', 'router.js'),
+    'utf8',
+  );
 
   const emits = new Set();
   for (const m of workerSrc.matchAll(/eventRouter\.emit\('([a-z.-]+)'/g)) emits.add(m[1]);
@@ -177,18 +202,18 @@ test('event router: every worker emit has a registered handler', () => {
   for (const m of routerSrc.matchAll(/bus\.on\('([a-z.-]+)'/g)) handlers.add(m[1]);
 
   for (const e of emits) {
-    assert.ok(handlers.has(e),
-      `worker emits '${e}' but router.js has no bus.on() for it`);
+    assert.ok(handlers.has(e), `worker emits '${e}' but router.js has no bus.on() for it`);
   }
 });
 
 test('event router: every router handler has a worker emit (no dead handlers)', () => {
   const fs = require('node:fs');
   const path = require('node:path');
-  const workerSrc = fs.readFileSync(
-    path.join(__dirname, '..', '..', 'core', 'worker.js'), 'utf8');
+  const workerSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'core', 'worker.js'), 'utf8');
   const routerSrc = fs.readFileSync(
-    path.join(__dirname, '..', '..', 'events', 'router.js'), 'utf8');
+    path.join(__dirname, '..', '..', 'events', 'router.js'),
+    'utf8',
+  );
 
   const emits = new Set();
   for (const m of workerSrc.matchAll(/eventRouter\.emit\('([a-z.-]+)'/g)) emits.add(m[1]);
@@ -196,8 +221,7 @@ test('event router: every router handler has a worker emit (no dead handlers)', 
   for (const m of routerSrc.matchAll(/bus\.on\('([a-z.-]+)'/g)) handlers.add(m[1]);
 
   for (const h of handlers) {
-    assert.ok(emits.has(h),
-      `router.js has bus.on('${h}') but no worker.js emit — dead handler`);
+    assert.ok(emits.has(h), `router.js has bus.on('${h}') but no worker.js emit — dead handler`);
   }
 });
 
@@ -217,10 +241,7 @@ test('event router: every required file exists on disk', () => {
     requires.push(m[1]);
   }
   for (const r of requires) {
-    const candidates = [
-      path.join(eventsDir, r),
-      path.join(eventsDir, r + '.js'),
-    ];
+    const candidates = [path.join(eventsDir, r), path.join(eventsDir, r + '.js')];
     const exists = candidates.some((c) => fs.existsSync(c));
     assert.ok(exists, `router.js requires './${r}' but no matching file in src/events/`);
   }
@@ -231,29 +252,40 @@ test('event router: handles unknown events without crashing', () => {
   assert.doesNotThrow(() => router.emit('some.totally.unknown.event', { foo: 'bar' }));
 });
 
-
 test('rss service: matchesTopics OR-matches case-insensitively', () => {
   const { matchesTopics } = require('../../services/genericRssService');
   assert.equal(matchesTopics({ categories: ['Malware', 'apt'] }, ['malware']), true);
   assert.equal(matchesTopics({ categories: ['cloud-security'] }, ['malware']), false);
   assert.equal(matchesTopics({ categories: [] }, ['malware']), false);
-  assert.equal(matchesTopics({ categories: [] }, []), true,        'empty filter matches all');
-  assert.equal(matchesTopics({ categories: [] }, null), true,       'null filter matches all');
-  assert.equal(matchesTopics({ categories: ['x'] }, undefined), true, 'undefined filter matches all');
+  assert.equal(matchesTopics({ categories: [] }, []), true, 'empty filter matches all');
+  assert.equal(matchesTopics({ categories: [] }, null), true, 'null filter matches all');
+  assert.equal(
+    matchesTopics({ categories: ['x'] }, undefined),
+    true,
+    'undefined filter matches all',
+  );
 });
 
 test('github service: formatRelease + formatAdvisory produce non-empty WhatsApp text', () => {
   const { formatRelease, formatAdvisory } = require('../../services/githubService');
   const rel = formatRelease('nodejs', 'node', {
-    tag: 'v22.0.0', name: 'v22.0.0', body: 'See changelog.', url: 'https://x', prerelease: false,
+    tag: 'v22.0.0',
+    name: 'v22.0.0',
+    body: 'See changelog.',
+    url: 'https://x',
+    prerelease: false,
   });
   assert.match(rel, /Release/);
   assert.match(rel, /v22\.0\.0/);
   assert.match(rel, /https:\/\/x/);
 
   const adv = formatAdvisory('nodejs', 'node', {
-    ghsa_id: 'GHSA-aaaa', cve_id: 'CVE-2026-0001', summary: 'Boom.', severity: 'critical',
-    url: 'https://y', published_at: '2026-01-01T00:00:00Z',
+    ghsa_id: 'GHSA-aaaa',
+    cve_id: 'CVE-2026-0001',
+    summary: 'Boom.',
+    severity: 'critical',
+    url: 'https://y',
+    published_at: '2026-01-01T00:00:00Z',
   });
   assert.match(adv, /Critical|CRITICAL/);
   assert.match(adv, /GHSA-aaaa/);
@@ -262,8 +294,18 @@ test('github service: formatRelease + formatAdvisory produce non-empty WhatsApp 
 
 test('vtwatch service: formatAlert highlights direction', () => {
   const { formatAlert } = require('../../services/vtWatchService');
-  const up   = formatAlert('hash', 'abc', { malicious: 0 }, { malicious: 3, suspicious: 0, harmless: 70, undetected: 7 });
-  const down = formatAlert('hash', 'abc', { malicious: 5 }, { malicious: 1, suspicious: 0, harmless: 70, undetected: 7 });
-  assert.match(up,   /increased/i);
+  const up = formatAlert(
+    'hash',
+    'abc',
+    { malicious: 0 },
+    { malicious: 3, suspicious: 0, harmless: 70, undetected: 7 },
+  );
+  const down = formatAlert(
+    'hash',
+    'abc',
+    { malicious: 5 },
+    { malicious: 1, suspicious: 0, harmless: 70, undetected: 7 },
+  );
+  assert.match(up, /increased/i);
   assert.match(down, /decreased/i);
 });

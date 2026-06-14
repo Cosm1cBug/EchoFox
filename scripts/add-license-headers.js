@@ -13,13 +13,13 @@
  *   node scripts/add-license-headers.js           # default: src/, scripts/
  *   node scripts/add-license-headers.js --check   # CI mode: exit 1 if any missing
  */
-const fs   = require('node:fs');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const TARGETS = ['src', 'scripts'].map((d) => path.join(ROOT, d));
 const EXCLUDE_DIRS = new Set(['node_modules', '.git', 'commands', 'react']);
-const EXCLUDE_FILES = new Set(['src/config.js']);   // user data, not our code
+const EXCLUDE_FILES = new Set(['src/config.js']); // user data, not our code
 const HEADER_MARKER = '@license AGPL-3.0';
 const HEADER = `/*
  * EchoFox - WhatsApp bot built on Baileys
@@ -63,18 +63,20 @@ function walk(dir, out = []) {
 function hasHeader(content) {
   // Accept either the long form (with @license marker) OR the short form
   // we used in some early files. Both are valid AGPL headers.
-  return content.includes(SHORT_HEADER_MARKER) ||
-         content.includes('Licensed under the GNU AGPL-3.0-or-later. See LICENSE.');
+  return (
+    content.includes(SHORT_HEADER_MARKER) ||
+    content.includes('Licensed under the GNU AGPL-3.0-or-later. See LICENSE.')
+  );
 }
 
 function addHeader(file, content, useShort) {
   // Preserve shebang if present
   let shebang = '';
-  let body    = content;
+  let body = content;
   if (body.startsWith('#!')) {
     const nl = body.indexOf('\n');
     shebang = body.slice(0, nl + 1);
-    body    = body.slice(nl + 1);
+    body = body.slice(nl + 1);
   }
   return shebang + (useShort ? SHORT_HEADER : HEADER) + body;
 }
@@ -82,7 +84,8 @@ function addHeader(file, content, useShort) {
 function main() {
   const check = process.argv.includes('--check');
   const files = TARGETS.flatMap((d) => walk(d));
-  let missing = 0, patched = 0;
+  let missing = 0,
+    patched = 0;
 
   for (const f of files) {
     const c = fs.readFileSync(f, 'utf8');
@@ -91,7 +94,7 @@ function main() {
     if (check) {
       console.error(`missing header: ${path.relative(ROOT, f)}`);
     } else {
-      const useShort = c.length > 4000;     // long files get the short header
+      const useShort = c.length > 4000; // long files get the short header
       fs.writeFileSync(f, addHeader(f, c, useShort));
       patched++;
       console.log(`✅ patched: ${path.relative(ROOT, f)}`);
@@ -99,10 +102,16 @@ function main() {
   }
 
   if (check && missing > 0) {
-    console.error(`\n❌ ${missing} file(s) missing AGPL header. Run: node scripts/add-license-headers.js`);
+    console.error(
+      `\n❌ ${missing} file(s) missing AGPL header. Run: node scripts/add-license-headers.js`,
+    );
     process.exit(1);
   }
-  console.log(check ? `✅ all ${files.length} files have headers` : `done: ${patched} patched, ${files.length - patched} already OK`);
+  console.log(
+    check
+      ? `✅ all ${files.length} files have headers`
+      : `done: ${patched} patched, ${files.length - patched} already OK`,
+  );
 }
 
 main();

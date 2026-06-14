@@ -41,13 +41,14 @@ function expandHome(p) {
 
 async function piperToWav(text, binPath, modelPath, wavPath) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(binPath, [
-      '--model', modelPath,
-      '--output_file', wavPath,
-    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn(binPath, ['--model', modelPath, '--output_file', wavPath], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
 
     let stderr = '';
-    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
     proc.on('error', reject);
     proc.on('close', (code) => {
       if (code !== 0) {
@@ -94,8 +95,12 @@ async function synthesize(text, _opts = {}) {
     await wavToMp3(wavPath, mp3Path);
     return fs.readFileSync(mp3Path);
   } finally {
-    try { fs.rmSync(wavPath, { force: true }); } catch {}
-    try { fs.rmSync(mp3Path, { force: true }); } catch {}
+    try {
+      fs.rmSync(wavPath, { force: true });
+    } catch {}
+    try {
+      fs.rmSync(mp3Path, { force: true });
+    } catch {}
   }
 }
 

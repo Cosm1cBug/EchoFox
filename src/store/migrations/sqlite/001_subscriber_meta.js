@@ -18,11 +18,16 @@ module.exports = {
   description: 'add service_subscribers.meta JSON column',
 
   up({ db }) {
-    const cols = db.prepare(`PRAGMA table_info(service_subscribers)`).all().map((c) => c.name);
+    const cols = db
+      .prepare(`PRAGMA table_info(service_subscribers)`)
+      .all()
+      .map((c) => c.name);
     if (!cols.includes('meta')) {
       db.exec(`ALTER TABLE service_subscribers ADD COLUMN meta TEXT`);
     }
   },
 
-  down(_ctx) { /* intentionally a no-op — we don't drop the column */ },
+  down(_ctx) {
+    /* intentionally a no-op — we don't drop the column */
+  },
 };

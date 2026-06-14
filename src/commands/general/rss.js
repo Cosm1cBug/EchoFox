@@ -19,7 +19,7 @@
  */
 
 const { getStore } = require('../../store/instance');
-const { config }   = require('../../lib/configLoader');
+const { config } = require('../../lib/configLoader');
 const logger = require('../../core/logger').child({ mod: 'rss-cmd' });
 
 const SERVICE = 'rss';
@@ -27,7 +27,7 @@ const MAX_FEEDS = config.apis?.rss?.maxFeedsPerSubscriber || 20;
 const URL_RE = /^https?:\/\/\S+$/i;
 
 const VERBS_STATUS = new Set(['status', '-status', '--status', 'list']);
-const VERBS_HELP   = new Set(['help', '-help', '--help', '?', '']);
+const VERBS_HELP = new Set(['help', '-help', '--help', '?', '']);
 
 function parseTopics(rest) {
   const seen = new Set();
@@ -65,8 +65,11 @@ module.exports = {
   info: 'Subscribe to any RSS/Atom feed.',
   start: async (sock, m, { text }) => {
     if (!m.isPrivate) {
-      return await sock.sendMessage(m.chat,
-        { text: '❌ Can only be used in Private Chats.' }, { quoted: m });
+      return await sock.sendMessage(
+        m.chat,
+        { text: '❌ Can only be used in Private Chats.' },
+        { quoted: m },
+      );
     }
 
     const jid = String(m.sender || m.from);
@@ -81,9 +84,11 @@ module.exports = {
       const tokens = rest.split(/\s+/);
       const url = tokens.shift();
       if (!url || !URL_RE.test(url)) {
-        return await sock.sendMessage(m.chat,
+        return await sock.sendMessage(
+          m.chat,
           { text: 'Usage: `.rss add <http(s)://feed-url> [topic1 topic2 ...]`' },
-          { quoted: m });
+          { quoted: m },
+        );
       }
       const topics = parseTopics(tokens.join(' '));
 
@@ -95,9 +100,13 @@ module.exports = {
         feeds[dupIdx] = { url, topics: topics.length ? topics : undefined };
       } else {
         if (feeds.length >= MAX_FEEDS) {
-          return await sock.sendMessage(m.chat,
-            { text: `❌ You're at the ${MAX_FEEDS}-feed limit. Remove one first with \`.rss remove <url>\`.` },
-            { quoted: m });
+          return await sock.sendMessage(
+            m.chat,
+            {
+              text: `❌ You're at the ${MAX_FEEDS}-feed limit. Remove one first with \`.rss remove <url>\`.`,
+            },
+            { quoted: m },
+          );
         }
         feeds.push({ url, topics: topics.length ? topics : undefined });
       }
@@ -105,65 +114,87 @@ module.exports = {
       const meta = { ...existingMeta, feeds };
       const isSub = await store.isSubscriber(SERVICE, jid);
       if (isSub) await store.updateSubscriberMeta(SERVICE, jid, meta);
-      else       await store.addSubscriber(SERVICE, jid, meta);
+      else await store.addSubscriber(SERVICE, jid, meta);
 
-      logger.info({ jid, action: dupIdx >= 0 ? 'update-feed' : 'add-feed', url, topics }, 'rss subscription changed');
-      return await sock.sendMessage(m.chat, {
-        text: topics.length
-          ? `✅ Subscribed to \`${url}\` (topics: *${topics.join(', ')}*).`
-          : `✅ Subscribed to \`${url}\` (all articles).`,
-      }, { quoted: m });
+      logger.info(
+        { jid, action: dupIdx >= 0 ? 'update-feed' : 'add-feed', url, topics },
+        'rss subscription changed',
+      );
+      return await sock.sendMessage(
+        m.chat,
+        {
+          text: topics.length
+            ? `✅ Subscribed to \`${url}\` (topics: *${topics.join(', ')}*).`
+            : `✅ Subscribed to \`${url}\` (all articles).`,
+        },
+        { quoted: m },
+      );
     }
 
     // ─── remove <url> ─────────────────────────────────────────────────
     if (verb === 'remove' || verb === 'rm') {
       const url = rest.split(/\s+/)[0];
       if (!url) {
-        return await sock.sendMessage(m.chat,
-          { text: 'Usage: `.rss remove <url>`' }, { quoted: m });
+        return await sock.sendMessage(
+          m.chat,
+          { text: 'Usage: `.rss remove <url>`' },
+          { quoted: m },
+        );
       }
       const meta = (await store.getSubscriberMeta(SERVICE, jid)) || {};
       const feeds = Array.isArray(meta.feeds) ? meta.feeds.filter((f) => f.url !== url) : [];
       if (!feeds.length) {
         await store.removeSubscriber(SERVICE, jid);
         logger.info({ jid, action: 'remove-last-feed', url }, 'rss subscription removed');
-        return await sock.sendMessage(m.chat,
+        return await sock.sendMessage(
+          m.chat,
           { text: `❌ Removed last feed; you are no longer subscribed to .rss.` },
-          { quoted: m });
+          { quoted: m },
+        );
       }
       await store.updateSubscriberMeta(SERVICE, jid, { ...meta, feeds });
       logger.info({ jid, action: 'remove-feed', url }, 'rss feed removed');
-      return await sock.sendMessage(m.chat,
+      return await sock.sendMessage(
+        m.chat,
         { text: `❌ Removed \`${url}\`. (${feeds.length} remaining.)` },
-        { quoted: m });
+        { quoted: m },
+      );
     }
 
     // ─── list / -status ───────────────────────────────────────────────
     if (VERBS_STATUS.has(verb)) {
       const isSub = await store.isSubscriber(SERVICE, jid);
       if (!isSub) {
-        return await sock.sendMessage(m.chat,
-          { text: '📭 *RSS subscription*\n\nYou have no feeds. Use `.rss add <url>` to subscribe.' },
-          { quoted: m });
+        return await sock.sendMessage(
+          m.chat,
+          {
+            text: '📭 *RSS subscription*\n\nYou have no feeds. Use `.rss add <url>` to subscribe.',
+          },
+          { quoted: m },
+        );
       }
       const meta = (await store.getSubscriberMeta(SERVICE, jid)) || {};
       const feeds = Array.isArray(meta.feeds) ? meta.feeds : [];
       if (!feeds.length) {
-        return await sock.sendMessage(m.chat,
-          { text: '📭 *RSS subscription*\n\nYou have no feeds (subscription exists with empty list).' },
-          { quoted: m });
+        return await sock.sendMessage(
+          m.chat,
+          {
+            text: '📭 *RSS subscription*\n\nYou have no feeds (subscription exists with empty list).',
+          },
+          { quoted: m },
+        );
       }
       const lines = feeds.map((f, i) => {
-        const topics = (f.topics && f.topics.length) ? ` _(topics: ${f.topics.join(', ')})_` : '';
+        const topics = f.topics && f.topics.length ? ` _(topics: ${f.topics.join(', ')})_` : '';
         return `${i + 1}. \`${f.url}\`${topics}`;
       });
-      return await sock.sendMessage(m.chat, {
-        text: [
-          `📬 *RSS subscriptions* (${feeds.length}/${MAX_FEEDS})`,
-          '',
-          ...lines,
-        ].join('\n'),
-      }, { quoted: m });
+      return await sock.sendMessage(
+        m.chat,
+        {
+          text: [`📬 *RSS subscriptions* (${feeds.length}/${MAX_FEEDS})`, '', ...lines].join('\n'),
+        },
+        { quoted: m },
+      );
     }
 
     // ─── help / unknown ───────────────────────────────────────────────
@@ -171,8 +202,10 @@ module.exports = {
       return await sock.sendMessage(m.chat, { text: helpPanel() }, { quoted: m });
     }
 
-    return await sock.sendMessage(m.chat,
+    return await sock.sendMessage(
+      m.chat,
       { text: `Unknown verb *${verb}*. Use \`.rss help\` to see options.` },
-      { quoted: m });
+      { quoted: m },
+    );
   },
 };

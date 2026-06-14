@@ -1,7 +1,7 @@
 name: 🐛 Bug Report
 description: Something is broken in EchoFox.
-title: "[bug] "
-labels: ["bug", "needs-triage"]
+title: '[bug] '
+labels: ['bug', 'needs-triage']
 body:
   - type: markdown
     attributes:
@@ -17,7 +17,7 @@ body:
     attributes:
       label: EchoFox version
       description: "Run `git describe --tags --always` or check the tag you're on."
-      placeholder: "v0.2.0-alpha (commit abc1234)"
+      placeholder: 'v0.2.0-alpha (commit abc1234)'
     validations:
       required: true
 
@@ -25,8 +25,8 @@ body:
     id: node
     attributes:
       label: Node.js version
-      description: "Output of `node -v`"
-      placeholder: "v20.18.0"
+      description: 'Output of `node -v`'
+      placeholder: 'v20.18.0'
     validations:
       required: true
 
@@ -34,8 +34,8 @@ body:
     id: baileys
     attributes:
       label: Baileys version
-      description: "From package.json or `npm ls @whiskeysockets/baileys`"
-      placeholder: "7.0.0-rc13"
+      description: 'From package.json or `npm ls @whiskeysockets/baileys`'
+      placeholder: '7.0.0-rc13'
     validations:
       required: true
 
@@ -70,7 +70,7 @@ body:
     attributes:
       label: What happened?
       description: A clear and concise description of the bug.
-      placeholder: "When I run `.menu` the bot crashes with…"
+      placeholder: 'When I run `.menu` the bot crashes with…'
     validations:
       required: true
 
@@ -97,7 +97,7 @@ body:
     id: logs
     attributes:
       label: Logs / stack trace
-      description: "Paste the **full** stack trace — not just the error message. Use code fences (```)."
+      description: 'Paste the **full** stack trace — not just the error message. Use code fences (```).'
       render: shell
     validations:
       required: true
@@ -106,7 +106,7 @@ body:
     id: config
     attributes:
       label: Relevant config (REDACT keys/JIDs)
-      description: "Paste only the relevant sections of `src/config.js`. **Remove API keys and phone numbers!**"
+      description: 'Paste only the relevant sections of `src/config.js`. **Remove API keys and phone numbers!**'
       render: javascript
 
   - type: checkboxes

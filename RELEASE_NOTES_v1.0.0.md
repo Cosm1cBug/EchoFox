@@ -16,6 +16,7 @@ EchoFox is ready for stable use.
 ## What's new in v1.0.0
 
 ### Soak testing (M6)
+
 Three new scripts in `scripts/`:
 
 ```bash
@@ -29,12 +30,14 @@ keeps a rolling 24h window, and alerts on monotonic growth ≥30%.
 Configurable via `runtime.leakDetection.*`.
 
 ### Dashboard polish
+
 - New **HealthPill** component: live health-dot (green/red), version
   display, basic-auth-aware alert count
 - New **SoakStatus** tile: current heap, leak-suspected indicator, uptime
 - Refreshes every 5–30 s depending on data type
 
 ### Docs expansion (VitePress)
+
 - [Subscriptions guide](docs/guide/subscriptions) — catalogue of all 5 sources
 - [Dashboard guide](docs/guide/dashboard) — every tab + every API route
 - [Soak Testing guide](docs/guide/soak-testing) — heap-snapshot + leak-detector workflow
@@ -60,7 +63,6 @@ These APIs are now stable under SemVer:
 - Event router contract: `emit(eventName, payload)` → bus handlers
 - Dashboard `/api/*` routes: JSON responses, Basic-auth, `{ error, message }` on failure
 - `network.axiosWithBreaker(name, axiosCfg, opts?)` + `isOpenBreakerError(err)`
-
 
 ## License
 

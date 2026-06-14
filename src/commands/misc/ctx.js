@@ -27,12 +27,12 @@ module.exports = {
 
   async start(sock, m, { ctx, args }) {
     const summary = {
-      sender:    ctx.sender,
-      chat:      ctx.chat,
-      isGroup:   ctx.isGroup,
+      sender: ctx.sender,
+      chat: ctx.chat,
+      isGroup: ctx.isGroup,
       isPrivate: ctx.isPrivate,
-      mtype:     ctx.mtype,
-      pushName:  ctx.pushName,
+      mtype: ctx.mtype,
+      pushName: ctx.pushName,
       timestamp: new Date(ctx.timestamp * 1000).toISOString(),
       hasQuoted: !!ctx.quoted,
       quotedType: ctx.quoted?.type || null,

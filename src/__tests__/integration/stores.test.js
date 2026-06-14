@@ -23,19 +23,30 @@
  *   Run:  node --test src/__tests__/integration/stores.test.js
  */
 
-const test   = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs     = require('node:fs');
-const os     = require('node:os');
-const path   = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { makeSQLiteStore } = require('../../store/sqliteStore');
 
 function newStore() {
-  const dbPath = path.join(os.tmpdir(), `echofox-store-test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.db`);
-  const stub   = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, child: function() { return this; } };
-  const cache  = { get: () => null, set: () => null };
-  const store  = makeSQLiteStore({ dbPath, logger: stub, groupCache: cache });
+  const dbPath = path.join(
+    os.tmpdir(),
+    `echofox-store-test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.db`,
+  );
+  const stub = {
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    debug: () => {},
+    child: function () {
+      return this;
+    },
+  };
+  const cache = { get: () => null, set: () => null };
+  const store = makeSQLiteStore({ dbPath, logger: stub, groupCache: cache });
   return {
     store,
     cleanup() {
@@ -49,19 +60,38 @@ test('sqlite store: schema bootstraps and all 26 interface methods exist', () =>
   const { store, cleanup } = newStore();
   try {
     const need = [
-      'getMessage','getGroupMetadata','saveGroupMetadata',
-      'recordParticipantEvent','getParticipantHistory','getCurrentParticipants',
-      'recordStat','getStats','setGauge','getGauges',
-      'countGroups','countUniqueUsers','listGroups',
-      'recordMessageEdit','getMessageEdits','updateMessageBody',
-      'recordMessageReaction','getMessageReactions',
-      'recordReceipt','getMessageReceipts',
-      'markMessageDeleted','markChatMessagesDeleted','getDeletedInGroup',
-      'updateMessageStatus','bind','close',
+      'getMessage',
+      'getGroupMetadata',
+      'saveGroupMetadata',
+      'recordParticipantEvent',
+      'getParticipantHistory',
+      'getCurrentParticipants',
+      'recordStat',
+      'getStats',
+      'setGauge',
+      'getGauges',
+      'countGroups',
+      'countUniqueUsers',
+      'listGroups',
+      'recordMessageEdit',
+      'getMessageEdits',
+      'updateMessageBody',
+      'recordMessageReaction',
+      'getMessageReactions',
+      'recordReceipt',
+      'getMessageReceipts',
+      'markMessageDeleted',
+      'markChatMessagesDeleted',
+      'getDeletedInGroup',
+      'updateMessageStatus',
+      'bind',
+      'close',
     ];
     const missing = need.filter((m) => typeof store[m] !== 'function');
     assert.deepEqual(missing, [], `missing methods: ${missing.join(', ')}`);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('sqlite store: participant events — append + current/history reduction', async () => {
@@ -69,7 +99,7 @@ test('sqlite store: participant events — append + current/history reduction', 
   try {
     const G = 'g1@g.us';
     store.recordParticipantEvent(G, 'alice@s.whatsapp.net', 'add', 'admin@s.whatsapp.net', 100);
-    store.recordParticipantEvent(G, 'bob@s.whatsapp.net',   'add', 'admin@s.whatsapp.net', 200);
+    store.recordParticipantEvent(G, 'bob@s.whatsapp.net', 'add', 'admin@s.whatsapp.net', 200);
     store.recordParticipantEvent(G, 'alice@s.whatsapp.net', 'leave', 'alice@s.whatsapp.net', 300);
     store.recordParticipantEvent(G, 'carol@s.whatsapp.net', 'join', null, 400);
 
@@ -82,7 +112,9 @@ test('sqlite store: participant events — append + current/history reduction', 
     // alice should be excluded (last=leave); bob + carol remain
     const ids = current.map((p) => p.participant).sort();
     assert.deepEqual(ids, ['bob@s.whatsapp.net', 'carol@s.whatsapp.net']);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('sqlite store: edits + reactions + receipts persist', () => {
@@ -96,7 +128,7 @@ test('sqlite store: edits + reactions + receipts persist', () => {
     assert.equal(edits[1].new_body, 'hello there');
 
     store.recordMessageReaction('c@g.us', 'M1', 'bob', '👍', 100);
-    store.recordMessageReaction('c@g.us', 'M1', 'bob', null, 200);  // unreact
+    store.recordMessageReaction('c@g.us', 'M1', 'bob', null, 200); // unreact
     const r = store.getMessageReactions('c@g.us', 'M1');
     assert.equal(r.length, 2);
     assert.equal(r[1].emoji, null);
@@ -106,7 +138,9 @@ test('sqlite store: edits + reactions + receipts persist', () => {
     store.recordReceipt('c@g.us', 'M1', 'bob', 2, 100);
     const re = store.getMessageReceipts('c@g.us', 'M1');
     assert.equal(re[0].status, 3, 'no downgrade');
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('sqlite store: counters + gauges round-trip', async () => {
@@ -121,14 +155,22 @@ test('sqlite store: counters + gauges round-trip', async () => {
     assert.equal(counters.cmds, 1);
     const gauges = await store.getGauges();
     assert.equal(gauges.uptime, 99);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('sqlite store: listGroups + countGroups + countUniqueUsers', async () => {
   const { store, cleanup } = newStore();
   try {
-    store.saveGroupMetadata('g1@g.us', { subject: 'Alpha', participants: [{ id: 'a@s.whatsapp.net' }] });
-    store.saveGroupMetadata('g2@g.us', { subject: 'Beta',  participants: [{ id: 'b@s.whatsapp.net' }, { id: 'c@s.whatsapp.net' }] });
+    store.saveGroupMetadata('g1@g.us', {
+      subject: 'Alpha',
+      participants: [{ id: 'a@s.whatsapp.net' }],
+    });
+    store.saveGroupMetadata('g2@g.us', {
+      subject: 'Beta',
+      participants: [{ id: 'b@s.whatsapp.net' }, { id: 'c@s.whatsapp.net' }],
+    });
     assert.equal(store.countGroups(), 2);
     const list = await store.listGroups();
     assert.equal(list.length, 2);
@@ -138,9 +180,10 @@ test('sqlite store: listGroups + countGroups + countUniqueUsers', async () => {
     store.recordParticipantEvent('g2@g.us', 'b@s.whatsapp.net', 'add', null, 100);
     store.recordParticipantEvent('g2@g.us', 'c@s.whatsapp.net', 'add', null, 100);
     assert.equal(store.countUniqueUsers(), 3);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
-
 
 test('sqlite store: subscribers — add/isSubscriber/remove round-trip', async () => {
   const { store, cleanup } = newStore();
@@ -157,7 +200,9 @@ test('sqlite store: subscribers — add/isSubscriber/remove round-trip', async (
 
     await store.removeSubscriber('alienvault', JID);
     assert.equal(await store.isSubscriber('alienvault', JID), false);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('sqlite store: subscribers — meta round-trip with topics', async () => {
@@ -176,7 +221,9 @@ test('sqlite store: subscribers — meta round-trip with topics', async () => {
     assert.equal(subs.length, 1);
     assert.deepEqual(subs[0].meta, { topics: ['cloud-security'] });
     assert.equal(subs[0].jid, JID);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('sqlite store: subscribers — services are isolated', async () => {
@@ -185,14 +232,19 @@ test('sqlite store: subscribers — services are isolated', async () => {
     const JID = '333@s.whatsapp.net';
     await store.addSubscriber('alienvault', JID);
     assert.equal(await store.isSubscriber('alienvault', JID), true);
-    assert.equal(await store.isSubscriber('thehackersnews', JID), false,
-      'subscribing to one service does not subscribe to another');
+    assert.equal(
+      await store.isSubscriber('thehackersnews', JID),
+      false,
+      'subscribing to one service does not subscribe to another',
+    );
 
     const av = await store.getSubscribers('alienvault');
     const thn = await store.getSubscribers('thehackersnews');
     assert.equal(av.length, 1);
     assert.equal(thn.length, 0);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('sqlite store: subscribers — last_seen_pulse_ts persistence', async () => {
@@ -204,7 +256,9 @@ test('sqlite store: subscribers — last_seen_pulse_ts persistence', async () =>
     await store.updateSubscriberTimestamp('alienvault', JID, TS);
     const subs = await store.getSubscribers('alienvault');
     assert.equal(subs[0].last_seen_pulse_ts, TS);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('sqlite store: hasSentArticle / recordSentArticle dedupe', async () => {
@@ -219,7 +273,9 @@ test('sqlite store: hasSentArticle / recordSentArticle dedupe', async () => {
     assert.equal(await store.hasSentArticle('thehackersnews', JID, URL), true);
     const URL2 = 'https://thehackernews.com/2026/06/bar.html';
     assert.equal(await store.hasSentArticle('thehackersnews', JID, URL2), false);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test('sqlite store: subscriber meta survives null → object → null transitions', async () => {
@@ -233,7 +289,12 @@ test('sqlite store: subscriber meta survives null → object → null transition
     assert.deepEqual(await store.getSubscriberMeta('thehackersnews', JID), { topics: ['ai'] });
 
     await store.updateSubscriberMeta('thehackersnews', JID, null);
-    assert.equal(await store.getSubscriberMeta('thehackersnews', JID), null,
-      'null meta clears the field');
-  } finally { cleanup(); }
+    assert.equal(
+      await store.getSubscriberMeta('thehackersnews', JID),
+      null,
+      'null meta clears the field',
+    );
+  } finally {
+    cleanup();
+  }
 });

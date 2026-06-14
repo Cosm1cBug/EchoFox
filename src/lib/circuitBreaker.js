@@ -33,7 +33,7 @@
  *   Use `getStats()` for the dashboard endpoint that will surface these.
  */
 
-const logger  = require('../core/logger').child({ mod: 'circuit' });
+const logger = require('../core/logger').child({ mod: 'circuit' });
 const metrics = require('../services/metrics');
 
 let CircuitBreaker = null;
@@ -58,12 +58,12 @@ function _tryLoadOpossum() {
 const _registry = new Map();
 
 const DEFAULT_OPTS = {
-  timeout:                  15_000,
-  errorThresholdPercentage: 50,    // ≥50% failures → open
-  resetTimeout:             60_000, // half-open after 60s
-  rollingCountTimeout:      10_000,
-  rollingCountBuckets:      10,
-  volumeThreshold:          5,     // need ≥5 calls to evaluate
+  timeout: 15_000,
+  errorThresholdPercentage: 50, // ≥50% failures → open
+  resetTimeout: 60_000, // half-open after 60s
+  rollingCountTimeout: 10_000,
+  rollingCountBuckets: 10,
+  volumeThreshold: 5, // need ≥5 calls to evaluate
 };
 
 /**
@@ -95,16 +95,37 @@ function get(name, fn, opts = {}) {
   }
 
   const breaker = new opossum(fn, { ...DEFAULT_OPTS, ...opts, name });
-  const stats   = { name, opossum: true, state: 'closed', calls: 0, failures: 0, rejects: 0 };
+  const stats = { name, opossum: true, state: 'closed', calls: 0, failures: 0, rejects: 0 };
   _registry.set(name, { breaker, stats });
 
   // Wire metrics
-  breaker.on('success', () => { stats.calls++; metrics.inc?.(`breaker_${name}_calls_total`); });
-  breaker.on('failure', () => { stats.failures++; metrics.inc?.(`breaker_${name}_failures_total`); });
-  breaker.on('reject',  () => { stats.rejects++; metrics.inc?.(`breaker_${name}_rejects_total`); });
-  breaker.on('open',    () => { stats.state = 'open';   metrics.setGauge?.(`breaker_${name}_state`, 1); logger.warn({ name }, '🔌 circuit OPENED'); });
-  breaker.on('halfOpen',() => { stats.state = 'half';   metrics.setGauge?.(`breaker_${name}_state`, 2); logger.info({ name }, '🔌 circuit HALF-OPEN'); });
-  breaker.on('close',   () => { stats.state = 'closed'; metrics.setGauge?.(`breaker_${name}_state`, 0); logger.info({ name }, '🔌 circuit CLOSED'); });
+  breaker.on('success', () => {
+    stats.calls++;
+    metrics.inc?.(`breaker_${name}_calls_total`);
+  });
+  breaker.on('failure', () => {
+    stats.failures++;
+    metrics.inc?.(`breaker_${name}_failures_total`);
+  });
+  breaker.on('reject', () => {
+    stats.rejects++;
+    metrics.inc?.(`breaker_${name}_rejects_total`);
+  });
+  breaker.on('open', () => {
+    stats.state = 'open';
+    metrics.setGauge?.(`breaker_${name}_state`, 1);
+    logger.warn({ name }, '🔌 circuit OPENED');
+  });
+  breaker.on('halfOpen', () => {
+    stats.state = 'half';
+    metrics.setGauge?.(`breaker_${name}_state`, 2);
+    logger.info({ name }, '🔌 circuit HALF-OPEN');
+  });
+  breaker.on('close', () => {
+    stats.state = 'closed';
+    metrics.setGauge?.(`breaker_${name}_state`, 0);
+    logger.info({ name }, '🔌 circuit CLOSED');
+  });
 
   return breaker;
 }
@@ -115,6 +136,8 @@ function getStats() {
 }
 
 /** For tests: reset registry. */
-function _reset() { _registry.clear(); }
+function _reset() {
+  _registry.clear();
+}
 
 module.exports = { get, getStats, _reset };

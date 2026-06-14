@@ -2,8 +2,8 @@
 layout: home
 
 hero:
-  name: "EchoFox"
-  text: "Production-grade WhatsApp Bot"
+  name: 'EchoFox'
+  text: 'Production-grade WhatsApp Bot'
   tagline: Built on Baileys 7.x with professional CI/CD, security, and observability.
   actions:
     - theme: brand

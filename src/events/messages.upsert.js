@@ -29,13 +29,13 @@ const {
   downloadMediaMessage,
 } = require('@whiskeysockets/baileys');
 
-const { config }          = require('../lib/configLoader');
-const { correct }         = require('../lib/stringMatch');
-const { rememberUser }    = require('../services/userDirectory');
+const { config } = require('../lib/configLoader');
+const { correct } = require('../lib/stringMatch');
+const { rememberUser } = require('../services/userDirectory');
 const { run: runCommand } = require('../core/commandRunner');
 const ai = require('../services/ai');
 const { makeRateLimiter } = require('../middleware/rateLimit');
-const metrics             = require('../services/metrics');
+const metrics = require('../services/metrics');
 
 // ─── Inbound rate limiter (token bucket per sender) ──────────────────────
 const senderLimiter = makeRateLimiter({
@@ -82,13 +82,15 @@ function pickText(m) {
 
 function enrich(m, sock) {
   const remoteJid = m.key.remoteJid;
-  const isGroup   = remoteJid?.endsWith('@g.us');
+  const isGroup = remoteJid?.endsWith('@g.us');
   const isPrivate = remoteJid?.endsWith('@s.whatsapp.net');
-  const isStatus  = remoteJid === 'status@broadcast';
-  const sender = jidNormalizedUser(m.key.fromMe ? sock.user?.id : (m.key.participant || remoteJid || ''));
+  const isStatus = remoteJid === 'status@broadcast';
+  const sender = jidNormalizedUser(
+    m.key.fromMe ? sock.user?.id : m.key.participant || remoteJid || '',
+  );
   const innerContent = extractMessageContent(m.message) || {};
-  const mtype  = getContentType(innerContent);
-  const inner  = mtype ? innerContent[mtype] : null;
+  const mtype = getContentType(innerContent);
+  const inner = mtype ? innerContent[mtype] : null;
   const ctxInfo = inner?.contextInfo;
 
   return {
@@ -100,18 +102,18 @@ function enrich(m, sock) {
     fromMe: !!m.key.fromMe,
     pushName: m.pushName || 'Unknown',
     timestamp: Number(m.messageTimestamp) || Math.floor(Date.now() / 1000),
-    isGroup, 
-    isPrivate, 
+    isGroup,
+    isPrivate,
     isStatus,
     mtype,
     body: pickText(m),
     mentions: ctxInfo?.mentionedJid || [],
     quoted: ctxInfo?.quotedMessage
       ? {
-          message:     ctxInfo.quotedMessage,
-          stanzaId:    ctxInfo.stanzaId,
+          message: ctxInfo.quotedMessage,
+          stanzaId: ctxInfo.stanzaId,
           participant: ctxInfo.participant,
-          type:        getContentType(ctxInfo.quotedMessage),
+          type: getContentType(ctxInfo.quotedMessage),
           text:
             ctxInfo.quotedMessage.conversation ||
             ctxInfo.quotedMessage.extendedTextMessage?.text ||
@@ -133,7 +135,7 @@ function enrich(m, sock) {
         msgToDownload = {
           key: {
             remoteJid,
-            id:          ctxInfo.stanzaId,
+            id: ctxInfo.stanzaId,
             participant: ctxInfo.participant,
           },
           message: ctxInfo.quotedMessage,
@@ -184,10 +186,10 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
     sock.readMessages([m.key]).catch(() => {});
   }
   // ── Prefix detection (admin prefix wins on tie) ────────────────────
-  const text       = ctx.body || '';
+  const text = ctx.body || '';
   const adminMatch = matchPrefix(text, config.bot.adminPrefix);
-  const userMatch  = adminMatch ? null : matchPrefix(text, config.bot.prefix);
-  const matched    = adminMatch || userMatch;
+  const userMatch = adminMatch ? null : matchPrefix(text, config.bot.prefix);
+  const matched = adminMatch || userMatch;
   const isAdminCall = !!adminMatch;
 
   if (!matched) {
@@ -203,13 +205,17 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
           chatJid: ctx.chat,
           userJid: ctx.sender,
           text,
-          isDM:    ctx.isPrivate,
+          isDM: ctx.isPrivate,
         });
         if (decision.respond) {
           // Typing indicator while we generate (UX choice: typing_indicator)
           let typingTimer = null;
           if (config.ai.typingWhileGenerating) {
-            try { await sock.sendPresenceUpdate('composing', ctx.chat); } catch (_) { /* ignore */ }
+            try {
+              await sock.sendPresenceUpdate('composing', ctx.chat);
+            } catch (_) {
+              /* ignore */
+            }
             typingTimer = setInterval(() => {
               sock.sendPresenceUpdate('composing', ctx.chat).catch(() => {});
             }, 8_000).unref();
@@ -219,12 +225,16 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
               chatJid: ctx.chat,
               userJid: ctx.sender,
               text,
-              optIn:   decision.optIn,
+              optIn: decision.optIn,
             });
             if (out?.reply) await ctx.reply(out.reply);
           } finally {
             if (typingTimer) clearInterval(typingTimer);
-            try { await sock.sendPresenceUpdate('paused', ctx.chat); } catch (_) { /* ignore */ }
+            try {
+              await sock.sendPresenceUpdate('paused', ctx.chat);
+            } catch (_) {
+              /* ignore */
+            }
           }
         } else if (decision.reason === 'rate_limit_user' || decision.reason === 'rate_limit_chat') {
           // Quiet drop — don't spam every blocked message
@@ -270,8 +280,9 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
   // Lazy group metadata fetch
   let metadata = null;
   if (ctx.isGroup && cmd.needsMetadata) {
-    metadata = await store.getGroupMetadata(ctx.chat).catch(() => null)
-            || await sock.groupMetadata(ctx.chat).catch(() => null);
+    metadata =
+      (await store.getGroupMetadata(ctx.chat).catch(() => null)) ||
+      (await sock.groupMetadata(ctx.chat).catch(() => null));
   }
 
   // Delegate to command runner

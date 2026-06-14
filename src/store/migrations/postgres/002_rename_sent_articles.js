@@ -38,5 +38,7 @@ module.exports = {
     `);
   },
 
-  async down(_ctx) { /* intentionally a no-op */ },
+  async down(_ctx) {
+    /* intentionally a no-op */
+  },
 };

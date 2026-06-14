@@ -24,29 +24,29 @@ const { getStore } = require('../../store/instance');
 
 const PRICING = Object.freeze({
   // OpenAI
-  'gpt-4o-mini':              [0.15, 0.60],
-  'gpt-4o':                   [2.50, 10.00],
-  'gpt-4o-2024-08-06':        [2.50, 10.00],
-  'gpt-4-turbo':              [10.00, 30.00],
-  'o1-mini':                  [3.00, 12.00],
-  'o3-mini':                  [1.10, 4.40],
+  'gpt-4o-mini': [0.15, 0.6],
+  'gpt-4o': [2.5, 10.0],
+  'gpt-4o-2024-08-06': [2.5, 10.0],
+  'gpt-4-turbo': [10.0, 30.0],
+  'o1-mini': [3.0, 12.0],
+  'o3-mini': [1.1, 4.4],
 
   // Gemini
-  'gemini-2.0-flash':         [0.10, 0.40],
-  'gemini-2.0-flash-001':     [0.10, 0.40],
-  'gemini-2.0-flash-exp':     [0.10, 0.40],
-  'gemini-1.5-flash':         [0.075, 0.30],
-  'gemini-1.5-pro':           [1.25, 5.00],
+  'gemini-2.0-flash': [0.1, 0.4],
+  'gemini-2.0-flash-001': [0.1, 0.4],
+  'gemini-2.0-flash-exp': [0.1, 0.4],
+  'gemini-1.5-flash': [0.075, 0.3],
+  'gemini-1.5-pro': [1.25, 5.0],
 
   // Anthropic
-  'claude-3-5-haiku-latest':       [0.80, 4.00],
-  'claude-3-5-haiku-20241022':     [0.80, 4.00],
-  'claude-3-5-sonnet-latest':      [3.00, 15.00],
-  'claude-3-5-sonnet-20241022':    [3.00, 15.00],
-  'claude-3-opus-latest':          [15.00, 75.00],
+  'claude-3-5-haiku-latest': [0.8, 4.0],
+  'claude-3-5-haiku-20241022': [0.8, 4.0],
+  'claude-3-5-sonnet-latest': [3.0, 15.0],
+  'claude-3-5-sonnet-20241022': [3.0, 15.0],
+  'claude-3-opus-latest': [15.0, 75.0],
 
   // Fallback
-  '__default': [0.15, 0.60],
+  __default: [0.15, 0.6],
 });
 
 function priceFor(provider, model) {
@@ -55,7 +55,7 @@ function priceFor(provider, model) {
 }
 
 function todayUtc() {
-  return new Date().toISOString().slice(0, 10);   // YYYY-MM-DD
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
 /**
@@ -65,8 +65,8 @@ function todayUtc() {
 async function record(provider, model, promptTokens = 0, completionTokens = 0) {
   const [pIn, pOut] = priceFor(provider, model);
   const costUsd =
-      (Number(promptTokens) || 0) * pIn  / 1_000_000 +
-      (Number(completionTokens) || 0) * pOut / 1_000_000;
+    ((Number(promptTokens) || 0) * pIn) / 1_000_000 +
+    ((Number(completionTokens) || 0) * pOut) / 1_000_000;
 
   try {
     const store = getStore();

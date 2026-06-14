@@ -17,14 +17,14 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "0.0.0.0:3000:3000"
+      - '0.0.0.0:3000:3000'
     volumes:
-      - ./src:/app/src                 # bind-mount source for hot-reload
+      - ./src:/app/src # bind-mount source for hot-reload
       - ./scripts:/app/scripts
       - echofox-session:/app/src/@session
       - echofox-store:/app/src/store/runtime
     environment:
-      NODE_ENV:  development
+      NODE_ENV: development
       LOG_LEVEL: debug
     healthcheck:
       disable: true

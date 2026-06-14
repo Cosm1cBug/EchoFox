@@ -40,7 +40,7 @@ const insert = db.prepare(`
   VALUES (?,?,?,?,?,?,?)`);
 const exists = db.prepare(`SELECT 1 FROM users WHERE jid = ?`);
 
-const seen = new LRUCache({ max: 50_000 });   // hot dedupe – no disk hit
+const seen = new LRUCache({ max: 50_000 }); // hot dedupe – no disk hit
 
 async function rememberUser(ctx, _sock) {
   const jid = ctx.sender;
@@ -49,15 +49,19 @@ async function rememberUser(ctx, _sock) {
   if (exists.get(jid)) return;
 
   let device = 'unknown';
-  try { device = await getDevice(ctx.id); } catch {}
+  try {
+    device = await getDevice(ctx.id);
+  } catch {}
 
-  let countryCode = null, country = null, intl = null;
+  let countryCode = null,
+    country = null,
+    intl = null;
   try {
     const num = parsePhoneNumber('+' + jid.split('@')[0]);
     if (num) {
       countryCode = num.country;
-      country     = countryCode ? countries.getCountry(countryCode) : null;
-      intl        = num.formatInternational();
+      country = countryCode ? countries.getCountry(countryCode) : null;
+      intl = num.formatInternational();
     }
   } catch {}
 

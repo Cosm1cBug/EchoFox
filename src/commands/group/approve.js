@@ -16,18 +16,20 @@ module.exports = {
   alias: ['accept'],
   desc: 'Approve a pending join request in this group',
   category: 'group',
-  group: true,            // group-only (router enforces)
-  needsMetadata: true,    // we get group metadata pre-fetched
+  group: true, // group-only (router enforces)
+  needsMetadata: true, // we get group metadata pre-fetched
 
   async start(sock, m, { ctx, metadata, text }) {
     const target = (text || '').trim();
     if (!target.startsWith('+')) {
-      return ctx.reply('Usage: `.approve +<countrycode><number>`\n_Example: .approve +919876543210_');
+      return ctx.reply(
+        'Usage: `.approve +<countrycode><number>`\n_Example: .approve +919876543210_',
+      );
     }
 
     // Find the bot's own JID inside the group
     const botJid = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
-    const me     = metadata?.participants?.find((p) => p.id === botJid);
+    const me = metadata?.participants?.find((p) => p.id === botJid);
     if (!me || !me.admin) {
       return ctx.reply('🚫 I need to be an admin of this group to approve requests.');
     }

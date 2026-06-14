@@ -19,10 +19,12 @@ module.exports = {
     const t1 = Date.now();
     // Some Baileys 7 variants return the sent message; if so, edit it with the timing.
     if (sent?.key) {
-      await sock.sendMessage(ctx.chat, {
-        text: `🏓 *Pong!* ${t1 - t0} ms`,
-        edit: sent.key,
-      }).catch(() => {});
+      await sock
+        .sendMessage(ctx.chat, {
+          text: `🏓 *Pong!* ${t1 - t0} ms`,
+          edit: sent.key,
+        })
+        .catch(() => {});
     }
   },
 };

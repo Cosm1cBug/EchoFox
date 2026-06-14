@@ -21,7 +21,7 @@
  *     profile pic are unavailable.
  */
 
-const fs   = require('node:fs');
+const fs = require('node:fs');
 const { profilePicCache } = require('../../core/caches');
 const path = require('node:path');
 
@@ -36,7 +36,9 @@ async function fetchStatusSafely(sock, jid) {
       if (Array.isArray(r) && r[0]?.status?.status) return r[0].status.status;
       if (r?.status) return r.status;
     }
-  } catch { /* fall through */ }
+  } catch {
+    /* fall through */
+  }
   return null;
 }
 
@@ -50,8 +52,14 @@ async function fetchAvatar(sock, jid) {
   // 1. Standard profile picture
   try {
     const url = await sock.profilePictureUrl(jid, 'image');
-    if (url) { result = { url }; profilePicCache.set(jid, result); return result; }
-  } catch { /* user has no PP / privacy */ }
+    if (url) {
+      result = { url };
+      profilePicCache.set(jid, result);
+      return result;
+    }
+  } catch {
+    /* user has no PP / privacy */
+  }
   // 2. Business profile picture
   try {
     const biz = await sock.getBusinessProfile(jid);
@@ -60,7 +68,9 @@ async function fetchAvatar(sock, jid) {
       profilePicCache.set(jid, result);
       return result;
     }
-  } catch { /* not a business account */ }
+  } catch {
+    /* not a business account */
+  }
   // 3. Bundled default — cache the *null* lookup so we don't retry every call
   if (fs.existsSync(DEFAULT_AVATAR)) {
     result = { url: 'file://' + DEFAULT_AVATAR };
@@ -74,15 +84,13 @@ async function fetchAvatar(sock, jid) {
 module.exports = {
   name: 'profile',
   alias: ['me', 'whois'],
-  desc: 'Show your profile (or quoted user\'s profile)',
+  desc: "Show your profile (or quoted user's profile)",
   category: 'user',
   cooldown: 5,
 
   async start(sock, m, { ctx }) {
     // Pick the target: quoted user (if any) else the sender themselves
-    const targetJid =
-      ctx.quoted?.participant ||
-      ctx.sender;
+    const targetJid = ctx.quoted?.participant || ctx.sender;
 
     const targetShort = targetJid.split('@')[0];
 
@@ -105,17 +113,19 @@ module.exports = {
       mentions: [targetJid],
       contextInfo: {
         mentionedJid: [targetJid],
-        ...(avatar ? {
-          externalAdReply: {
-            showAdAttribution: false,
-            renderLargerThumbnail: true,
-            title: 'WhatsApp Profile',
-            body: targetShort,
-            previewType: 0,
-            mediaType: 1,
-            thumbnailUrl: avatar.url,
-          },
-        } : {}),
+        ...(avatar
+          ? {
+              externalAdReply: {
+                showAdAttribution: false,
+                renderLargerThumbnail: true,
+                title: 'WhatsApp Profile',
+                body: targetShort,
+                previewType: 0,
+                mediaType: 1,
+                thumbnailUrl: avatar.url,
+              },
+            }
+          : {}),
       },
     };
 

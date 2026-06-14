@@ -32,20 +32,20 @@
  *     Use durable persistence (SQLite WAL etc.) for guaranteed delivery.
  */
 
-const logger  = require('../core/logger').child({ mod: 'backpressure' });
+const logger = require('../core/logger').child({ mod: 'backpressure' });
 const metrics = require('../services/metrics');
 
 function makeBatcher({
   name,
   flush,
-  maxBatch       = 100,
-  maxWaitMs      = 250,
-  maxBufferSize  = 5_000,
+  maxBatch = 100,
+  maxWaitMs = 250,
+  maxBufferSize = 5_000,
   onDrop,
 }) {
   if (!flush) throw new Error('backpressure: flush() required');
   const buffer = [];
-  let timer  = null;
+  let timer = null;
   let flushing = false;
   let pendingFlush = null;
   let droppedTotal = 0;
@@ -57,7 +57,8 @@ function makeBatcher({
   };
 
   async function _doFlush() {
-    clearTimeout(timer); timer = null;
+    clearTimeout(timer);
+    timer = null;
     if (flushing) {
       // Coalesce concurrent flush triggers — re-arm after the current one.
       if (!pendingFlush) pendingFlush = Promise.resolve().then(scheduleFlush);
@@ -72,8 +73,10 @@ function makeBatcher({
       metrics.inc?.(`batcher_${name}_flushed_total`, batch.length);
     } catch (err) {
       metrics.inc?.(`batcher_${name}_errors_total`);
-      logger.warn({ err, name, dropped: batch.length },
-        'batcher flush failed — rows lost (use durable store for guarantees)');
+      logger.warn(
+        { err, name, dropped: batch.length },
+        'batcher flush failed — rows lost (use durable store for guarantees)',
+      );
     } finally {
       flushing = false;
       pendingFlush = null;
@@ -84,13 +87,18 @@ function makeBatcher({
   function push(row) {
     if (buffer.length >= maxBufferSize) {
       // Drop OLDEST — newer rows are more useful (recency bias).
-      const dropCount = Math.max(1, Math.floor(maxBufferSize * 0.10));
+      const dropCount = Math.max(1, Math.floor(maxBufferSize * 0.1));
       buffer.splice(0, dropCount);
       droppedTotal += dropCount;
       metrics.inc?.(`batcher_${name}_dropped_total`, dropCount);
-      if (onDrop) try { onDrop(dropCount); } catch {}
-      logger.warn({ name, dropped: dropCount, total: droppedTotal },
-        'batcher overflow — dropping oldest rows');
+      if (onDrop)
+        try {
+          onDrop(dropCount);
+        } catch {}
+      logger.warn(
+        { name, dropped: dropCount, total: droppedTotal },
+        'batcher overflow — dropping oldest rows',
+      );
     }
     buffer.push(row);
     if (buffer.length >= maxBatch) _doFlush();

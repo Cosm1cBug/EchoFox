@@ -24,14 +24,17 @@
 
 // Receipt status codes (per Baileys 7.x)
 const RECEIPT_STATUS = Object.freeze({
-  SENT:      1,
+  SENT: 1,
   DELIVERED: 2,
-  READ:      3,
-  PLAYED:    4,
+  READ: 3,
+  PLAYED: 4,
 });
 
 const RECEIPT_NAMES = Object.freeze({
-  1: 'sent', 2: 'delivered', 3: 'read', 4: 'played',
+  1: 'sent',
+  2: 'delivered',
+  3: 'read',
+  4: 'played',
 });
 
 const SQL_DDL = {
@@ -108,20 +111,31 @@ const SQL_DDL = {
  * columns idempotently. Each store calls applyMessagesMigration() at boot.
  */
 function applyMessagesMigration_sqlite(db) {
-  const cols = db.prepare(`PRAGMA table_info(messages)`).all().map((c) => c.name);
+  const cols = db
+    .prepare(`PRAGMA table_info(messages)`)
+    .all()
+    .map((c) => c.name);
   if (!cols.includes('deleted_at')) {
-    try { db.exec(`ALTER TABLE messages ADD COLUMN deleted_at INTEGER`); } catch {}
+    try {
+      db.exec(`ALTER TABLE messages ADD COLUMN deleted_at INTEGER`);
+    } catch {}
   }
   if (!cols.includes('status')) {
-    try { db.exec(`ALTER TABLE messages ADD COLUMN status INTEGER NOT NULL DEFAULT 0`); } catch {}
+    try {
+      db.exec(`ALTER TABLE messages ADD COLUMN status INTEGER NOT NULL DEFAULT 0`);
+    } catch {}
   }
 }
 
 async function applyMessagesMigration_postgres(pool) {
   try {
     await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at BIGINT`);
-    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS status INTEGER NOT NULL DEFAULT 0`);
-  } catch (e) { /* already there or perms missing — non-fatal */ }
+    await pool.query(
+      `ALTER TABLE messages ADD COLUMN IF NOT EXISTS status INTEGER NOT NULL DEFAULT 0`,
+    );
+  } catch (e) {
+    /* already there or perms missing — non-fatal */
+  }
 }
 
 module.exports = {

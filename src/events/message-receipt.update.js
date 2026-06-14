@@ -29,9 +29,9 @@ const { RECEIPT_STATUS } = require('../store/schema/messages-extras');
 const logger = require('../core/logger').child({ mod: 'msg.receipt' });
 
 function deriveStatus(r) {
-  if (r?.playedTimestamp)   return RECEIPT_STATUS.PLAYED;
-  if (r?.readTimestamp)     return RECEIPT_STATUS.READ;
-  if (r?.receiptTimestamp)  return RECEIPT_STATUS.DELIVERED;
+  if (r?.playedTimestamp) return RECEIPT_STATUS.PLAYED;
+  if (r?.readTimestamp) return RECEIPT_STATUS.READ;
+  if (r?.receiptTimestamp) return RECEIPT_STATUS.DELIVERED;
   return RECEIPT_STATUS.SENT;
 }
 
@@ -44,8 +44,8 @@ module.exports = async function onMessageReceipt({ sock: _sock, store, payload }
     if (!k?.id || !k?.remoteJid || !r) continue;
 
     const recipient = r.userJid || k.participant || k.remoteJid;
-    const status    = deriveStatus(r);
-    const ts        = Math.floor(
+    const status = deriveStatus(r);
+    const ts = Math.floor(
       (Number(r.playedTimestamp || r.readTimestamp || r.receiptTimestamp) || Date.now()) / 1000,
     );
 

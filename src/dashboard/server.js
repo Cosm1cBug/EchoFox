@@ -7,16 +7,19 @@
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const path    = require('node:path');
-const fs      = require('node:fs');
+const path = require('node:path');
+const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
-const metrics    = require('../services/metrics');
+const metrics = require('../services/metrics');
 
 const logger = require('../core/logger').child({ mod: 'dashboard' });
 
 const PKG = (() => {
-  try { return require(path.join(__dirname, '..', '..', 'package.json')) }
-  catch { return { version: 'unknown' } }
+  try {
+    return require(path.join(__dirname, '..', '..', 'package.json'));
+  } catch {
+    return { version: 'unknown' };
+  }
 })();
 
 const REACT_DIR = path.join(__dirname, 'react');
@@ -41,9 +44,11 @@ function ensureReactBuilt() {
   const indexHtml = path.join(REACT_DIR, 'index.html');
   if (fs.existsSync(indexHtml)) return true;
 
-  logger.warn({ path: REACT_DIR },
+  logger.warn(
+    { path: REACT_DIR },
     'React dashboard build missing — attempting build-on-boot. ' +
-    'Run `npm run build:dashboard` ahead of time to skip this step.');
+      'Run `npm run build:dashboard` ahead of time to skip this step.',
+  );
   try {
     const script = path.join(__dirname, '..', '..', 'scripts', 'build-dashboard.js');
     const result = spawnSync(process.execPath, [script], {
@@ -54,12 +59,16 @@ function ensureReactBuilt() {
       logger.info('React dashboard built successfully');
       return true;
     }
-    logger.error({ status: result.status },
-      'build-on-boot failed — dashboard will return a maintenance page');
+    logger.error(
+      { status: result.status },
+      'build-on-boot failed — dashboard will return a maintenance page',
+    );
     return false;
   } catch (err) {
-    logger.error({ err: err.message },
-      'build-on-boot threw — dashboard will return a maintenance page');
+    logger.error(
+      { err: err.message },
+      'build-on-boot threw — dashboard will return a maintenance page',
+    );
     return false;
   }
 }
@@ -83,13 +92,13 @@ function startDashboard(port, store, config) {
   app.set('trust proxy', true);
   // v1.0.1 — rate-limit BOTH /api (data endpoints) and /dashboard (auth surface)
   const dashboardLimiter = rateLimit({
-    windowMs:        15 * 60 * 1000,   // 15-minute window
-    max:             300,               // 300 requests per IP per window
+    windowMs: 15 * 60 * 1000, // 15-minute window
+    max: 300, // 300 requests per IP per window
     standardHeaders: true,
-    legacyHeaders:   false,
-    message:         { error: 'rate_limited', message: 'Too many requests; slow down.' },
+    legacyHeaders: false,
+    message: { error: 'rate_limited', message: 'Too many requests; slow down.' },
   });
-  app.use('/api',       dashboardLimiter);
+  app.use('/api', dashboardLimiter);
   app.use('/dashboard', dashboardLimiter);
 
   if (config.dashboard.username) {
@@ -122,30 +131,33 @@ function startDashboard(port, store, config) {
   // ─── API: health / stats / version ───────────────────────────────────
   app.get('/api/health', (_req, res) => {
     res.json({
-      ok:      true,
-      uptime:  process.uptime(),
+      ok: true,
+      uptime: process.uptime(),
       version: PKG.version,
       backends: {
         store: config.storeDB.type,
-        auth:  config.auth.method,
+        auth: config.auth.method,
         login: config.login.type,
       },
     });
   });
 
   app.get('/api/stats', async (_req, res, next) => {
-    try { res.json(await metrics.snapshot()); }
-    catch (e) { next(e); }
+    try {
+      res.json(await metrics.snapshot());
+    } catch (e) {
+      next(e);
+    }
   });
 
   // ─── API: groups ─────────────────────────────────────────────────────
   app.get('/api/groups', async (_req, res, next) => {
     try {
-      const rows = typeof store.listGroups === 'function'
-        ? await store.listGroups()
-        : [];
+      const rows = typeof store.listGroups === 'function' ? await store.listGroups() : [];
       res.json(rows);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/groups/:jid', async (req, res, next) => {
@@ -153,49 +165,64 @@ function startDashboard(port, store, config) {
       const meta = await store.getGroupMetadata(req.params.jid);
       if (!meta) return res.status(404).json({ error: 'not_found' });
       res.json(meta);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/groups/:jid/participants', async (req, res, next) => {
-    try { res.json(await store.getCurrentParticipants(req.params.jid)); }
-    catch (e) { next(e); }
+    try {
+      res.json(await store.getCurrentParticipants(req.params.jid));
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/groups/:jid/participants/history', async (req, res, next) => {
     try {
       const limit = Math.min(Number(req.query.limit) || 200, 2000);
       res.json(await store.getParticipantHistory(req.params.jid, limit));
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   // ── Per-message timeline endpoints ─────────────────────
   app.get('/api/messages/:jid/:id/edits', async (req, res, next) => {
     try {
-      const edits = await store.getMessageEdits?.(req.params.jid, req.params.id) || [];
+      const edits = (await store.getMessageEdits?.(req.params.jid, req.params.id)) || [];
       res.json(edits);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/messages/:jid/:id/reactions', async (req, res, next) => {
     try {
-      const reactions = await store.getMessageReactions?.(req.params.jid, req.params.id) || [];
+      const reactions = (await store.getMessageReactions?.(req.params.jid, req.params.id)) || [];
       res.json(reactions);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/messages/:jid/:id/receipts', async (req, res, next) => {
     try {
-      const receipts = await store.getMessageReceipts?.(req.params.jid, req.params.id) || [];
+      const receipts = (await store.getMessageReceipts?.(req.params.jid, req.params.id)) || [];
       res.json(receipts);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/groups/:jid/deleted', async (req, res, next) => {
     try {
       const limit = Math.min(Number(req.query.limit) || 100, 1000);
-      const deleted = await store.getDeletedInGroup?.(req.params.jid, limit) || [];
+      const deleted = (await store.getDeletedInGroup?.(req.params.jid, limit)) || [];
       res.json(deleted);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   // ── Diagnostics + alerts ───────────────────────────────────
@@ -205,7 +232,9 @@ function startDashboard(port, store, config) {
       const ctx = getRuntimeContext();
       const report = await runDiagnostics(ctx);
       res.status(report.ok ? 200 : 503).json(report);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/alerts', (_req, res, next) => {
@@ -214,25 +243,28 @@ function startDashboard(port, store, config) {
       res.json({
         active: engine.getActiveAlerts(),
       });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/alerts/:cmd', (req, res, next) => {
     try {
       const engine = require('../services/alertEngine');
       res.json(engine.getRate(req.params.cmd));
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
-    // ── Subscriptions audit view ───────────────────────────────
+  // ── Subscriptions audit view ───────────────────────────────
   app.get('/api/subscriptions', async (_req, res, next) => {
     try {
       const services = ['alienvault', 'thehackersnews', 'rss', 'github', 'vtwatch'];
       const out = {};
       for (const svc of services) {
-        const subs = (typeof store.getSubscribers === 'function')
-          ? await store.getSubscribers(svc)
-          : [];
+        const subs =
+          typeof store.getSubscribers === 'function' ? await store.getSubscribers(svc) : [];
         out[svc] = subs.map((s) => ({
           jid: s.jid,
           last_seen_pulse_ts: s.last_seen_pulse_ts,
@@ -240,16 +272,18 @@ function startDashboard(port, store, config) {
         }));
       }
       res.json(out);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/blocklist', async (_req, res, next) => {
     try {
-      const data = (typeof store.getBlocklist === 'function')
-        ? await store.getBlocklist()
-        : [];
+      const data = typeof store.getBlocklist === 'function' ? await store.getBlocklist() : [];
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/contacts', async (req, res, next) => {
@@ -262,138 +296,172 @@ function startDashboard(port, store, config) {
         store.countContacts(),
       ]);
       res.json({ items, total, limit, offset });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/contacts/:jid', async (req, res, next) => {
     try {
-      if (typeof store.getContact !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      if (typeof store.getContact !== 'function')
+        return res.status(404).json({ error: 'not_implemented' });
       const c = await store.getContact(req.params.jid);
       if (!c) return res.status(404).json({ error: 'not_found' });
       res.json(c);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/chats', async (_req, res, next) => {
     try {
-      const data = (typeof store.listChats === 'function')
-        ? await store.listChats()
-        : [];
+      const data = typeof store.listChats === 'function' ? await store.listChats() : [];
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/chats/:jid', async (req, res, next) => {
     try {
-      if (typeof store.getChat !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      if (typeof store.getChat !== 'function')
+        return res.status(404).json({ error: 'not_implemented' });
       const c = await store.getChat(req.params.jid);
       if (!c) return res.status(404).json({ error: 'not_found' });
       res.json(c);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/presence', async (req, res, next) => {
     try {
       const limit = Math.min(Number(req.query.limit) || 50, 500);
-      const data = (typeof store.getRecentPresence === 'function')
-        ? await store.getRecentPresence(limit)
-        : [];
+      const data =
+        typeof store.getRecentPresence === 'function' ? await store.getRecentPresence(limit) : [];
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/presence/:jid', async (req, res, next) => {
     try {
-      if (typeof store.getPresence !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      if (typeof store.getPresence !== 'function')
+        return res.status(404).json({ error: 'not_implemented' });
       const p = await store.getPresence(req.params.jid);
       if (!p) return res.status(404).json({ error: 'not_found' });
       res.json(p);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/chats/:jid/presence', async (req, res, next) => {
     try {
-      const data = (typeof store.getPresenceInChat === 'function')
-        ? await store.getPresenceInChat(req.params.jid)
-        : [];
+      const data =
+        typeof store.getPresenceInChat === 'function'
+          ? await store.getPresenceInChat(req.params.jid)
+          : [];
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/labels', async (_req, res, next) => {
     try {
-      const data = (typeof store.listLabels === 'function')
-        ? await store.listLabels()
-        : [];
+      const data = typeof store.listLabels === 'function' ? await store.listLabels() : [];
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/labels/:id/associations', async (req, res, next) => {
     try {
-      const data = (typeof store.getLabelAssociations === 'function')
-        ? await store.getLabelAssociations(req.params.id)
-        : [];
+      const data =
+        typeof store.getLabelAssociations === 'function'
+          ? await store.getLabelAssociations(req.params.id)
+          : [];
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/chats/:jid/labels', async (req, res, next) => {
     try {
-      const data = (typeof store.getLabelsForTarget === 'function')
-        ? await store.getLabelsForTarget(req.params.jid)
-        : [];
+      const data =
+        typeof store.getLabelsForTarget === 'function'
+          ? await store.getLabelsForTarget(req.params.jid)
+          : [];
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/newsletters', async (_req, res, next) => {
     try {
-      const data = (typeof store.listNewsletters === 'function')
-        ? await store.listNewsletters()
-        : [];
+      const data = typeof store.listNewsletters === 'function' ? await store.listNewsletters() : [];
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/newsletters/:id', async (req, res, next) => {
     try {
-      if (typeof store.getNewsletter !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      if (typeof store.getNewsletter !== 'function')
+        return res.status(404).json({ error: 'not_implemented' });
       const n = await store.getNewsletter(req.params.id);
       if (!n) return res.status(404).json({ error: 'not_found' });
-      const settings = (typeof store.getNewsletterSettings === 'function')
-        ? await store.getNewsletterSettings(req.params.id)
-        : null;
+      const settings =
+        typeof store.getNewsletterSettings === 'function'
+          ? await store.getNewsletterSettings(req.params.id)
+          : null;
       res.json({ ...n, settings: settings?.settings || null });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/newsletters/:id/views', async (req, res, next) => {
     try {
       const limit = Math.min(Number(req.query.limit) || 100, 500);
-      const data = (typeof store.getNewsletterViews === 'function')
-        ? await store.getNewsletterViews(req.params.id, null, limit)
-        : [];
+      const data =
+        typeof store.getNewsletterViews === 'function'
+          ? await store.getNewsletterViews(req.params.id, null, limit)
+          : [];
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/newsletters/:id/:msgId/reactions', async (req, res, next) => {
     try {
-      const data = (typeof store.getNewsletterReactions === 'function')
-        ? await store.getNewsletterReactions(req.params.id, req.params.msgId)
-        : [];
+      const data =
+        typeof store.getNewsletterReactions === 'function'
+          ? await store.getNewsletterReactions(req.params.id, req.params.msgId)
+          : [];
       res.json(data);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/lid-mapping/:lid', async (req, res, next) => {
     try {
-      if (typeof store.getLidMapping !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      if (typeof store.getLidMapping !== 'function')
+        return res.status(404).json({ error: 'not_implemented' });
       const jid = await store.getLidMapping(req.params.lid);
       if (!jid) return res.status(404).json({ error: 'not_found' });
       res.json({ lid: req.params.lid, jid });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   // ── v1.4.0 Prometheus exposition for store-backed metrics ────────────
@@ -424,7 +492,7 @@ function startDashboard(port, store, config) {
       };
 
       emit('counter', snap.counters, 'counter', 'EchoFox counter');
-      emit('gauge',   snap.gauges,   'gauge',   'EchoFox gauge');
+      emit('gauge', snap.gauges, 'gauge', 'EchoFox gauge');
 
       res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
       res.end(lines.join('\n') + '\n');
@@ -437,45 +505,52 @@ function startDashboard(port, store, config) {
   // ── v1.2.0 AI routes ──────────────────────────────────────────────────
   app.get('/api/ai/stats', async (req, res, next) => {
     try {
-      if (typeof store.getAiUsageByDay !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      if (typeof store.getAiUsageByDay !== 'function')
+        return res.status(404).json({ error: 'not_implemented' });
       const days = Math.max(1, Math.min(180, Number(req.query.days) || 30));
       const rows = await store.getAiUsageByDay(days);
       const today = new Date().toISOString().slice(0, 10);
-      const todayUsd = typeof store.getAiUsageDayTotal === 'function' ? await store.getAiUsageDayTotal(today) : 0;
+      const todayUsd =
+        typeof store.getAiUsageDayTotal === 'function' ? await store.getAiUsageDayTotal(today) : 0;
       res.json({ days, rows, todayUsd, costCapPerDayUsd: config.ai?.costCapPerDayUsd || 0 });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/ai/chats', async (_req, res, next) => {
     try {
-      if (typeof store.listAiOptedInChats !== 'function') return res.status(404).json({ error: 'not_implemented' });
+      if (typeof store.listAiOptedInChats !== 'function')
+        return res.status(404).json({ error: 'not_implemented' });
       const rows = await store.listAiOptedInChats(200);
       res.json({ count: rows.length, chats: rows });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/api/ai/config', (_req, res) => {
     const ai = config.ai || {};
     // Never expose API keys via the dashboard.
     const safe = {
-      enabled:          !!ai.enabled,
-      defaultProvider:  ai.defaultProvider,
-      model:            ai.model,
-      persona:          ai.persona,
-      memoryTurns:      ai.memoryTurns,
-      maxTokens:        ai.maxTokens,
+      enabled: !!ai.enabled,
+      defaultProvider: ai.defaultProvider,
+      model: ai.model,
+      persona: ai.persona,
+      memoryTurns: ai.memoryTurns,
+      maxTokens: ai.maxTokens,
       costCapPerDayUsd: ai.costCapPerDayUsd,
-      optInDefault:     ai.optInDefault,
+      optInDefault: ai.optInDefault,
       enableToolCalling: ai.enableToolCalling,
       typingWhileGenerating: ai.typingWhileGenerating,
-      toolWhitelist:    ai.toolWhitelist || [],
+      toolWhitelist: ai.toolWhitelist || [],
       rateLimitPerUserPerHour: ai.rateLimitPerUserPerHour,
-      rateLimitPerChatPerDay:  ai.rateLimitPerChatPerDay,
+      rateLimitPerChatPerDay: ai.rateLimitPerChatPerDay,
       providersConfigured: {
-        openai:    !!ai.providers?.openai?.apiKey,
-        gemini:    !!ai.providers?.gemini?.apiKey,
+        openai: !!ai.providers?.openai?.apiKey,
+        gemini: !!ai.providers?.gemini?.apiKey,
         anthropic: !!ai.providers?.anthropic?.apiKey,
-        local:     !!ai.providers?.local?.baseUrl,
+        local: !!ai.providers?.local?.baseUrl,
       },
     };
     res.json(safe);
@@ -488,8 +563,10 @@ function startDashboard(port, store, config) {
   });
 
   app.listen(port, () => {
-    logger.info({ port, auth: !!config.dashboard.username, react: reactReady },
-      'dashboard listening');
+    logger.info(
+      { port, auth: !!config.dashboard.username, react: reactReady },
+      'dashboard listening',
+    );
   });
 }
 

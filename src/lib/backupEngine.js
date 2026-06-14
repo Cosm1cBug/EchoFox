@@ -35,11 +35,11 @@
  *     stopBackupEngine()
  */
 
-const fs   = require('node:fs');
+const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const logger  = require('../core/logger').child({ mod: 'backup' });
+const logger = require('../core/logger').child({ mod: 'backup' });
 const metrics = require('../services/metrics');
 
 let _cronTask = null;
@@ -71,7 +71,9 @@ function _spawnSystemTar({ outFile, projectRoot, includes }) {
     const args = ['-czf', outFile, '-C', projectRoot, ...includes.map((p) => path.join('src', p))];
     const proc = spawn('tar', args, { stdio: ['ignore', 'inherit', 'pipe'] });
     let stderr = '';
-    proc.stderr.on('data', (b) => { stderr += b.toString(); });
+    proc.stderr.on('data', (b) => {
+      stderr += b.toString();
+    });
     proc.on('error', reject);
     proc.on('close', (code) => {
       if (code === 0) resolve();
@@ -100,13 +102,13 @@ async function _encryptFile(file, passphrase) {
   const crypto = require('node:crypto');
   const data = await fs.promises.readFile(file);
   const salt = crypto.randomBytes(16);
-  const iv   = crypto.randomBytes(12);
-  const key  = crypto.pbkdf2Sync(passphrase, salt, 100_000, 32, 'sha256');
-  const cip  = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const ct   = Buffer.concat([cip.update(data), cip.final()]);
-  const tag  = cip.getAuthTag();
-  const out  = Buffer.concat([salt, iv, tag, ct]);
-  const enc  = `${file}.enc`;
+  const iv = crypto.randomBytes(12);
+  const key = crypto.pbkdf2Sync(passphrase, salt, 100_000, 32, 'sha256');
+  const cip = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const ct = Buffer.concat([cip.update(data), cip.final()]);
+  const tag = cip.getAuthTag();
+  const out = Buffer.concat([salt, iv, tag, ct]);
+  const enc = `${file}.enc`;
   await fs.promises.writeFile(enc, out);
   await fs.promises.unlink(file);
   return enc;
@@ -118,12 +120,20 @@ async function _encryptFile(file, passphrase) {
 async function _applyRetention(dir, retain) {
   const entries = (await fs.promises.readdir(dir))
     .filter((f) => f.startsWith('echofox-') && (f.endsWith('.tar.gz') || f.endsWith('.tar.gz.enc')))
-    .map((f) => ({ name: f, full: path.join(dir, f), mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);  // newest first
+    .map((f) => ({
+      name: f,
+      full: path.join(dir, f),
+      mtime: fs.statSync(path.join(dir, f)).mtimeMs,
+    }))
+    .sort((a, b) => b.mtime - a.mtime); // newest first
   const stale = entries.slice(retain);
   for (const f of stale) {
-    try { await fs.promises.unlink(f.full); logger.info({ file: f.name }, 'backup pruned'); }
-    catch (e) { logger.warn({ err: e, file: f.name }, 'backup prune failed'); }
+    try {
+      await fs.promises.unlink(f.full);
+      logger.info({ file: f.name }, 'backup pruned');
+    } catch (e) {
+      logger.warn({ err: e, file: f.name }, 'backup prune failed');
+    }
   }
 }
 
@@ -139,7 +149,7 @@ async function runBackupNow(config) {
   }
 
   const projectRoot = _projectRoot();
-  const dest        = path.isAbsolute(cfg.destination)
+  const dest = path.isAbsolute(cfg.destination)
     ? cfg.destination
     : path.join(projectRoot, cfg.destination);
 
@@ -169,8 +179,9 @@ async function runBackupNow(config) {
 
   let finalPath = outFile;
   if (cfg.encryptionPassphrase) {
-    try { finalPath = await _encryptFile(outFile, cfg.encryptionPassphrase); }
-    catch (err) {
+    try {
+      finalPath = await _encryptFile(outFile, cfg.encryptionPassphrase);
+    } catch (err) {
       logger.error({ err }, 'backup encryption failed');
       metrics.inc?.('backup_failed_total');
       return { ok: false, reason: 'encrypt-failed', error: err.message };
@@ -183,8 +194,10 @@ async function runBackupNow(config) {
   metrics.inc?.('backup_success_total');
   metrics.setGauge?.('backup_last_run_at', Math.floor(Date.now() / 1000));
   metrics.setGauge?.('backup_last_size_bytes', stat.size);
-  logger.info({ path: finalPath, sizeMB: (stat.size / 1e6).toFixed(2), ms: Date.now() - t0 },
-    '✅ backup complete');
+  logger.info(
+    { path: finalPath, sizeMB: (stat.size / 1e6).toFixed(2), ms: Date.now() - t0 },
+    '✅ backup complete',
+  );
   return { ok: true, path: finalPath, size: stat.size };
 }
 
@@ -197,15 +210,19 @@ function startBackupEngine(config) {
 
   let cron;
   // node-cron v4 — schedule() + validate()
-  try { cron = require('node-cron'); }
-  catch (e) {
+  try {
+    cron = require('node-cron');
+  } catch (e) {
     logger.warn('node-cron not installed — running one-time backup at boot only');
     setTimeout(() => runBackupNow(config).catch(() => {}), 60_000);
     return null;
   }
 
   if (!cron.validate(config.backup.schedule)) {
-    logger.warn({ schedule: config.backup.schedule }, 'invalid backup schedule — engine not started');
+    logger.warn(
+      { schedule: config.backup.schedule },
+      'invalid backup schedule — engine not started',
+    );
     return null;
   }
 
@@ -214,13 +231,20 @@ function startBackupEngine(config) {
     () => runBackupNow(config).catch((e) => logger.error({ err: e }, 'backup run failed')),
     { timezone: config.bot?.timezone },
   );
-  logger.info({ schedule: config.backup.schedule, destination: config.backup.destination },
-    '🗄  backup engine scheduled');
+  logger.info(
+    { schedule: config.backup.schedule, destination: config.backup.destination },
+    '🗄  backup engine scheduled',
+  );
   return _cronTask;
 }
 
 function stopBackupEngine() {
-  if (_cronTask) { try { _cronTask.stop(); } catch {} _cronTask = null; }
+  if (_cronTask) {
+    try {
+      _cronTask.stop();
+    } catch {}
+    _cronTask = null;
+  }
 }
 
 module.exports = { startBackupEngine, stopBackupEngine, runBackupNow };

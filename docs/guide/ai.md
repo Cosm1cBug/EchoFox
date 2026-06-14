@@ -1,4 +1,4 @@
-# AI service 
+# AI service
 
 EchoFox can act as a multi-provider LLM chatbot directly inside WhatsApp.
 This page is the user-facing reference for what's enabled by default,
@@ -42,23 +42,23 @@ enable per-chat with `.ai on`.
 
 ## User commands (prefix `.`)
 
-| Command | Effect |
-|---|---|
-| `.ai`, `.ai status` | Show status + today's spend vs cap |
-| `.ai on` / `.ai off` | Per-chat opt-in toggle |
-| `.ai clear` | Forget conversation memory for this chat |
-| `.ai persona <p>` | `threat-intel` \| `general` \| `custom` |
-| `.ai provider <p>` | `openai` \| `gemini` \| `anthropic` \| `local` |
-| `.ai model <name>` | Override the default model |
+| Command              | Effect                                         |
+| -------------------- | ---------------------------------------------- |
+| `.ai`, `.ai status`  | Show status + today's spend vs cap             |
+| `.ai on` / `.ai off` | Per-chat opt-in toggle                         |
+| `.ai clear`          | Forget conversation memory for this chat       |
+| `.ai persona <p>`    | `threat-intel` \| `general` \| `custom`        |
+| `.ai provider <p>`   | `openai` \| `gemini` \| `anthropic` \| `local` |
+| `.ai model <name>`   | Override the default model                     |
 
 ## Admin commands (prefix `$`, name `ai-admin`)
 
-| Command | Effect |
-|---|---|
-| `$ai-admin stats [days]` | Daily token + cost summary |
-| `$ai-admin chats` | List opted-in chats |
-| `$ai-admin limit get / set <usd>` | Read or live-edit cost cap |
-| `$ai-admin enable / disable` | Flip `config.ai.enabled` in memory |
+| Command                           | Effect                             |
+| --------------------------------- | ---------------------------------- |
+| `$ai-admin stats [days]`          | Daily token + cost summary         |
+| `$ai-admin chats`                 | List opted-in chats                |
+| `$ai-admin limit get / set <usd>` | Read or live-edit cost cap         |
+| `$ai-admin enable / disable`      | Flip `config.ai.enabled` in memory |
 
 ## Personas
 
@@ -69,20 +69,20 @@ enable per-chat with `.ai on`.
 
 ## Tools (12 by default)
 
-| Tool | Needs API key? | Returns |
-|---|---|---|
-| `get_blocklist` | no | current blocked JIDs (sample) |
-| `get_presence_in_chat` | no | recent presence states per JID |
-| `get_labels_for_chat` | no | WA Business labels on a target |
-| `list_newsletters` | no | newsletters known to the bot |
-| `get_recent_messages` | no | last N stored messages in a chat |
-| `check_virustotal` | yes (`config.apis.virustotal.apiKey`) | VT verdict stats + reputation |
-| `search_alienvault` | yes (`config.apis.alienvault.apiKey`) | OTX pulse summary |
-| `latest_hackernews` | no | latest THN RSS items |
-| `github_releases` | optional (token raises rate limit) | latest releases for repo |
-| `github_advisories` | optional | GHSA matches for a query |
-| `wiki_lookup` | no | Wikipedia summary (en) |
-| `fetch_url` | no | GET ≤200 KB; **SSRF-guarded** |
+| Tool                   | Needs API key?                        | Returns                          |
+| ---------------------- | ------------------------------------- | -------------------------------- |
+| `get_blocklist`        | no                                    | current blocked JIDs (sample)    |
+| `get_presence_in_chat` | no                                    | recent presence states per JID   |
+| `get_labels_for_chat`  | no                                    | WA Business labels on a target   |
+| `list_newsletters`     | no                                    | newsletters known to the bot     |
+| `get_recent_messages`  | no                                    | last N stored messages in a chat |
+| `check_virustotal`     | yes (`config.apis.virustotal.apiKey`) | VT verdict stats + reputation    |
+| `search_alienvault`    | yes (`config.apis.alienvault.apiKey`) | OTX pulse summary                |
+| `latest_hackernews`    | no                                    | latest THN RSS items             |
+| `github_releases`      | optional (token raises rate limit)    | latest releases for repo         |
+| `github_advisories`    | optional                              | GHSA matches for a query         |
+| `wiki_lookup`          | no                                    | Wikipedia summary (en)           |
+| `fetch_url`            | no                                    | GET ≤200 KB; **SSRF-guarded**    |
 
 Tools requiring a key are **automatically hidden** from the model
 when the key is missing. The whitelist is configurable via
@@ -92,15 +92,15 @@ when the key is missing. The whitelist is configurable via
 
 The pricing table lives in `src/services/ai/costTracker.js`:
 
-| Model | Prompt $/1M | Completion $/1M |
-|---|---|---|
-| `gpt-4o-mini` | 0.15 | 0.60 |
-| `gpt-4o` | 2.50 | 10.00 |
-| `gemini-2.0-flash` | 0.10 | 0.40 |
-| `claude-3-5-haiku-latest` | 0.80 | 4.00 |
-| `claude-3-5-sonnet-latest` | 3.00 | 15.00 |
-| _Local (Ollama)_ | **0** | **0** |
-| _unknown model_ | falls back to `gpt-4o-mini` rates |
+| Model                      | Prompt $/1M                       | Completion $/1M |
+| -------------------------- | --------------------------------- | --------------- |
+| `gpt-4o-mini`              | 0.15                              | 0.60            |
+| `gpt-4o`                   | 2.50                              | 10.00           |
+| `gemini-2.0-flash`         | 0.10                              | 0.40            |
+| `claude-3-5-haiku-latest`  | 0.80                              | 4.00            |
+| `claude-3-5-sonnet-latest` | 3.00                              | 15.00           |
+| _Local (Ollama)_           | **0**                             | **0**           |
+| _unknown model_            | falls back to `gpt-4o-mini` rates |
 
 `config.ai.costCapPerDayUsd` is a hard stop — once today's spend ≥ cap,
 `router.shouldRespond()` returns `respond: false, reason: 'cost_cap'`

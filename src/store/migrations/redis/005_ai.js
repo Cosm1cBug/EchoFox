@@ -23,6 +23,10 @@ module.exports = {
   version: 5,
   description: 'AI memory + usage + opt-in (v1.2.0) — Redis schemaless, no-op marker',
 
-  async up(_ctx)   { /* nothing to do */ },
-  async down(_ctx) { /* intentionally a no-op */ },
+  async up(_ctx) {
+    /* nothing to do */
+  },
+  async down(_ctx) {
+    /* intentionally a no-op */
+  },
 };

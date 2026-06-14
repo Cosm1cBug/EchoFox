@@ -26,20 +26,27 @@ function _getClient() {
   const AnthropicMod = require('@anthropic-ai/sdk');
   const Anthropic = AnthropicMod.default || AnthropicMod;
   _client = new Anthropic({
-    apiKey:  config.ai?.providers?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY || '',
-    ...(config.ai?.providers?.anthropic?.baseUrl ? { baseURL: config.ai.providers.anthropic.baseUrl } : {}),
+    apiKey: config.ai?.providers?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY || '',
+    ...(config.ai?.providers?.anthropic?.baseUrl
+      ? { baseURL: config.ai.providers.anthropic.baseUrl }
+      : {}),
   });
   return _client;
 }
 
-function _resetClientForTests() { _client = null; _override = null; }
-function __testOverride(client) { _override = client; }
+function _resetClientForTests() {
+  _client = null;
+  _override = null;
+}
+function __testOverride(client) {
+  _override = client;
+}
 
 function _toolsToAnthropic(tools = []) {
   if (!tools.length) return undefined;
   return tools.map((t) => ({
-    name:         t.name,
-    description:  t.description,
+    name: t.name,
+    description: t.description,
     input_schema: t.parameters,
   }));
 }
@@ -48,7 +55,12 @@ function _historyToAnthropic(history) {
   const out = [];
   let pending = null;
 
-  const flush = () => { if (pending) { out.push(pending); pending = null; } };
+  const flush = () => {
+    if (pending) {
+      out.push(pending);
+      pending = null;
+    }
+  };
 
   for (const t of history) {
     if (t.role === 'tool') {
@@ -56,11 +68,13 @@ function _historyToAnthropic(history) {
       flush();
       out.push({
         role: 'user',
-        content: [{
-          type:         'tool_result',
-          tool_use_id:  t.toolId,
-          content:      typeof t.content === 'string' ? t.content : JSON.stringify(t.content),
-        }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: t.toolId,
+            content: typeof t.content === 'string' ? t.content : JSON.stringify(t.content),
+          },
+        ],
       });
     } else if (t.role === 'assistant' && t.toolCalls && t.toolCalls.length) {
       flush();
@@ -82,9 +96,9 @@ function _historyToAnthropic(history) {
 async function chat({ system, history = [], tools = [], model, maxTokens, temperature }) {
   const client = _getClient();
   const req = {
-    model:       model || config.ai?.model || 'claude-3-5-haiku-latest',
-    max_tokens:  Number(maxTokens) || Number(config.ai?.maxTokens) || 800,
-    messages:    _historyToAnthropic(history),
+    model: model || config.ai?.model || 'claude-3-5-haiku-latest',
+    max_tokens: Number(maxTokens) || Number(config.ai?.maxTokens) || 800,
+    messages: _historyToAnthropic(history),
   };
   if (system) req.system = system;
   if (typeof temperature === 'number') req.temperature = temperature;
@@ -95,23 +109,29 @@ async function chat({ system, history = [], tools = [], model, maxTokens, temper
 
   let text = '';
   const toolCalls = [];
-  for (const block of (r.content || [])) {
-    if (block.type === 'text')     text += block.text || '';
+  for (const block of r.content || []) {
+    if (block.type === 'text') text += block.text || '';
     else if (block.type === 'tool_use') {
       toolCalls.push({ id: block.id, name: block.name, args: block.input || {} });
     }
   }
 
   return {
-    content:   text,
+    content: text,
     toolCalls: toolCalls.length ? toolCalls : undefined,
     usage: {
-      promptTokens:     r.usage?.input_tokens  || 0,
+      promptTokens: r.usage?.input_tokens || 0,
       completionTokens: r.usage?.output_tokens || 0,
     },
     finishReason: r.stop_reason,
-    model:        r.model,
+    model: r.model,
   };
 }
 
-module.exports = { chat, _historyToAnthropic, _toolsToAnthropic, _resetClientForTests, __testOverride };
+module.exports = {
+  chat,
+  _historyToAnthropic,
+  _toolsToAnthropic,
+  _resetClientForTests,
+  __testOverride,
+};

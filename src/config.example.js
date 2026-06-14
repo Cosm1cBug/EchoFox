@@ -24,63 +24,62 @@
  * the corresponding feature ships.
  */
 module.exports = {
-
   // ─── Core ──────────────────────────────────
 
   bot: {
-    name:         'EchoFox',
-    prefix:       '.',                    // user commands
-    adminPrefix:  '$',                    // admin commands
-    sessionName:  '@session',
-    timezone:     'Asia/Kolkata',
-    language:     'en',
-    public:       true,                   // false = admin-only mode
+    name: 'EchoFox',
+    prefix: '.', // user commands
+    adminPrefix: '$', // admin commands
+    sessionName: '@session',
+    timezone: 'Asia/Kolkata',
+    language: 'en',
+    public: true, // false = admin-only mode
   },
 
   features: {
     readMessages: true,
-    readStatus:   true,
-    reactStatus:  false,
-    antiCall:     false,
-    syncHistory:  true,
+    readStatus: true,
+    reactStatus: false,
+    antiCall: false,
+    syncHistory: true,
   },
 
   login: {
-    type:        'QR',                    // 'QR' or 'PAIRING'
-    phoneNumber: '',                      // required when type = 'PAIRING' (digits only)
+    type: 'QR', // 'QR' or 'PAIRING'
+    phoneNumber: '', // required when type = 'PAIRING' (digits only)
   },
 
   auth: {
-    method:      'MULTIFILE',             // 'MULTIFILE' | 'REDIS' | 'SQLITE' | 'POSTGRES'
-    redisUrl:    'redis://localhost:6379',
-    sqlitePath:  './src/store/auth.db',
+    method: 'MULTIFILE', // 'MULTIFILE' | 'REDIS' | 'SQLITE' | 'POSTGRES'
+    redisUrl: 'redis://localhost:6379',
+    sqlitePath: './src/store/auth.db',
     postgresUrl: 'postgresql://postgres:postgres@localhost:5432/echofox',
   },
 
   storeDB: {
-    type:        'SQLITE',                // 'SQLITE' | 'POSTGRES' | 'MONGODB' | 'REDIS'
-    sqlitePath:  './src/store/runtime/wa.db',
+    type: 'SQLITE', // 'SQLITE' | 'POSTGRES' | 'MONGODB' | 'REDIS'
+    sqlitePath: './src/store/runtime/wa.db',
     postgresUrl: 'postgresql://postgres:postgres@localhost:5432/echofox',
-    mongoUri:    'mongodb://localhost:27017/echofox',
-    redisUrl:    'redis://localhost:6379',
+    mongoUri: 'mongodb://localhost:27017/echofox',
+    redisUrl: 'redis://localhost:6379',
     runMigrationsOnBoot: true,
   },
 
   dashboard: {
-    enabled:  false,                      // basic-auth React dashboard at /dashboard/
-    port:     3001,
+    enabled: false, // basic-auth React dashboard at /dashboard/
+    port: 3001,
     username: 'admin',
     password: 'change-me-please',
   },
 
   processing: {
     concurrencyPerChat: 1,
-    globalRateLimit:    20,
-    userRateLimit:      10,
-    sendConcurrency:    4,
+    globalRateLimit: 20,
+    userRateLimit: 10,
+    sendConcurrency: 4,
     messageBatch: {
-      maxBatch:      100,
-      maxWaitMs:     250,
+      maxBatch: 100,
+      maxWaitMs: 250,
       maxBufferSize: 5000,
     },
   },
@@ -90,12 +89,12 @@ module.exports = {
   antiBan: {
     typingIndicator: true,
     shortReplyChars: 40,
-    pauseAfterSend:  true,
-    typingDelayMs:   { min: 800, max: 2500 },
+    pauseAfterSend: true,
+    typingDelayMs: { min: 800, max: 2500 },
     presenceOnConnect: 'available',
-    warmupMode:        false,
-    warmupDays:        14,
-    warmupMultiplier:  3,
+    warmupMode: false,
+    warmupDays: 14,
+    warmupMultiplier: 3,
   },
 
   admins: [
@@ -103,58 +102,58 @@ module.exports = {
   ],
 
   channels: {
-    syslogs:      '',
-    botLogs:      '',
-    userLogs:     '',
+    syslogs: '',
+    botLogs: '',
+    userLogs: '',
     groupUpdates: '',
-    callLogs:     '',
-    errLogs:      '',
-    movGroup:     '',
+    callLogs: '',
+    errLogs: '',
+    movGroup: '',
   },
 
   apis: {
-    omdb:           { apiKey: '', url: 'https://www.omdbapi.com/' },
-    virustotal:     { apiKey: '' },
-    alienvault:     { apiKey: '' },
+    omdb: { apiKey: '', url: 'https://www.omdbapi.com/' },
+    virustotal: { apiKey: '' },
+    alienvault: { apiKey: '' },
     thehackersnews: { checkIntervalMin: 60 },
   },
 
   sticker: {
-    packName:   'EchoFox',
+    packName: 'EchoFox',
     packAuthor: 'COSM1CBUG',
   },
 
   // ─── Runtime ──────────────────────────────────
 
   runtime: {
-    logLevel:        'info',              // trace|debug|info|warn|error|fatal
-    maxHeapPercent:  90,                  // restart worker above this heap %
-    autoRestart:     false,                // false = only alert, no exit
+    logLevel: 'info', // trace|debug|info|warn|error|fatal
+    maxHeapPercent: 90, // restart worker above this heap %
+    autoRestart: false, // false = only alert, no exit
     checkIntervalMs: 30000,
-    gracePeriodMs:   5000,                // delay before restart (drains in-flight)
+    gracePeriodMs: 5000, // delay before restart (drains in-flight)
     logFile: {
-      enabled: false,                     // also write JSON logs to file
-      dir:     './logs',
-      prefix:  'echofox',                 // → ./logs/echofox-YYYY-MM-DD.log
+      enabled: false, // also write JSON logs to file
+      dir: './logs',
+      prefix: 'echofox', // → ./logs/echofox-YYYY-MM-DD.log
     },
 
     // leak detector. Set enabled:false to disable.
     leakDetection: {
       enabled: true,
-      sampleIntervalMs: 600000,           // 10 minutes
-      windowSize: 144,                    // 24h at 10min/sample
-      growthThresholdPercent: 30,         // trigger if last-half MIN exceeds first-half MAX by N%
+      sampleIntervalMs: 600000, // 10 minutes
+      windowSize: 144, // 24h at 10min/sample
+      growthThresholdPercent: 30, // trigger if last-half MIN exceeds first-half MAX by N%
     },
   },
 
   // ─── Networking ──────────────────────────────────
 
   network: {
-    httpProxy:    '',
-    httpsProxy:   '',
-    socksProxy:   '',
-    noProxy:      [],
-    fetchTimeoutMs:  30000,
+    httpProxy: '',
+    httpsProxy: '',
+    socksProxy: '',
+    noProxy: [],
+    fetchTimeoutMs: 30000,
     extraCaCertPath: '',
     userAgent: 'EchoFox/1.0 (+https://github.com/Cosm1cBug/EchoFox)',
   },
@@ -162,45 +161,45 @@ module.exports = {
   // ─── Operations ──────────────────────────────────
 
   backup: {
-    enabled:     false,
-    schedule:    '0 3 * * *',
+    enabled: false,
+    schedule: '0 3 * * *',
     destination: '',
-    retain:      7,
-    include:     ['@session', 'store/runtime'],
+    retain: 7,
+    include: ['@session', 'store/runtime'],
     encryptionPassphrase: '',
   },
 
   privacy: {
-    storeMessageBodies:       true,
+    storeMessageBodies: true,
     messageBodyRetentionDays: 0,
-    blockUnknownSenders:      false,
-    forwardingDisabled:       false,
-    excludeFromStore:         [],
-    minimiseLogs:             false,
+    blockUnknownSenders: false,
+    forwardingDisabled: false,
+    excludeFromStore: [],
+    minimiseLogs: false,
   },
 
   // ─── per-command failure-rate alerts ──────────────────────────────────
   // v1.4.0: added rules.aiCostPct + rules.telegramFailureRate
   alerts: {
-    enabled:              true,
-    windowMinutes:        60,             // rolling window
-    minInvocations:       10,             // need at least N runs to alert
-    failureRateThreshold: 0.30,           // alert if ≥30% fail in window
-    notifyChannel:        '',             // empty = use channels.errLogs
+    enabled: true,
+    windowMinutes: 60, // rolling window
+    minInvocations: 10, // need at least N runs to alert
+    failureRateThreshold: 0.3, // alert if ≥30% fail in window
+    notifyChannel: '', // empty = use channels.errLogs
 
     // v1.4.0 — built-in rules. Set enabled: false on either to disable.
     rules: {
       // Alert when today's AI cost reaches 80% of config.ai.costCapPerDayUsd
       aiCostPct: {
-        enabled:         true,
-        threshold:       0.80,
+        enabled: true,
+        threshold: 0.8,
         cooldownMinutes: 60,
       },
       // Alert when Telegram send-failure rate over the alert window is high
       telegramFailureRate: {
-        enabled:         true,
-        threshold:       0.20,     // 20% failures
-        minSends:        10,       // need at least 10 sends to count
+        enabled: true,
+        threshold: 0.2, // 20% failures
+        minSends: 10, // need at least 10 sends to count
         cooldownMinutes: 30,
       },
     },
@@ -211,20 +210,20 @@ module.exports = {
   // and opt-in per chat. Disabled by default; enable with .ai on (user) or
   // by setting `enabled: true` here.
   ai: {
-    enabled:          false,
-    defaultProvider:  'openai',      // 'openai' | 'gemini' | 'anthropic' | 'local'
-    model:            'gpt-4o-mini',
-    maxTokens:        800,
-    costCapPerDayUsd: 5,             // global daily cap across all providers
+    enabled: false,
+    defaultProvider: 'openai', // 'openai' | 'gemini' | 'anthropic' | 'local'
+    model: 'gpt-4o-mini',
+    maxTokens: 800,
+    costCapPerDayUsd: 5, // global daily cap across all providers
 
-    persona:          'threat-intel', // 'threat-intel' | 'general' | 'custom'
-    customPersona:    '',            // used when persona === 'custom'
-    memoryTurns:      20,            // rolling window: 10 user + 10 assistant
+    persona: 'threat-intel', // 'threat-intel' | 'general' | 'custom'
+    customPersona: '', // used when persona === 'custom'
+    memoryTurns: 20, // rolling window: 10 user + 10 assistant
 
-    optInDefault:     'off',         // 'on' = all chats reply automatically
-    botNameRegex:     'echofox|bot|@assistant',
+    optInDefault: 'off', // 'on' = all chats reply automatically
+    botNameRegex: 'echofox|bot|@assistant',
 
-    typingWhileGenerating: true,     // show 'composing' presence while generating
+    typingWhileGenerating: true, // show 'composing' presence while generating
 
     enableToolCalling: true,
     toolWhitelist: [
@@ -243,13 +242,13 @@ module.exports = {
     ],
 
     rateLimitPerUserPerHour: 30,
-    rateLimitPerChatPerDay:  100,
+    rateLimitPerChatPerDay: 100,
 
     providers: {
-      openai:    { apiKey: process.env.OPENAI_API_KEY    || '', baseUrl: '' },
-      gemini:    { apiKey: process.env.GEMINI_API_KEY    || '', baseUrl: '' },
+      openai: { apiKey: process.env.OPENAI_API_KEY || '', baseUrl: '' },
+      gemini: { apiKey: process.env.GEMINI_API_KEY || '', baseUrl: '' },
       anthropic: { apiKey: process.env.ANTHROPIC_API_KEY || '', baseUrl: '' },
-      local:     { baseUrl: 'http://localhost:11434', model: 'llama3.2' },
+      local: { baseUrl: 'http://localhost:11434', model: 'llama3.2' },
     },
   },
 
@@ -265,36 +264,36 @@ module.exports = {
   //      Public channels can use '@channelname'; private groups use
   //      the numeric id like '-1001234567890'.
   telegram: {
-    enabled:   false,
-    botToken:  process.env.TELEGRAM_BOT_TOKEN || '',
+    enabled: false,
+    botToken: process.env.TELEGRAM_BOT_TOKEN || '',
 
     routing: {
-      syslogs:      '',   // e.g. '@echofox_sys'
-      botLogs:      '',   // e.g. '-1001234567890'
-      userLogs:     '',
+      syslogs: '', // e.g. '@echofox_sys'
+      botLogs: '', // e.g. '-1001234567890'
+      userLogs: '',
       groupUpdates: '',
-      callLogs:     '',
-      errLogs:      '',   // e.g. '@echofox_err'
-      movGroup:     '',
+      callLogs: '',
+      errLogs: '', // e.g. '@echofox_err'
+      movGroup: '',
     },
 
-    parseMode:     'HTML',   // 'HTML' | 'MarkdownV2' | 'plain'
-    batchMs:        2000,    // batch window; errors flush instantly
-    maxChunkChars:  3800,    // Telegram cap is 4096
+    parseMode: 'HTML', // 'HTML' | 'MarkdownV2' | 'plain'
+    batchMs: 2000, // batch window; errors flush instantly
+    maxChunkChars: 3800, // Telegram cap is 4096
   },
 
   // ─── Text-to-Speech provider ──────────────────────────────
   tts: {
-    provider:     'edge',                       // 'edge' | 'google' | 'piper' | 'coqui'
-    defaultLang:  'en',
-    defaultVoice: 'en-US-AriaNeural',           // see Edge voice list
-    maxChars:     8000,
+    provider: 'edge', // 'edge' | 'google' | 'piper' | 'coqui'
+    defaultLang: 'en',
+    defaultVoice: 'en-US-AriaNeural', // see Edge voice list
+    maxChars: 8000,
 
     edge: {
       outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
     },
 
-    google: {},  // no config required
+    google: {}, // no config required
 
     // Optional offline providers — require local binaries + models:
     // piper: { binPath: 'piper', modelPath: '~/.local/share/piper/en_US-amy-medium.onnx' },

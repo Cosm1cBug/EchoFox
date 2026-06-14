@@ -12,7 +12,7 @@
  *   async getGroupMetadata(jid)            → GroupMetadata | undefined
  *   async saveGroupMetadata(jid, meta)     → void
  *   async hasContact(jid)                  → boolean
- * 
+ *
  *   async recordParticipantEvent(group, participant, action, actor, ts?)
  *   async getParticipantHistory(group, limit=500) → [{participant, action, actor, ts}]
  *   async getCurrentParticipants(group)    → [{participant, last_action, last_ts}]
@@ -42,7 +42,7 @@
  *   async countGroups()                    → number
  *   async countUniqueUsers()               → number
  *   async listGroups()                     → [{jid, subject, participantCount}]
- * 
+ *
  *   async hasSentArticle(service, jid, articleUrl) → boolean
  *   async recordSentArticle(service, jid, articleUrl) → void
  *
@@ -53,10 +53,10 @@
  * metrics service and dashboard work without conditional checks.
  */
 
-const { makeSQLiteStore }   = require('./sqliteStore');
+const { makeSQLiteStore } = require('./sqliteStore');
 const { makePostgresStore } = require('./postgresStore');
-const { makeMongoStore }    = require('./mongoStore');
-const { makeRedisStore }    = require('./redisStore');
+const { makeMongoStore } = require('./mongoStore');
+const { makeRedisStore } = require('./redisStore');
 
 function createStore(config, logger, groupCache) {
   const type = (config.storeDB.type || 'SQLITE').toUpperCase();

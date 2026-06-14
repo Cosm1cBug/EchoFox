@@ -1,7 +1,7 @@
 name: ✨ Feature Request
 description: Suggest a new feature or improvement.
-title: "[feat] "
-labels: ["enhancement", "needs-triage"]
+title: '[feat] '
+labels: ['enhancement', 'needs-triage']
 body:
   - type: markdown
     attributes:
@@ -16,7 +16,7 @@ body:
     attributes:
       label: What problem does this solve?
       description: Describe the pain point or limitation in EchoFox today.
-      placeholder: "Currently I have no way to…"
+      placeholder: 'Currently I have no way to…'
     validations:
       required: true
 

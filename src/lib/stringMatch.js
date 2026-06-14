@@ -20,7 +20,10 @@ function compareTwoStrings(a, b) {
   for (let i = 0; i < b.length - 1; i++) {
     const g = b.substring(i, i + 2);
     const n = bigrams.get(g) || 0;
-    if (n > 0) { bigrams.set(g, n - 1); hits++; }
+    if (n > 0) {
+      bigrams.set(g, n - 1);
+      hits++;
+    }
   }
   return (2 * hits) / (a.length + b.length - 2);
 }

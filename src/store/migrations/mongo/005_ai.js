@@ -18,9 +18,9 @@ module.exports = {
   async up({ conn, logger }) {
     const indexes = [
       ['ai_conversations', { chat_jid: 1, ts: 1 }, {}],
-      ['ai_usage_daily',   { day: 1, provider: 1, model: 1 }, { unique: true }],
-      ['ai_chat_opt_in',   { chat_jid: 1 }, { unique: true }],
-      ['ai_rate_user',     { user_jid: 1, hour_bucket: 1 }, { unique: true }],
+      ['ai_usage_daily', { day: 1, provider: 1, model: 1 }, { unique: true }],
+      ['ai_chat_opt_in', { chat_jid: 1 }, { unique: true }],
+      ['ai_rate_user', { user_jid: 1, hour_bucket: 1 }, { unique: true }],
     ];
     for (const [coll, keys, opts] of indexes) {
       try {
@@ -33,7 +33,11 @@ module.exports = {
 
   async down({ conn }) {
     for (const coll of ['ai_conversations', 'ai_usage_daily', 'ai_chat_opt_in', 'ai_rate_user']) {
-      try { await conn.collection(coll).drop(); } catch (_) { /* ignore */ }
+      try {
+        await conn.collection(coll).drop();
+      } catch (_) {
+        /* ignore */
+      }
     }
   },
 };

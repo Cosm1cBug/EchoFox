@@ -29,13 +29,14 @@ docker compose --profile observability up -d
 
 This brings up:
 
-| Service     | Image                | Local URL                  |
-|---|---|---|
-| `echofox`     | `ghcr.io/cosm1cbug/echofox:latest` | `http://localhost:3000` |
-| `prometheus`  | `prom/prometheus:v2.55.1`          | `http://localhost:9090` |
-| `grafana`     | `grafana/grafana:11.3.0`           | `http://localhost:3001` |
+| Service      | Image                              | Local URL               |
+| ------------ | ---------------------------------- | ----------------------- |
+| `echofox`    | `ghcr.io/cosm1cbug/echofox:latest` | `http://localhost:3000` |
+| `prometheus` | `prom/prometheus:v2.55.1`          | `http://localhost:9090` |
+| `grafana`    | `grafana/grafana:11.3.0`           | `http://localhost:3001` |
 
 Grafana is pre-provisioned with:
+
 - Prometheus as the default data source
 - The **EchoFox Overview** dashboard (under "EchoFox" folder)
 
@@ -55,6 +56,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
 This:
+
 - Builds the image locally from your working tree
 - Bind-mounts `src/` so file edits hot-reload the command registry
 - Switches log level to `debug` with pretty formatting
@@ -95,7 +97,7 @@ automatically. Example:
 services:
   caddy:
     image: caddy:2-alpine
-    ports: ["443:443"]
+    ports: ['443:443']
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

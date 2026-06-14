@@ -27,10 +27,14 @@ module.exports = {
   async start(sock, m, { ctx, args }) {
     const target = (args[0] || '').toLowerCase().trim();
     if (!target) {
-      return ctx.reply('Usage: reply to a message with `.translate <lang>`\nExample: `.translate fr`');
+      return ctx.reply(
+        'Usage: reply to a message with `.translate <lang>`\nExample: `.translate fr`',
+      );
     }
     if (!iso6391.validate(target)) {
-      return ctx.reply(`Unknown language code *${target}*. Use ISO 639-1 (en, fr, de, hi, ml, ja, …).`);
+      return ctx.reply(
+        `Unknown language code *${target}*. Use ISO 639-1 (en, fr, de, hi, ml, ja, …).`,
+      );
     }
 
     const source = ctx.quoted?.text;
@@ -47,8 +51,8 @@ module.exports = {
 
       await ctx.reply(
         `🌐 *${srcName}* → *${tgtName}*\n\n` +
-        `_Original:_\n${source}\n\n` +
-        `_Translated:_\n${res.text}`,
+          `_Original:_\n${source}\n\n` +
+          `_Translated:_\n${res.text}`,
       );
     } catch (err) {
       throw new Error(`Translation failed: ${err.message}`);

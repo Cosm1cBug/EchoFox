@@ -20,7 +20,7 @@ const NodeCache = require('node-cache');
 //    Baileys consults `cachedGroupMetadata` before every group message.
 const groupMetadataCache = new LRUCache({
   max: 5_000,
-  ttl: 1000 * 60 * 60,     // 1 h
+  ttl: 1000 * 60 * 60, // 1 h
   updateAgeOnGet: true,
 });
 
@@ -28,17 +28,17 @@ const groupMetadataCache = new LRUCache({
 const msgRetryCounterCache = new NodeCache({ stdTTL: 60, useClones: false });
 
 // ─── Call offer + placeholder resend caches (recommended in 7.x) ─────────
-const callOfferCache       = new NodeCache({ stdTTL: 60 * 5,  useClones: false });
+const callOfferCache = new NodeCache({ stdTTL: 60 * 5, useClones: false });
 const placeholderResendCache = new NodeCache({ stdTTL: 60 * 60, useClones: false });
 
 // ─── User devices cache (Baileys recomputes device list otherwise) ───────
-const userDevicesCache     = new NodeCache({ stdTTL: 60 * 5,  useClones: false });
+const userDevicesCache = new NodeCache({ stdTTL: 60 * 5, useClones: false });
 
 // ─── Media cache – prevents re-uploading same buffers (stickers, etc.) ──
-const mediaCache           = new NodeCache({ stdTTL: 60 * 30, useClones: false });
+const mediaCache = new NodeCache({ stdTTL: 60 * 30, useClones: false });
 
 // --- profile picture URLs — 1h TTL, avoids repeated sock.profilePictureUrl() calls
-const profilePicCache      = new NodeCache({ stdTTL: 60 * 60, useClones: false });
+const profilePicCache = new NodeCache({ stdTTL: 60 * 60, useClones: false });
 
 // ─── App-level command/argument parse cache (cheap micro-opt) ────────────
 const parseCache = new LRUCache({ max: 500, ttl: 1000 * 30 });

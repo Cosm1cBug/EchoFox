@@ -36,6 +36,7 @@ dashboard: {
 ## Tabs
 
 ### Overview
+
 - Top commands by invocation count
 - Message volume trend
 - Recent activity feed
@@ -43,24 +44,29 @@ dashboard: {
 - Auto-refreshes every 15 seconds
 
 ### Groups
+
 - All groups the bot is in
 - Click a group → participant list, event history, deleted-message
   count, group metadata
 
 ### Metrics
+
 - Raw counters + gauges dump (Prometheus-compatible naming)
 - Useful when wiring up external monitoring
 
 ### Diagnostics
+
 - Per-subsystem health check (Baileys, store, commands, auth, host)
 - Latency per check
 - Overall: ✅ OK / ❌ DEGRADED
 
 ### Alerts
+
 - Active command-failure alerts from the alert engine
 - Failure rate, invocation count, since-when
 
 ### Subscriptions (v0.4.7+)
+
 - Per-service tables (🛡️ AlienVault, 📰 The Hacker News, 📡 RSS, 🐙 GitHub, 🦠 VT-Watch)
 - Subscriber JID, topic-filter chips, last-delivery timestamp
 - Refreshes every 15 s
@@ -68,6 +74,7 @@ dashboard: {
 ## Header (v1.0.0+)
 
 The new header has a live **HealthPill** with:
+
 - Green/red status dot tied to `/api/health`
 - Uptime (`up · 2d 4h`)
 - Version + backend tag (`v1.0.0 · SQLITE/MULTIFILE`)
@@ -100,22 +107,22 @@ server on `:3001` automatically (configured in `vite.config.ts`).
 
 All routes live under `/api/*` and require the same basic auth.
 
-| Route | Returns |
-|---|---|
-| GET `/api/health` | uptime, version, backend list |
-| GET `/api/stats` | full metrics snapshot (counters + gauges) |
-| GET `/api/groups` | list of groups |
-| GET `/api/groups/:jid` | full group metadata |
-| GET `/api/groups/:jid/participants` | current participants |
-| GET `/api/groups/:jid/participants/history?limit=200` | event history |
-| GET `/api/messages/:jid/:id/edits` | message edit history |
-| GET `/api/messages/:jid/:id/reactions` | reaction history |
-| GET `/api/messages/:jid/:id/receipts` | delivery receipts |
-| GET `/api/groups/:jid/deleted` | deleted-message log |
-| GET `/api/diagnostics` | health-check report |
-| GET `/api/alerts` | active alerts |
-| GET `/api/alerts/:cmd` | failure rate for one command |
-| GET `/api/subscriptions` | per-service subscribers + meta |
+| Route                                                 | Returns                                   |
+| ----------------------------------------------------- | ----------------------------------------- |
+| GET `/api/health`                                     | uptime, version, backend list             |
+| GET `/api/stats`                                      | full metrics snapshot (counters + gauges) |
+| GET `/api/groups`                                     | list of groups                            |
+| GET `/api/groups/:jid`                                | full group metadata                       |
+| GET `/api/groups/:jid/participants`                   | current participants                      |
+| GET `/api/groups/:jid/participants/history?limit=200` | event history                             |
+| GET `/api/messages/:jid/:id/edits`                    | message edit history                      |
+| GET `/api/messages/:jid/:id/reactions`                | reaction history                          |
+| GET `/api/messages/:jid/:id/receipts`                 | delivery receipts                         |
+| GET `/api/groups/:jid/deleted`                        | deleted-message log                       |
+| GET `/api/diagnostics`                                | health-check report                       |
+| GET `/api/alerts`                                     | active alerts                             |
+| GET `/api/alerts/:cmd`                                | failure rate for one command              |
+| GET `/api/subscriptions`                              | per-service subscribers + meta            |
 
 All routes return JSON. Errors return `{ error, message }` with the
 appropriate HTTP status.

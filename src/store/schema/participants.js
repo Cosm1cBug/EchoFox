@@ -37,15 +37,15 @@
  */
 
 const ACTIONS = Object.freeze({
-  ADD:      'add',
-  JOIN:     'join',
-  LEAVE:    'leave',
-  KICK:     'kick',
-  PROMOTE:  'promote',
-  DEMOTE:   'demote',
-  REQUEST:  'request',
-  APPROVE:  'approve',
-  REJECT:   'reject',
+  ADD: 'add',
+  JOIN: 'join',
+  LEAVE: 'leave',
+  KICK: 'kick',
+  PROMOTE: 'promote',
+  DEMOTE: 'demote',
+  REQUEST: 'request',
+  APPROVE: 'approve',
+  REJECT: 'reject',
 });
 
 const VALID_ACTIONS = new Set(Object.values(ACTIONS));
@@ -60,14 +60,21 @@ function classifyAction(rawAction, actor, participant) {
   switch (rawAction) {
     case 'remove':
       // Baileys doesn't tell us "left" vs "kicked"; we derive it.
-      return (actor && actor === participant) ? ACTIONS.LEAVE : ACTIONS.KICK;
-    case 'add':       return ACTIONS.ADD;
-    case 'promote':   return ACTIONS.PROMOTE;
-    case 'demote':    return ACTIONS.DEMOTE;
-    case 'approve':   return ACTIONS.APPROVE;
-    case 'reject':    return ACTIONS.REJECT;
-    case 'request':   return ACTIONS.REQUEST;
-    default:          return rawAction;  // unknown — record raw
+      return actor && actor === participant ? ACTIONS.LEAVE : ACTIONS.KICK;
+    case 'add':
+      return ACTIONS.ADD;
+    case 'promote':
+      return ACTIONS.PROMOTE;
+    case 'demote':
+      return ACTIONS.DEMOTE;
+    case 'approve':
+      return ACTIONS.APPROVE;
+    case 'reject':
+      return ACTIONS.REJECT;
+    case 'request':
+      return ACTIONS.REQUEST;
+    default:
+      return rawAction; // unknown — record raw
   }
 }
 

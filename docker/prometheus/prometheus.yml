@@ -1,5 +1,5 @@
 global:
-  scrape_interval:     15s
+  scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
     cluster: echofox-local
@@ -15,12 +15,12 @@ scrape_configs:
         labels:
           service: echofox
           job_part: supervisor
-          env:     production
+          env: production
       - targets: ['echofox:3001']
         labels:
           service: echofox
           job_part: dashboard
-          env:     production
+          env: production
 
   - job_name: prometheus
     static_configs:

@@ -6,6 +6,7 @@ when every box is checked.
 ## Pre-release validation
 
 ### Code health
+
 - [ ] `npm run lint` — 0 errors
 - [ ] `npm run headers:check` — all source files have AGPL headers
 - [ ] All 4 test suites green: `npm test`
@@ -16,6 +17,7 @@ when every box is checked.
 - [ ] Manual smoke: bot boots cleanly with empty `config.js` (uses example defaults)
 
 ### Dashboard
+
 - [ ] `npm run build:dashboard` completes
 - [ ] TypeScript: `cd dashboard && npm run typecheck` — 0 errors (or only acceptable pre-existing ones)
 - [ ] Visit `http://localhost:3001/dashboard/` — all 6 tabs load without console errors
@@ -23,6 +25,7 @@ when every box is checked.
 - [ ] Subscriptions tab shows real data for at least 1 service
 
 ### Subscriptions (smoke test in a real WhatsApp DM)
+
 - [ ] `.alienvault on` → `.alienvault -status` → `.alienvault off`
 - [ ] `.thehackersnews on malware` → status reflects topics → `off`
 - [ ] `.rss add https://hnrss.org/frontpage` → `.rss list` → `.rss remove`
@@ -30,17 +33,20 @@ when every box is checked.
 - [ ] `.vtwatch add hash:44d88612fea8a8f36de82e1278abb02f` → `.vtwatch list`
 
 ### Soak (release candidates only)
+
 - [ ] Short synthetic soak passes: `node scripts/soak.js --durationMin=60 --rate=10` → verdict **PASSED**
 - [ ] Long real-world soak ≥48h on a deployed instance, leak detector did NOT trigger
 - [ ] Heap diff between bootup snapshot and 24h-later snapshot shows < 50 MB total growth
 
 ### Backend coverage (run at least one)
+
 - [ ] SQLite: clean boot, all subscriptions work, migrations apply
 - [ ] Postgres: same (if you maintain a pg deployment)
 - [ ] Mongo: same (optional)
 - [ ] Redis: same (optional)
 
 ### Storage migrations
+
 - [ ] Run `npm run migrate` against a fresh DB — applies cleanly
 - [ ] Re-run — reports "all up to date" with no new applications
 - [ ] Tested against a DB that's at v=N-1 — picks up only the new migration

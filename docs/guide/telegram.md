@@ -1,4 +1,4 @@
-# Telegram log bridge 
+# Telegram log bridge
 
 EchoFox can mirror its WhatsApp log channels to Telegram. The bridge is
 **outbound-only** — the bot never polls Telegram and ignores any
@@ -49,23 +49,23 @@ messages sent to it on the Telegram side.
 
 The 7 supported keys match `config.channels.*`:
 
-| Key | Typical use |
-|---|---|
-| `syslogs` | startup / shutdown / reconnect / heartbeat |
-| `botLogs` | message edit / delete / reaction notifications |
-| `userLogs` | user-action audit trail |
-| `groupUpdates` | participant / metadata changes |
-| `callLogs` | incoming-call notifications |
-| `errLogs` | command crashes + alertEngine alerts (default for both) |
-| `movGroup` | bot-was-removed-from-group notifications |
+| Key            | Typical use                                             |
+| -------------- | ------------------------------------------------------- |
+| `syslogs`      | startup / shutdown / reconnect / heartbeat              |
+| `botLogs`      | message edit / delete / reaction notifications          |
+| `userLogs`     | user-action audit trail                                 |
+| `groupUpdates` | participant / metadata changes                          |
+| `callLogs`     | incoming-call notifications                             |
+| `errLogs`      | command crashes + alertEngine alerts (default for both) |
+| `movGroup`     | bot-was-removed-from-group notifications                |
 
 ## What's mirrored today
 
-| Source | Channel | Level |
-|---|---|---|
-| Command crash stack-traces (`commandRunner.js`) | `errLogs` | `error` |
+| Source                                                       | Channel   | Level   |
+| ------------------------------------------------------------ | --------- | ------- |
+| Command crash stack-traces (`commandRunner.js`)              | `errLogs` | `error` |
 | Alert engine — alert triggered (incl. v1.4.0 built-in rules) | `errLogs` | `error` |
-| Alert engine — alert cleared | `errLogs` | `info` |
+| Alert engine — alert cleared                                 | `errLogs` | `info`  |
 
 More producers will be tapped in future minor releases.
 

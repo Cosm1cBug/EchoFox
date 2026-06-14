@@ -34,29 +34,32 @@
  */
 
 const path = require('node:path');
-const fs   = require('node:fs');
+const fs = require('node:fs');
 
-const logger        = require('./logger');
-const { config }    = require('../lib/configLoader');
+const logger = require('./logger');
+const { config } = require('../lib/configLoader');
 const { useRedisAuth, useSqliteAuth, usePostgresAuth } = require('./auth');
 const { createStore } = require('../store/db');
 const { setStore } = require('../store/instance');
 const { runMigrations } = require('../lib/migrationsRunner');
-const metrics       = require('../services/metrics');
-const caches        = require('./caches');
+const metrics = require('../services/metrics');
+const caches = require('./caches');
 
 const log = logger.child({ mod: 'lifecycle' });
 
 // ─── Phase 1 + 2: logger + config ────────────────────────────────────────
 function logBoot() {
-  log.info({
-    phase: 'config',
-    status: 'ok',
-    source: config.__meta?.source || 'unknown',
-    bot: config.bot.name,
-    nodeEnv: process.env.NODE_ENV || 'development',
-    logLevel: config.runtime.logLevel,
-  }, '⚙ config loaded');
+  log.info(
+    {
+      phase: 'config',
+      status: 'ok',
+      source: config.__meta?.source || 'unknown',
+      bot: config.bot.name,
+      nodeEnv: process.env.NODE_ENV || 'development',
+      logLevel: config.runtime.logLevel,
+    },
+    '⚙ config loaded',
+  );
 }
 
 // ─── Phase 3: auth backend selector ──────────────────────────────────────
@@ -86,7 +89,7 @@ async function selectAuth() {
 
     // MULTIFILE (default)
     const { useMultiFileAuthState } = require('@whiskeysockets/baileys');
-    
+
     const sessionDir = path.join(__dirname, '..', config.bot.sessionName);
 
     if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
@@ -104,10 +107,10 @@ async function selectAuth() {
 
 // Mapping from storeDB.type to migrationsRunner backend key (dir name)
 const MIGRATIONS_BACKEND = {
-  SQLITE:   'sqlite',
+  SQLITE: 'sqlite',
   POSTGRES: 'postgres',
-  MONGODB:  'mongo',
-  REDIS:    'redis',
+  MONGODB: 'mongo',
+  REDIS: 'redis',
 };
 
 // ─── Phase 4: store backend selector ────────────────────────────────────
@@ -127,38 +130,58 @@ async function selectStore() {
   if (config.storeDB.runMigrationsOnBoot !== false) {
     const mBackend = MIGRATIONS_BACKEND[type];
     if (!mBackend) {
-      log.warn({ phase: 'migrations', backend: type },
-        'no migrations adapter for this backend — skipping');
+      log.warn(
+        { phase: 'migrations', backend: type },
+        'no migrations adapter for this backend — skipping',
+      );
     } else {
       // Build adapter-specific ctx from the freshly-constructed store.
-      const ctx = (
-        mBackend === 'sqlite'   ? { db:     store.db } :
-        mBackend === 'postgres' ? { pool:   store.pool } :
-        mBackend === 'mongo'    ? { conn:   store.conn } :
-        mBackend === 'redis'    ? { client: store.client } :
-        null
-      );
+      const ctx =
+        mBackend === 'sqlite'
+          ? { db: store.db }
+          : mBackend === 'postgres'
+            ? { pool: store.pool }
+            : mBackend === 'mongo'
+              ? { conn: store.conn }
+              : mBackend === 'redis'
+                ? { client: store.client }
+                : null;
       if (!ctx || Object.values(ctx).some((v) => v == null)) {
-        log.fatal({ phase: 'migrations', backend: type, ctx: Object.keys(ctx || {}) },
-          'store did not expose the primitive needed for migrations (db/pool/conn/client)');
+        log.fatal(
+          { phase: 'migrations', backend: type, ctx: Object.keys(ctx || {}) },
+          'store did not expose the primitive needed for migrations (db/pool/conn/client)',
+        );
         throw new Error(`migrations: ${type} store did not expose its DB primitive`);
       }
       try {
         const result = await runMigrations(mBackend, ctx);
-        log.info({ phase: 'migrations', backend: mBackend, applied: result.applied.length, skipped: result.skipped },
-          'migrations complete');
+        log.info(
+          {
+            phase: 'migrations',
+            backend: mBackend,
+            applied: result.applied.length,
+            skipped: result.skipped,
+          },
+          'migrations complete',
+        );
       } catch (err) {
-        log.fatal({ phase: 'migrations', backend: mBackend, err },
-          'migrations failed — aborting boot');
+        log.fatal(
+          { phase: 'migrations', backend: mBackend, err },
+          'migrations failed — aborting boot',
+        );
         // Close the half-bootstrapped store before re-throwing to avoid
         // leaking handles to the supervisor's restart loop.
-        try { await store.close?.(); } catch {}
+        try {
+          await store.close?.();
+        } catch {}
         throw err;
       }
     }
   } else {
-    log.info({ phase: 'migrations', backend: type },
-      'storeDB.runMigrationsOnBoot is false — skipping (use `npm run migrate` for manual runs)');
+    log.info(
+      { phase: 'migrations', backend: type },
+      'storeDB.runMigrationsOnBoot is false — skipping (use `npm run migrate` for manual runs)',
+    );
   }
 
   setStore(store);
@@ -192,8 +215,10 @@ async function startLoginFlow(sock) {
       throw new Error('login.type=PAIRING requires login.phoneNumber (digits only)');
     }
     if (sock.authState.creds.registered) {
-      log.info({ phase: 'login', status: 'ok', flow: 'PAIRING' },
-        '🆔 already paired — skipping pairing-code request');
+      log.info(
+        { phase: 'login', status: 'ok', flow: 'PAIRING' },
+        '🆔 already paired — skipping pairing-code request',
+      );
       return;
     }
     // Wait a beat so socket can finish its noise handshake init.
@@ -202,16 +227,18 @@ async function startLoginFlow(sock) {
         const code = await sock.requestPairingCode(config.login.phoneNumber);
         console.log(
           `\n\n──────────────────────────────────\n` +
-          `  PAIRING CODE: ${code}\n` +
-          `──────────────────────────────────\n` +
-          `  WhatsApp → Linked devices →\n` +
-          `  Link with phone number instead\n` +
-          `──────────────────────────────────\n\n`,
+            `  PAIRING CODE: ${code}\n` +
+            `──────────────────────────────────\n` +
+            `  WhatsApp → Linked devices →\n` +
+            `  Link with phone number instead\n` +
+            `──────────────────────────────────\n\n`,
         );
         log.info({ phase: 'login', status: 'ok', flow: 'PAIRING' }, '🆔 pairing code issued');
       } catch (err) {
-        log.error({ phase: 'login', status: 'error', flow: 'PAIRING', err },
-          '🆔 requestPairingCode failed');
+        log.error(
+          { phase: 'login', status: 'error', flow: 'PAIRING', err },
+          '🆔 requestPairingCode failed',
+        );
       }
     }, 3000);
   }
@@ -223,12 +250,16 @@ async function fetchVersion() {
   try {
     const { fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
     const r = await fetchLatestBaileysVersion();
-    log.info({ phase: 'version', status: 'ok', version: r.version.join('.'), latest: r.isLatest },
-      '📡 WA version');
+    log.info(
+      { phase: 'version', status: 'ok', version: r.version.join('.'), latest: r.isLatest },
+      '📡 WA version',
+    );
     return r.version;
   } catch (e) {
-    log.warn({ phase: 'version', status: 'fallback', err: e },
-      '📡 fetchLatestBaileysVersion failed — using bundled');
+    log.warn(
+      { phase: 'version', status: 'fallback', err: e },
+      '📡 fetchLatestBaileysVersion failed — using bundled',
+    );
     return undefined;
   }
 }

@@ -38,7 +38,7 @@
  */
 
 const { config } = require('./configLoader');
-const logger     = require('../core/logger').child({ mod: 'diagnostics' });
+const logger = require('../core/logger').child({ mod: 'diagnostics' });
 const CHECK_TIMEOUT_MS = 2000;
 
 function withTimeout(p, ms) {
@@ -76,21 +76,21 @@ async function runDiagnostics(ctx = {}, opts = {}) {
     loadedAt: config.__meta?.loadedAt,
     botName: config.bot.name,
     storeBackend: config.storeDB.type,
-    authBackend:  config.auth.method,
-    loginType:    config.login.type,
+    authBackend: config.auth.method,
+    loginType: config.login.type,
   }));
 
   // ─── host (instant) ────────────────────────────────────────────────
   checks.host = await timedCheck('host', () => {
     const mem = process.memoryUsage();
     return {
-      uptimeSec:        Math.floor(process.uptime()),
-      rssBytes:         mem.rss,
-      heapUsedBytes:    mem.heapUsed,
-      heapTotalBytes:   mem.heapTotal,
-      heapPercent:      Math.round((mem.heapUsed / mem.heapTotal) * 100),
-      pid:              process.pid,
-      nodeVersion:      process.version,
+      uptimeSec: Math.floor(process.uptime()),
+      rssBytes: mem.rss,
+      heapUsedBytes: mem.heapUsed,
+      heapTotalBytes: mem.heapTotal,
+      heapPercent: Math.round((mem.heapUsed / mem.heapTotal) * 100),
+      pid: process.pid,
+      nodeVersion: process.version,
     };
   });
 
@@ -100,10 +100,10 @@ async function runDiagnostics(ctx = {}, opts = {}) {
     if (!sock.user) throw new Error('socket exists but no user (not yet connected)');
     return {
       connected: true,
-      userJid:   sock.user.id,
-      pushName:  sock.user.name || '(none)',
-      sendQueueDepth: typeof sock.sendMessage?.queueSize === 'function'
-        ? sock.sendMessage.queueSize() : null,
+      userJid: sock.user.id,
+      pushName: sock.user.name || '(none)',
+      sendQueueDepth:
+        typeof sock.sendMessage?.queueSize === 'function' ? sock.sendMessage.queueSize() : null,
     };
   });
 
@@ -130,12 +130,12 @@ async function runDiagnostics(ctx = {}, opts = {}) {
       const echoed = all && all[probeKey] === ts;
       const counters = await store.getStats?.();
       const counterCount = counters ? Object.keys(counters).length : 0;
-      const gaugeCount   = all     ? Object.keys(all).length      : 0;
+      const gaugeCount = all ? Object.keys(all).length : 0;
       return {
-        backend:      config.storeDB.type,
-        roundTrip:    echoed ? 'ok' : 'wrote but read-back mismatched',
-        counters:     counterCount,
-        gauges:       gaugeCount,
+        backend: config.storeDB.type,
+        roundTrip: echoed ? 'ok' : 'wrote but read-back mismatched',
+        counters: counterCount,
+        gauges: gaugeCount,
       };
     });
   }
@@ -144,10 +144,10 @@ async function runDiagnostics(ctx = {}, opts = {}) {
   checks.commands = await timedCheck('commands', () => {
     if (!commands) throw new Error('no commands registry');
     return {
-      loaded:     commands.commands?.size  || 0,
-      aliases:    commands.aliases?.size   || 0,
+      loaded: commands.commands?.size || 0,
+      aliases: commands.aliases?.size || 0,
       categories: commands.categories?.size || 0,
-      skipped:    Array.isArray(commands.skipped) ? commands.skipped.length : 0,
+      skipped: Array.isArray(commands.skipped) ? commands.skipped.length : 0,
     };
   });
 
@@ -155,14 +155,26 @@ async function runDiagnostics(ctx = {}, opts = {}) {
   checks.caches = await timedCheck('caches', () => {
     if (!caches) return { configured: false };
     const out = {};
-    for (const name of ['groupMetadataCache','msgRetryCounterCache','callOfferCache',
-                        'placeholderResendCache','userDevicesCache','mediaCache',
-                        'parseCache','profilePicCache']) {
+    for (const name of [
+      'groupMetadataCache',
+      'msgRetryCounterCache',
+      'callOfferCache',
+      'placeholderResendCache',
+      'userDevicesCache',
+      'mediaCache',
+      'parseCache',
+      'profilePicCache',
+    ]) {
       const c = caches[name];
       if (!c) continue;
-      out[name] = typeof c.size === 'number' ? c.size :
-                  typeof c.size === 'function' ? c.size() :
-                  typeof c.getStats === 'function' ? c.getStats() : 'unknown';
+      out[name] =
+        typeof c.size === 'number'
+          ? c.size
+          : typeof c.size === 'function'
+            ? c.size()
+            : typeof c.getStats === 'function'
+              ? c.getStats()
+              : 'unknown';
     }
     return out;
   });
@@ -173,27 +185,35 @@ async function runDiagnostics(ctx = {}, opts = {}) {
     const snap = await m.snapshot();
     return {
       countersTracked: Object.keys(snap.counters || {}).length,
-      gaugesTracked:   Object.keys(snap.gauges   || {}).length,
-      uptimeSec:       snap.gauges?.bot_uptime_seconds || 0,
+      gaugesTracked: Object.keys(snap.gauges || {}).length,
+      uptimeSec: snap.gauges?.bot_uptime_seconds || 0,
     };
   });
 
   // ─── network ──────────────────────────────────────────────────────
   checks.network = await timedCheck('network', () => {
     let wsAgent = null;
-    try { wsAgent = require('./network').getWsAgent(); } catch {}
+    try {
+      wsAgent = require('./network').getWsAgent();
+    } catch {}
     return {
-      proxyConfigured: !!(config.network?.httpsProxy || config.network?.httpProxy || config.network?.socksProxy),
-      extraCAs:        !!config.network?.extraCaCertPath,
-      wsAgent:         wsAgent ? 'set' : 'default',
-      userAgent:       config.network?.userAgent || '',
+      proxyConfigured: !!(
+        config.network?.httpsProxy ||
+        config.network?.httpProxy ||
+        config.network?.socksProxy
+      ),
+      extraCAs: !!config.network?.extraCaCertPath,
+      wsAgent: wsAgent ? 'set' : 'default',
+      userAgent: config.network?.userAgent || '',
     };
   });
 
   // ─── alerts engine ────────────────────────────────────────────────
   checks.alerts = await timedCheck('alerts', () => {
     let engine = null;
-    try { engine = require('../services/alertEngine'); } catch {}
+    try {
+      engine = require('../services/alertEngine');
+    } catch {}
     if (!engine || typeof engine.getActiveAlerts !== 'function') {
       return { initialized: false };
     }
@@ -218,7 +238,9 @@ function bindRuntimeContext(ctx) {
   _ctx = ctx;
   logger.info('diagnostics runtime context bound');
 }
-function getRuntimeContext() { return _ctx; }
+function getRuntimeContext() {
+  return _ctx;
+}
 
 module.exports = {
   runDiagnostics,

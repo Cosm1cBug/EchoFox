@@ -18,3 +18,4 @@ v1.0.0.
 git pull
 npm run build:dashboard
 npm start
+```

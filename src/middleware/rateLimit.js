@@ -21,7 +21,10 @@ function makeRateLimiter({ capacity = 10, refillPerSec = 1, ttlMs = 60_000 } = {
     tryConsume(key, cost = 1) {
       const now = Date.now();
       let b = buckets.get(key);
-      if (!b) { b = { tokens: capacity, ts: now }; buckets.set(key, b); }
+      if (!b) {
+        b = { tokens: capacity, ts: now };
+        buckets.set(key, b);
+      }
 
       const elapsedS = (now - b.ts) / 1000;
       b.tokens = Math.min(capacity, b.tokens + elapsedS * refillPerSec);
@@ -31,7 +34,9 @@ function makeRateLimiter({ capacity = 10, refillPerSec = 1, ttlMs = 60_000 } = {
       b.tokens -= cost;
       return true;
     },
-    reset(key) { buckets.delete(key); },
+    reset(key) {
+      buckets.delete(key);
+    },
     size: () => buckets.size,
   };
 }

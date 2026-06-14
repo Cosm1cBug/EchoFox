@@ -24,7 +24,7 @@ so any non-command text in an opted-in chat becomes a reply.
   or just mention the bot by name (regex configurable).
 - **Loose rate limits** — 30 generations / user / hour, 100 / chat /
   day, plus a global `\$5/day` cost cap (live-editable from `$ai-admin
-  limit set`).
+limit set`).
 - **Composing presence** while generating (no streamed edits — one
   final clean reply).
 - **New dashboard tab "AI"** — config card, today-vs-cap progress bar,
@@ -53,40 +53,41 @@ hey echofox, what's the latest on log4j
 ```
 
 The bot will reply by chaining `github_advisories` + `latest_hackernews`
-+ `wiki_lookup` if needed, citing sources, all under your daily cap.
+
+- `wiki_lookup` if needed, citing sources, all under your daily cap.
 
 ## Commands at a glance
 
 User (`.` prefix):
 
-| Command | Effect |
-|---|---|
-| `.ai`, `.ai status` | Show status (incl. today's spend vs cap) |
-| `.ai on` / `.ai off` | Per-chat opt-in toggle |
-| `.ai clear` | Forget conversation memory for this chat |
-| `.ai persona <p>` | `threat-intel` \| `general` \| `custom` |
-| `.ai provider <p>` | `openai` \| `gemini` \| `anthropic` \| `local` |
-| `.ai model <name>` | Override the default model |
+| Command              | Effect                                         |
+| -------------------- | ---------------------------------------------- |
+| `.ai`, `.ai status`  | Show status (incl. today's spend vs cap)       |
+| `.ai on` / `.ai off` | Per-chat opt-in toggle                         |
+| `.ai clear`          | Forget conversation memory for this chat       |
+| `.ai persona <p>`    | `threat-intel` \| `general` \| `custom`        |
+| `.ai provider <p>`   | `openai` \| `gemini` \| `anthropic` \| `local` |
+| `.ai model <name>`   | Override the default model                     |
 
 Admin (`$` prefix; command name `ai-admin`, alias `aiadmin`):
 
-| Command | Effect |
-|---|---|
-| `$ai-admin stats [days]` | Daily token + cost summary (default 7) |
-| `$ai-admin chats` | List opted-in chats |
-| `$ai-admin limit get` | Show cap + today's spend |
-| `$ai-admin limit set <usd>` | Live-override cap (until restart) |
-| `$ai-admin enable` / `disable` | Flip `config.ai.enabled` |
+| Command                        | Effect                                 |
+| ------------------------------ | -------------------------------------- |
+| `$ai-admin stats [days]`       | Daily token + cost summary (default 7) |
+| `$ai-admin chats`              | List opted-in chats                    |
+| `$ai-admin limit get`          | Show cap + today's spend               |
+| `$ai-admin limit set <usd>`    | Live-override cap (until restart)      |
+| `$ai-admin enable` / `disable` | Flip `config.ai.enabled`               |
 
 ## What's persisted
 
 Three new tables/collections (per store flavour):
 
-- `ai_conversations`  — append-only turn log (user / assistant /
+- `ai_conversations` — append-only turn log (user / assistant /
   tool), with model + token attribution, indexed by chat + ts.
-- `ai_usage_daily`    — `(day, provider, model)` keyed rollup of
+- `ai_usage_daily` — `(day, provider, model)` keyed rollup of
   prompt tokens, completion tokens, USD cost, and call count.
-- `ai_chat_opt_in`    — per-chat enabled flag + overrides
+- `ai_chat_opt_in` — per-chat enabled flag + overrides
   (persona / provider / model), updated_at.
 
 Migration 005 is **additive and idempotent** for every store flavour.
@@ -95,15 +96,15 @@ Migration 005 is **additive and idempotent** for every store flavour.
 
 Built into `src/services/ai/costTracker.js`. Sample:
 
-| Model | Prompt | Completion |
-|---|---|---|
-| `gpt-4o-mini` | $0.15 | $0.60 |
-| `gpt-4o` | $2.50 | $10.00 |
-| `gemini-2.0-flash` | $0.10 | $0.40 |
-| `claude-3-5-haiku-latest` | $0.80 | $4.00 |
-| `claude-3-5-sonnet-latest` | $3.00 | $15.00 |
-| **Local (Ollama)** | **$0** | **$0** |
-| _unknown model_ | falls back to `gpt-4o-mini` rates |
+| Model                      | Prompt                            | Completion |
+| -------------------------- | --------------------------------- | ---------- |
+| `gpt-4o-mini`              | $0.15                             | $0.60      |
+| `gpt-4o`                   | $2.50                             | $10.00     |
+| `gemini-2.0-flash`         | $0.10                             | $0.40      |
+| `claude-3-5-haiku-latest`  | $0.80                             | $4.00      |
+| `claude-3-5-sonnet-latest` | $3.00                             | $15.00     |
+| **Local (Ollama)**         | **$0**                            | **$0**     |
+| _unknown model_            | falls back to `gpt-4o-mini` rates |
 
 A typical `.ai status` in a chat that has used `gpt-4o-mini` once
 with one tool round costs about **$0.00007** (320 prompt + 40

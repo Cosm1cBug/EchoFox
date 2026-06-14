@@ -18,11 +18,11 @@ const { PassThrough, Readable } = require('node:stream');
 
 function webpBufferToPng(buf) {
   return new Promise((resolve, reject) => {
-    const inStream  = Readable.from(buf);
+    const inStream = Readable.from(buf);
     const outStream = new PassThrough();
-    const chunks    = [];
+    const chunks = [];
     outStream.on('data', (c) => chunks.push(c));
-    outStream.on('end',  () => resolve(Buffer.concat(chunks)));
+    outStream.on('end', () => resolve(Buffer.concat(chunks)));
     outStream.on('error', reject);
 
     ffmpeg(inStream)
@@ -59,7 +59,9 @@ module.exports = {
     // v0.4.5: cap source size — ffmpeg conversion is memory-intensive
     const MAX_BYTES = 4 * 1024 * 1024;
     if (webpBuf.length > MAX_BYTES) {
-      return ctx.reply(`🚫 Sticker too large (${(webpBuf.length/1e6).toFixed(1)}MB). Max is 4MB.`);
+      return ctx.reply(
+        `🚫 Sticker too large (${(webpBuf.length / 1e6).toFixed(1)}MB). Max is 4MB.`,
+      );
     }
 
     let pngBuf;
@@ -70,10 +72,14 @@ module.exports = {
       throw new Error(`Conversion failed (ffmpeg installed?): ${err.message}`);
     }
 
-    await sock.sendMessage(ctx.from, {
-      image: pngBuf,
-      mimetype: 'image/png',
-      caption: '✅ Converted to image',
-    }, { quoted: m });
+    await sock.sendMessage(
+      ctx.from,
+      {
+        image: pngBuf,
+        mimetype: 'image/png',
+        caption: '✅ Converted to image',
+      },
+      { quoted: m },
+    );
   },
 };

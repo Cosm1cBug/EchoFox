@@ -84,6 +84,7 @@ WantedBy=default.target
 ```
 
 Then:
+
 ```bash
 systemctl --user daemon-reload
 systemctl --user start echofox.service
@@ -93,13 +94,13 @@ systemctl --user start echofox.service
 
 ## Gotchas vs Docker
 
-| Gotcha | Fix |
-|---|---|
-| `Permission denied` on bind-mounts | Add `:Z` (SELinux) or `:z` (shared) |
-| UID inside container doesn't match host | Add `--userns=keep-id` |
-| Container can't reach host services | Use `host.containers.internal` (not `host.docker.internal`) |
-| `podman compose` ignores `depends_on.condition` | Upgrade to Podman 5+ or rewrite with healthcheck loops |
-| `podman` doesn't auto-start at boot | Use `systemd --user` units + `loginctl enable-linger` |
+| Gotcha                                          | Fix                                                         |
+| ----------------------------------------------- | ----------------------------------------------------------- |
+| `Permission denied` on bind-mounts              | Add `:Z` (SELinux) or `:z` (shared)                         |
+| UID inside container doesn't match host         | Add `--userns=keep-id`                                      |
+| Container can't reach host services             | Use `host.containers.internal` (not `host.docker.internal`) |
+| `podman compose` ignores `depends_on.condition` | Upgrade to Podman 5+ or rewrite with healthcheck loops      |
+| `podman` doesn't auto-start at boot             | Use `systemd --user` units + `loginctl enable-linger`       |
 
 ---
 

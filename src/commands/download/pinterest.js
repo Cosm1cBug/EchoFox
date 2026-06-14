@@ -21,18 +21,19 @@ const axios = require('axios');
 const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
 
 const ENDPOINT = 'https://www.pinterest.com/resource/BaseSearchResource/get/';
-const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+const UA =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
 async function searchPinterest(query, limit = 4) {
   const params = {
-    source_url:    `/search/pins/?q=${encodeURIComponent(query)}`,
+    source_url: `/search/pins/?q=${encodeURIComponent(query)}`,
     data: JSON.stringify({
       options: {
-        isPrefetch:    false,
+        isPrefetch: false,
         query,
-        scope:         'pins',
-        bookmarks:     [],
-        page_size:     limit,
+        scope: 'pins',
+        bookmarks: [],
+        page_size: limit,
         no_fetch_context_on_resource: false,
       },
       context: {},
@@ -41,15 +42,15 @@ async function searchPinterest(query, limit = 4) {
   };
 
   const r = await axiosWithBreaker('pinterest-search', {
-    method:  'GET',
-    url:     ENDPOINT,
+    method: 'GET',
+    url: ENDPOINT,
     params,
     timeout: 15_000,
     headers: {
-      'User-Agent':      UA,
-      'Accept':          'application/json, text/javascript, */*; q=0.01',
-      'X-Requested-With':'XMLHttpRequest',
-      'Referer':         'https://www.pinterest.com/',
+      'User-Agent': UA,
+      Accept: 'application/json, text/javascript, */*; q=0.01',
+      'X-Requested-With': 'XMLHttpRequest',
+      Referer: 'https://www.pinterest.com/',
     },
   });
 
@@ -58,9 +59,9 @@ async function searchPinterest(query, limit = 4) {
     .filter((p) => p.images?.orig?.url)
     .slice(0, limit)
     .map((p) => ({
-      url:    p.images.orig.url,
-      title:  p.title || p.grid_title || query,
-      link:   p.link  || `https://www.pinterest.com/pin/${p.id}/`,
+      url: p.images.orig.url,
+      title: p.title || p.grid_title || query,
+      link: p.link || `https://www.pinterest.com/pin/${p.id}/`,
     }));
 }
 
@@ -83,7 +84,8 @@ module.exports = {
 
   async start(sock, m, { ctx, text, args }) {
     const q = (text || '').trim();
-    if (!q) return ctx.reply('Usage: `.pinterest <query>`\n_Example: .pinterest aesthetic wallpaper_');
+    if (!q)
+      return ctx.reply('Usage: `.pinterest <query>`\n_Example: .pinterest aesthetic wallpaper_');
 
     // optional second-arg as count, e.g. `.pinterest cats 2`
     let limit = 1;
@@ -104,10 +106,14 @@ module.exports = {
     for (const r of results) {
       try {
         const buf = await fetchImage(r.url);
-        await sock.sendMessage(ctx.from, {
-          image: buf,
-          caption: `📌 ${r.title}\n🔗 ${r.link}`,
-        }, { quoted: m });
+        await sock.sendMessage(
+          ctx.from,
+          {
+            image: buf,
+            caption: `📌 ${r.title}\n🔗 ${r.link}`,
+          },
+          { quoted: m },
+        );
       } catch (err) {
         ctx.logger?.warn?.({ err, url: r.url }, 'failed to send one image, continuing');
       }

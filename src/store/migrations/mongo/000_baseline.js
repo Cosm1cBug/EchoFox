@@ -26,12 +26,13 @@ module.exports = {
     // Ensure the tracking collection has its unique index (runner does
     // this in ensure(), but we double-check here for visibility).
     try {
-      await conn.collection('_migrations').createIndex(
-        { version: 1 }, { unique: true });
+      await conn.collection('_migrations').createIndex({ version: 1 }, { unique: true });
     } catch (e) {
       logger?.warn?.({ err: e }, 'mongo baseline: index creation noop');
     }
   },
 
-  async down(_ctx) { /* intentionally a no-op */ },
+  async down(_ctx) {
+    /* intentionally a no-op */
+  },
 };

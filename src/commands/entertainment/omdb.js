@@ -33,7 +33,7 @@ module.exports = {
     try {
       const res = await axiosWithBreaker('omdb', {
         method: 'GET',
-        url:    config.apis.omdb.url,
+        url: config.apis.omdb.url,
         timeout: 10_000,
         params: { apikey: config.apis.omdb.apiKey, t: q, plot: 'full' },
       });
@@ -69,28 +69,36 @@ module.exports = {
     if (data.Poster && data.Poster !== 'N/A') {
       try {
         const img = await axiosWithBreaker('omdb-poster', {
-          method:       'GET',
-          url:          data.Poster,
+          method: 'GET',
+          url: data.Poster,
           responseType: 'arraybuffer',
-          timeout:      8000,
+          timeout: 8000,
         });
         thumb = Buffer.from(img.data);
-      } catch { /* ignore — fall back to text-only */ }
+      } catch {
+        /* ignore — fall back to text-only */
+      }
     }
 
-    await sock.sendMessage(ctx.from, {
-      text: lines.join('\n'),
-      contextInfo: thumb ? {
-        externalAdReply: {
-          showAdAttribution: false,
-          renderLargerThumbnail: true,
-          title: data.Title,
-          body: `${data.Year} · ${data.Type}`,
-          previewType: 0,
-          mediaType: 1,
-          thumbnail: thumb,
-        },
-      } : undefined,
-    }, { quoted: m });
+    await sock.sendMessage(
+      ctx.from,
+      {
+        text: lines.join('\n'),
+        contextInfo: thumb
+          ? {
+              externalAdReply: {
+                showAdAttribution: false,
+                renderLargerThumbnail: true,
+                title: data.Title,
+                body: `${data.Year} · ${data.Type}`,
+                previewType: 0,
+                mediaType: 1,
+                thumbnail: thumb,
+              },
+            }
+          : undefined,
+      },
+      { quoted: m },
+    );
   },
 };

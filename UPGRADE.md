@@ -38,24 +38,24 @@ src/commands/<category>/*.js  ← each command exports { name, alias, start }
 
 ### Weaknesses (fixed)
 
-| # | Problem in original | Fix |
-|---|---|---|
-| 1 | `cluster` used as a *bot-respawn* watchdog (cluster is for HTTP load balancing). | Replaced with `child_process.fork` + exponential-backoff supervisor in `core/bootstrap.js`. |
-| 2 | Two entry files (`index.js`, `indexx.js`) with overlapping responsibilities. | Single supervisor (`bootstrap.js`) + single worker (`worker.js`). |
-| 3 | All event handlers + parsing + analytics + I/O on the same hot path → one slow handler stalls the whole socket. | Per-chat `p-queue` (concurrency 1 per chat, parallel across chats); analytics fire-and-forget. |
-| 4 | `sock.ev.on('messages.upsert', …)` always awaits sequentially. | Same: each chat gets its own FIFO queue, no head-of-line blocking. |
-| 5 | `getMessage` returned **store rows**, not `proto.IMessage` → Baileys couldn't decrypt → "this message can take a while" loops. | New `getMessage` returns `proto.Message.decode(blob)` and seeds an LRU hot-cache from `messages.upsert`. |
-| 6 | Stats written via `fs.writeFileSync(stats.json)` on **every message** → 100% CPU + race conditions. | `services/analytics.js` coalesces 250 ms windows into one SQLite transaction. |
-| 7 | `sqlite3` (async, leaky) AND `better-sqlite3` both installed. | Removed `sqlite3`, standardised on `better-sqlite3`. |
-| 8 | `setTimeout(restart socket every 30 min)` — masked a real retry bug; in 7.x it's harmful. | Dropped. The 7.x socket self-heals via `enableAutoSessionRecreation`. |
-| 9 | `printQRInTerminal: true` — **removed in 7.0**. | We listen for `qr` in `connection.update` and render via `qrcode-terminal`. |
-| 10 | `makeInMemoryStore` import — **removed in 7.0**. | Custom `sqliteStore.js` is the only store. |
-| 11 | `Browsers.windows('Desktop')` — discouraged (some send/receive features only enabled on macOS UA). | `Browsers.macOS('EchoFox')`. |
-| 12 | Group metadata fetched on **every** message (`sock.groupMetadata(...)` in `messages.upsert`). | Lazy: only when `cmd.needsMetadata === true`. Plus persistent LRU + SQLite. |
-| 13 | 16 unused / built-in dependencies (`cluster`, `crypto`, `stream`, `util`, `readline`, `nodecache` typo, …). | Cleaned `package.json`. |
-| 14 | No structured logger – `console.log` with raw ANSI everywhere. | `pino` (with `pino-pretty` in dev), child loggers per module. |
-| 15 | No health-check / metrics. | `/healthz` and `/metrics` (Prometheus) on `:3000`. |
-| 16 | No graceful shutdown – `SIGINT` only flushed one DB. | Supervisor forwards `SIGTERM/SIGINT`, worker drains sends, closes DBs, then exits. |
+| #   | Problem in original                                                                                                            | Fix                                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| 1   | `cluster` used as a _bot-respawn_ watchdog (cluster is for HTTP load balancing).                                               | Replaced with `child_process.fork` + exponential-backoff supervisor in `core/bootstrap.js`.              |
+| 2   | Two entry files (`index.js`, `indexx.js`) with overlapping responsibilities.                                                   | Single supervisor (`bootstrap.js`) + single worker (`worker.js`).                                        |
+| 3   | All event handlers + parsing + analytics + I/O on the same hot path → one slow handler stalls the whole socket.                | Per-chat `p-queue` (concurrency 1 per chat, parallel across chats); analytics fire-and-forget.           |
+| 4   | `sock.ev.on('messages.upsert', …)` always awaits sequentially.                                                                 | Same: each chat gets its own FIFO queue, no head-of-line blocking.                                       |
+| 5   | `getMessage` returned **store rows**, not `proto.IMessage` → Baileys couldn't decrypt → "this message can take a while" loops. | New `getMessage` returns `proto.Message.decode(blob)` and seeds an LRU hot-cache from `messages.upsert`. |
+| 6   | Stats written via `fs.writeFileSync(stats.json)` on **every message** → 100% CPU + race conditions.                            | `services/analytics.js` coalesces 250 ms windows into one SQLite transaction.                            |
+| 7   | `sqlite3` (async, leaky) AND `better-sqlite3` both installed.                                                                  | Removed `sqlite3`, standardised on `better-sqlite3`.                                                     |
+| 8   | `setTimeout(restart socket every 30 min)` — masked a real retry bug; in 7.x it's harmful.                                      | Dropped. The 7.x socket self-heals via `enableAutoSessionRecreation`.                                    |
+| 9   | `printQRInTerminal: true` — **removed in 7.0**.                                                                                | We listen for `qr` in `connection.update` and render via `qrcode-terminal`.                              |
+| 10  | `makeInMemoryStore` import — **removed in 7.0**.                                                                               | Custom `sqliteStore.js` is the only store.                                                               |
+| 11  | `Browsers.windows('Desktop')` — discouraged (some send/receive features only enabled on macOS UA).                             | `Browsers.macOS('EchoFox')`.                                                                             |
+| 12  | Group metadata fetched on **every** message (`sock.groupMetadata(...)` in `messages.upsert`).                                  | Lazy: only when `cmd.needsMetadata === true`. Plus persistent LRU + SQLite.                              |
+| 13  | 16 unused / built-in dependencies (`cluster`, `crypto`, `stream`, `util`, `readline`, `nodecache` typo, …).                    | Cleaned `package.json`.                                                                                  |
+| 14  | No structured logger – `console.log` with raw ANSI everywhere.                                                                 | `pino` (with `pino-pretty` in dev), child loggers per module.                                            |
+| 15  | No health-check / metrics.                                                                                                     | `/healthz` and `/metrics` (Prometheus) on `:3000`.                                                       |
+| 16  | No graceful shutdown – `SIGINT` only flushed one DB.                                                                           | Supervisor forwards `SIGTERM/SIGINT`, worker drains sends, closes DBs, then exits.                       |
 
 ---
 
@@ -136,18 +136,18 @@ src/
 
 ## 3 · Specific Baileys 6 → 7 API migrations applied
 
-| 6.x (your code) | 7.x (new) |
-|---|---|
-| `const { makeWASocket } = require('@whiskeysockets/baileys')` | `const { default: makeWASocket } = require('@whiskeysockets/baileys')` (default export) |
-| `makeInMemoryStore` | **Removed.** Use `sqliteStore.js`. |
-| `printQRInTerminal: true` | Removed. Render QR yourself from `connection.update`. |
-| `fetchLatestWaWebVersion` | Still works, but `fetchLatestBaileysVersion` is preferred and faster. |
-| `Browsers.windows('Desktop')` | `Browsers.macOS('EchoFox')` – more features unlocked. |
-| `mobile: true` | Removed (mobile API discontinued by WA). |
-| `getMessage: (key) => store.getMessagesByJid(key.id)` (wrong) | `getMessage: (key) => store.getMessage(key)` returning `proto.IMessage \| undefined` |
-| `cachedGroupMetadata: async(jid) => metadataCache.get(jid)` | Same shape – kept. New caches added: `callOfferCache`, `placeholderResendCache`, `userDevicesCache`. |
-| `setTimeout(() => sock.end(...), 30*60_000)` (force restart) | Deleted. `enableAutoSessionRecreation: true` makes this unnecessary. |
-| `updateMessageWithReceipt` import for `message-receipt.update` | API still exists; we simply persist receipts in the store now. |
+| 6.x (your code)                                                | 7.x (new)                                                                                            |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `const { makeWASocket } = require('@whiskeysockets/baileys')`  | `const { default: makeWASocket } = require('@whiskeysockets/baileys')` (default export)              |
+| `makeInMemoryStore`                                            | **Removed.** Use `sqliteStore.js`.                                                                   |
+| `printQRInTerminal: true`                                      | Removed. Render QR yourself from `connection.update`.                                                |
+| `fetchLatestWaWebVersion`                                      | Still works, but `fetchLatestBaileysVersion` is preferred and faster.                                |
+| `Browsers.windows('Desktop')`                                  | `Browsers.macOS('EchoFox')` – more features unlocked.                                                |
+| `mobile: true`                                                 | Removed (mobile API discontinued by WA).                                                             |
+| `getMessage: (key) => store.getMessagesByJid(key.id)` (wrong)  | `getMessage: (key) => store.getMessage(key)` returning `proto.IMessage \| undefined`                 |
+| `cachedGroupMetadata: async(jid) => metadataCache.get(jid)`    | Same shape – kept. New caches added: `callOfferCache`, `placeholderResendCache`, `userDevicesCache`. |
+| `setTimeout(() => sock.end(...), 30*60_000)` (force restart)   | Deleted. `enableAutoSessionRecreation: true` makes this unnecessary.                                 |
+| `updateMessageWithReceipt` import for `message-receipt.update` | API still exists; we simply persist receipts in the store now.                                       |
 
 ---
 
@@ -201,9 +201,9 @@ module.exports = {
   alias: ['p'],
   desc: 'pong',
   // OPTIONAL flags read by the new router:
-  admin: false,           // true → only config.options.BAdmin
-  group: false,           // true → only in @g.us chats
-  needsMetadata: false,   // true → router fetches group metadata for you
+  admin: false, // true → only config.options.BAdmin
+  group: false, // true → only in @g.us chats
+  needsMetadata: false, // true → router fetches group metadata for you
 
   async start(sock, m, { ctx, args }) {
     const t = Date.now() - ctx.timestamp * 1000;
@@ -221,14 +221,14 @@ react()`. You no longer need to manually walk the
 
 ## 6 · Performance budget — measured improvements (typical)
 
-| Metric (single bot, 500 chats, 50 msg/s) | Before (6.7.15) | After (7.0-rc13) |
-|---|---|---|
-| Avg. message → reply latency        | 380 – 900 ms (spiky) | 70 – 150 ms |
-| RSS after 1 h                        | ~520 MB              | ~180 MB |
-| `getMessage` cache hit rate          | n/a (bug)            | ~96 % |
-| Group send (cached metadata)         | 600 ms               | 90 ms |
-| Worker cold restart                  | full process reboot  | in-process reconnect (≤ 3 s) |
-| stats.json write rate                | every message        | one txn / 250 ms |
+| Metric (single bot, 500 chats, 50 msg/s) | Before (6.7.15)      | After (7.0-rc13)             |
+| ---------------------------------------- | -------------------- | ---------------------------- |
+| Avg. message → reply latency             | 380 – 900 ms (spiky) | 70 – 150 ms                  |
+| RSS after 1 h                            | ~520 MB              | ~180 MB                      |
+| `getMessage` cache hit rate              | n/a (bug)            | ~96 %                        |
+| Group send (cached metadata)             | 600 ms               | 90 ms                        |
+| Worker cold restart                      | full process reboot  | in-process reconnect (≤ 3 s) |
+| stats.json write rate                    | every message        | one txn / 250 ms             |
 
 (Measured on an n2d-standard-2 GCP VM, Node 20.18.)
 
@@ -257,13 +257,13 @@ more, the codebase is ready for these next steps:
 
 ## 8 · Files removed
 
-* `src/index.js` – replaced by `src/core/worker.js`
-* `src/indexx.js` – replaced by `src/core/bootstrap.js`
-* `src/lib/Events/*.js` – replaced by `src/events/*.js`
-* `src/lib/Functions/sqliteDB.js` – replaced by `src/services/analytics.js`
-* `src/lib/Functions/userDataSaver.js` – replaced by `src/services/userDirectory.js`
-* `src/lib/makeInSQLiteStore.js` – replaced by `src/store/sqliteStore.js`
-* `src/lib/welcome.js` – was a one-line stub (`module.export` typo).
+- `src/index.js` – replaced by `src/core/worker.js`
+- `src/indexx.js` – replaced by `src/core/bootstrap.js`
+- `src/lib/Events/*.js` – replaced by `src/events/*.js`
+- `src/lib/Functions/sqliteDB.js` – replaced by `src/services/analytics.js`
+- `src/lib/Functions/userDataSaver.js` – replaced by `src/services/userDirectory.js`
+- `src/lib/makeInSQLiteStore.js` – replaced by `src/store/sqliteStore.js`
+- `src/lib/welcome.js` – was a one-line stub (`module.export` typo).
 
 The original modules in `src/lib/` that ARE still used by commands
 (`Func.js`, `alienvault-pulse.js`) are kept as-is, and `Collection.js`,

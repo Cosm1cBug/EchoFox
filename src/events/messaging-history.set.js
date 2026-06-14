@@ -27,13 +27,16 @@ module.exports = async ({ sock: _sock, store, payload }) => {
 
   const { chats = [], contacts = [], messages = [], isLatest } = payload;
 
-  log.info({
-    phase: 'history-sync',
-    chats:    chats.length,
-    contacts: contacts.length,
-    messages: messages.length,
-    isLatest,
-  }, 'History Sync Received');
+  log.info(
+    {
+      phase: 'history-sync',
+      chats: chats.length,
+      contacts: contacts.length,
+      messages: messages.length,
+      isLatest,
+    },
+    'History Sync Received',
+  );
 
   // Store chats metadata
   if (chats && Array.isArray(chats)) {
@@ -59,7 +62,8 @@ module.exports = async ({ sock: _sock, store, payload }) => {
 
   // Optional: Log only (recommended)
   if (messages && messages.length > 0) {
-    log.info(`Received ${messages.length} historical messages. They will be processed via messages.upsert.`);
+    log.info(
+      `Received ${messages.length} historical messages. They will be processed via messages.upsert.`,
+    );
   }
-
 };

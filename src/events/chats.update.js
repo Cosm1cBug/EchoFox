@@ -22,9 +22,9 @@ module.exports = async ({ store, u }) => {
     if (!c?.id) continue;
     try {
       await store.updateChat?.(c.id, {
-        pinned:      c.pinned,
+        pinned: c.pinned,
         muted_until: c.mute,
-        archived:    c.archived,
+        archived: c.archived,
       });
     } catch (err) {
       logger.trace({ err, jid: c.id }, 'chat update propagation failed');

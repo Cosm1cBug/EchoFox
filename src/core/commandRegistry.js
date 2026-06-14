@@ -15,7 +15,7 @@
  *  • v0.4.5: one failing command file no longer aborts the whole registry
  *    load — it's recorded in `this.skipped[]` and the rest continue.
  */
-const fs   = require('node:fs');
+const fs = require('node:fs');
 const path = require('node:path');
 
 function dig(obj, dotted) {
@@ -31,14 +31,14 @@ function isMissing(v) {
 
 class CommandRegistry {
   constructor({ dir, prefix, logger, config }) {
-    this.dir        = dir;
-    this.prefix     = prefix;
-    this.logger     = logger;
-    this.config     = config || {};
-    this.commands   = new Map();
-    this.aliases    = new Map();
+    this.dir = dir;
+    this.prefix = prefix;
+    this.logger = logger;
+    this.config = config || {};
+    this.commands = new Map();
+    this.aliases = new Map();
     this.categories = new Map();
-    this.skipped    = [];
+    this.skipped = [];
   }
 
   async load() {
@@ -47,15 +47,14 @@ class CommandRegistry {
     this.categories.clear();
     this.skipped = [];
 
-    const cats = fs.readdirSync(this.dir, { withFileTypes: true })
-      .filter((d) => d.isDirectory()
-        && !d.name.startsWith('_')
-        && !d.name.startsWith('.'));
+    const cats = fs
+      .readdirSync(this.dir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !d.name.startsWith('_') && !d.name.startsWith('.'));
 
     for (const cat of cats) {
       const catDir = path.join(this.dir, cat.name);
-      const files  = fs.readdirSync(catDir).filter((f) => f.endsWith('.js'));
-      const list   = [];
+      const files = fs.readdirSync(catDir).filter((f) => f.endsWith('.js'));
+      const list = [];
 
       for (const f of files) {
         const full = path.join(catDir, f);
@@ -64,7 +63,10 @@ class CommandRegistry {
           delete require.cache[require.resolve(full)];
           cmd = require(full);
         } catch (e) {
-          this.logger.error({ err: e, file: full }, 'failed to load command (optional dep missing?)');
+          this.logger.error(
+            { err: e, file: full },
+            'failed to load command (optional dep missing?)',
+          );
           this.skipped.push({ name: f, file: full, reason: 'load_error', err: e.message });
           continue;
         }
@@ -77,15 +79,17 @@ class CommandRegistry {
         if (Array.isArray(cmd.requires) && cmd.requires.length) {
           const missing = cmd.requires.filter((req) => isMissing(dig(this.config, req)));
           if (missing.length) {
-            this.logger.warn({ cmd: cmd.name, missing },
-              `skipped: '${cmd.name}' requires unset config (${missing.join(', ')})`);
+            this.logger.warn(
+              { cmd: cmd.name, missing },
+              `skipped: '${cmd.name}' requires unset config (${missing.join(', ')})`,
+            );
             this.skipped.push({ name: cmd.name, file: full, reason: 'missing_config', missing });
             continue;
           }
         }
 
         cmd.category = cat.name;
-        const lower  = cmd.name.toLowerCase();
+        const lower = cmd.name.toLowerCase();
         this.commands.set(lower, cmd);
         for (const a of cmd.alias || []) this.aliases.set(a.toLowerCase(), lower);
         list.push(cmd);
@@ -94,11 +98,14 @@ class CommandRegistry {
       if (list.length) this.categories.set(cat.name, list);
     }
 
-    this.logger.info({
-      loaded:     this.commands.size,
-      categories: this.categories.size,
-      skipped:    this.skipped.length,
-    }, 'commands loaded');
+    this.logger.info(
+      {
+        loaded: this.commands.size,
+        categories: this.categories.size,
+        skipped: this.skipped.length,
+      },
+      'commands loaded',
+    );
 
     if (!this._watching) {
       this._watching = true;
@@ -106,8 +113,10 @@ class CommandRegistry {
       try {
         fs.watch(this.dir, { recursive: true }, () => {
           clearTimeout(t);
-          t = setTimeout(() => this.load().catch((e) =>
-            this.logger.error({ err: e }, 'hot-reload failed')), 250);
+          t = setTimeout(
+            () => this.load().catch((e) => this.logger.error({ err: e }, 'hot-reload failed')),
+            250,
+          );
         });
       } catch (e) {
         this.logger.debug({ err: e }, 'fs.watch recursive unsupported; hot-reload disabled');
@@ -118,22 +127,22 @@ class CommandRegistry {
   resolve(name) {
     if (!name) return null;
     const lower = name.toLowerCase();
-    return this.commands.get(lower)
-        || this.commands.get(this.aliases.get(lower))
-        || null;
+    return this.commands.get(lower) || this.commands.get(this.aliases.get(lower)) || null;
   }
 
-  all() { return [...this.commands.values()]; }
+  all() {
+    return [...this.commands.values()];
+  }
 
   describe() {
     const out = {};
     for (const [cat, list] of this.categories) {
       out[cat] = list.map((c) => ({
-        name:    c.name,
-        alias:   c.alias || [],
-        desc:    c.desc || '',
-        admin:   !!c.admin,
-        group:   !!c.group,
+        name: c.name,
+        alias: c.alias || [],
+        desc: c.desc || '',
+        admin: !!c.admin,
+        group: !!c.group,
         requires: c.requires || [],
       }));
     }

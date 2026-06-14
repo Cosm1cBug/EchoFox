@@ -31,16 +31,20 @@ module.exports = {
     try {
       const search = await axiosWithBreaker('wikipedia-rest', {
         method: 'GET',
-        url:    'https://en.wikipedia.org/w/api.php',
+        url: 'https://en.wikipedia.org/w/api.php',
         timeout: 10_000,
         params: {
-          action: 'opensearch', search: q, limit: 1, namespace: 0, format: 'json',
+          action: 'opensearch',
+          search: q,
+          limit: 1,
+          namespace: 0,
+          format: 'json',
         },
         headers: { 'User-Agent': 'EchoFox/0.4 (https://github.com/Cosm1cBug/EchoFox)' },
       });
 
       const title = search.data?.[1]?.[0];
-      const url   = search.data?.[3]?.[0];
+      const url = search.data?.[3]?.[0];
       if (!title) {
         await ctx.react('🤷');
         return ctx.reply(`No Wikipedia page found for *${q}*.`);
@@ -48,7 +52,7 @@ module.exports = {
 
       const summary = await axiosWithBreaker('wikipedia-rest', {
         method: 'GET',
-        url:    `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
+        url: `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
         timeout: 10_000,
         headers: { 'User-Agent': 'EchoFox/0.4' },
         validateStatus: (s) => s < 500,
@@ -61,9 +65,7 @@ module.exports = {
 
       const extract = summary.data.extract.slice(0, 1500);
       await ctx.react('📖');
-      await ctx.reply(
-        `📖 *${summary.data.title}*\n\n${extract}\n\n🔗 ${url}`,
-      );
+      await ctx.reply(`📖 *${summary.data.title}*\n\n${extract}\n\n🔗 ${url}`);
     } catch (err) {
       if (isOpenBreakerError(err)) {
         return ctx.reply('⏱️ Wikipedia is currently overloaded. Try again in ~1 minute.');

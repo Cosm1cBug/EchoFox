@@ -25,12 +25,12 @@ auth: {
 },
 ```
 
-| Method | When to use |
-|---|---|
-| `MULTIFILE` | Default. Files in `src/<sessionName>/`. Fastest, simplest. |
-| `SQLITE` | When you want one file containing both auth + store data |
-| `REDIS` | Multi-instance failover (auth shared across multiple worker processes) |
-| `POSTGRES` | Same, when you already run Postgres for other workloads |
+| Method      | When to use                                                            |
+| ----------- | ---------------------------------------------------------------------- |
+| `MULTIFILE` | Default. Files in `src/<sessionName>/`. Fastest, simplest.             |
+| `SQLITE`    | When you want one file containing both auth + store data               |
+| `REDIS`     | Multi-instance failover (auth shared across multiple worker processes) |
+| `POSTGRES`  | Same, when you already run Postgres for other workloads                |
 
 ## Store backends
 
@@ -49,12 +49,12 @@ storeDB: {
 
 ### Backend trade-offs
 
-| Backend | Pros | Cons |
-|---|---|---|
-| **SQLite** | Zero ops, fastest single-node, WAL durability | One process at a time |
-| **Postgres** | Multi-instance, mature, JSONB for meta | Adds operational dependency |
-| **MongoDB** | Schemaless flexibility, easy to inspect via Compass | Less compact than pg |
-| **Redis** | Lowest-latency, ideal for ephemeral subscriber data | Volatile by default |
+| Backend      | Pros                                                | Cons                        |
+| ------------ | --------------------------------------------------- | --------------------------- |
+| **SQLite**   | Zero ops, fastest single-node, WAL durability       | One process at a time       |
+| **Postgres** | Multi-instance, mature, JSONB for meta              | Adds operational dependency |
+| **MongoDB**  | Schemaless flexibility, easy to inspect via Compass | Less compact than pg        |
+| **Redis**    | Lowest-latency, ideal for ephemeral subscriber data | Volatile by default         |
 
 ### Backend feature parity
 

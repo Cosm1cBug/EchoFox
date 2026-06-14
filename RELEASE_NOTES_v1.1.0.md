@@ -28,3 +28,4 @@ introspect bot state instead of being a chat wrapper around OpenAI.
 git pull
 npm install
 npm start          # migrations run automatically on boot
+```

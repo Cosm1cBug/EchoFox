@@ -26,7 +26,7 @@
  *   then spawns `node --test <file1> <file2> ...` with the explicit list.
  *   Works identically on every shell + every Node.js version we support.
  */
-const fs   = require('node:fs');
+const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
@@ -35,8 +35,11 @@ const EXCLUDE_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage', 'build
 
 function findTests(dir, out = []) {
   let entries;
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-  catch (_) { return out; }
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (_) {
+    return out;
+  }
 
   for (const e of entries) {
     if (EXCLUDE_DIRS.has(e.name) || e.name.startsWith('.')) continue;
@@ -57,7 +60,10 @@ for (const r of roots) findTests(r, files);
 files.sort();
 
 if (files.length === 0) {
-  console.error('run-tests.js: no *.test.js files found under', roots.map((r) => path.relative(ROOT, r)).join(', '));
+  console.error(
+    'run-tests.js: no *.test.js files found under',
+    roots.map((r) => path.relative(ROOT, r)).join(', '),
+  );
   process.exit(1);
 }
 

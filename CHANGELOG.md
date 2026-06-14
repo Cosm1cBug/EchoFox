@@ -12,6 +12,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.4] — 2026-06-13
+
+> **Second CI hotfix.** v1.4.3 fixed the lint + dashboard lockfile issues
+> but two more came up on push: 228 files failing Prettier `format:check`,
+> and TruffleHog rejecting `--fail --fail`. v1.4.4 reformats the whole
+> repo and removes the duplicate flag.
+
+### Fixed
+
+- **228 files now Prettier-formatted** via `prettier --write` across the
+  entire tree. Whitespace + trailing-newline normalisation on YAML / JSON
+  / MD; multi-line block reflow on `.js` files. Zero functional changes
+  — all 147 tests still pass on the reformatted code.
+- **TruffleHog `--fail --fail` rejection** — the action's internal shim
+  already appends `--fail`, so having it in `extra_args` produced the
+  duplicate. Removed from all 3 `extra_args:` instances in
+  `.github/workflows/secret-scanning.yml`. Replaced with the canonical
+  `--results=verified,unknown`.
+
+### Internal
+
+- `package.json` version bump 1.4.2 → 1.4.4 (v1.4.3 commit accidentally
+  omitted the bump).
+- `RELEASE_NOTES_v1.4.3.md` added retroactively (also missed from v1.4.3).
+
+### Migration notes
+
+- Drop-in upgrade from v1.4.3. No functional changes.
+- If you have local changes, you may see whitespace-only conflicts —
+  `git stash`, `git pull`, `git stash pop` + run `npm run format`.
+
+---
+
+## [1.4.3] — 2026-06-13
+
+> **CI hotfix.** Fixed 4 issues that surfaced after v1.4.2 went through
+> the release workflows.
+
+### Fixed
+
+- **`src/dashboard/server.js`** — restored the `emit()` helper inside
+  the `/metrics` route closure (rewritten as `const emit = (...) => {...}`).
+- **28 pre-existing ESLint warnings** — unused `sock` / `req` / `ts` args
+  underscore-prefixed; removed unused imports (`zlib`, `axios`,
+  `getContentType`, `applyExtraCAsToProcess`, `config`, top-level `axios`
+  in `thehackersnewsService`); deleted dead `delay()` function and
+  `isHistory` / `isRealTime` flags; removed useless regex escapes;
+  `prefer-const` fixes.
+- **`dashboard/package-lock.json`** uncommented from `.gitignore` and
+  committed.
+- **`.github/workflows/secret-scanning.yml`** event-conditional fix
+  re-applied (didn't land on main in v1.4.2).
+- **`.prettierrc.json`** `endOfLine: "lf"` → `"auto"` (committed
+  separately as `f01dcfa "CI fix"` between v1.4.3 and v1.4.4).
+
+---
+
 ## [1.4.3] — 2026-06-13
 
 > **CI hotfix release.** v1.4.2 introduced 3 ESLint errors in

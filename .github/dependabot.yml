@@ -12,7 +12,6 @@ updates:
     versioning-strategy: 'increase'
     labels:
       - 'dependencies'
-      - 'needs-triage'
     commit-message:
       prefix: 'chore(deps)'
       include: 'scope'

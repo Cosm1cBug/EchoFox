@@ -12,6 +12,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.0] — 2026-06-17
+
+> **Security & dependency consolidation release.** Closes 2 of 7 npm-audit
+> advisories at root (form-data CRLF, protobufjs property-shadowing), all
+> 2 dashboard advisories (esbuild, vite path-traversal), applies 5 safe
+> Dependabot bumps, modernises 3 GitHub Actions, restores the v1.9.0
+> test file that was missed during the prior push, and documents the
+> 5 remaining transitive advisories with mitigation rationale in
+> `SECURITY.md`. **Closes all 11 stale Dependabot PRs.**
+
+### Security — npm audit advisories closed
+
+| Advisory            | Pkg                 | Was     | Now     | How                   |
+| ------------------- | ------------------- | ------- | ------- | --------------------- |
+| GHSA-hmw2-7cc7-3qxx | form-data           | 4.0.5   | 4.0.6   | Top-level `overrides` |
+| GHSA-f38q-mgvj-vph7 | protobufjs          | 7.6.2   | 7.6.4   | Top-level `overrides` |
+| GHSA-67mh-4wv8-2f99 | esbuild (dashboard) | <0.28.0 | ≥0.28.1 | via vite 8            |
+| GHSA-gv7w-rqvm-qjhr | esbuild (dashboard) | <0.28.0 | ≥0.28.1 | via vite 8            |
+| GHSA-4w7w-66w2-5vf9 | vite (dashboard)    | 5.4.2   | 8.x     | direct bump           |
+
+5 root-level advisories remain (all from `link-preview-js` under Baileys
+
+- `esbuild` under `vitepress`) — see `SECURITY.md` for rationale. Both
+  chains are either dev-only or already mitigated by our v1.5.0 SSRF guard.
+
+### Security — Dependabot PRs closed (no longer needed)
+
+- PR #1 — `moment-timezone` (subsumed: bumped here to 0.6.2)
+- PR #3 — `yargs` (subsumed: bumped here to 18.0.0)
+- PR #4 — `libphonenumber-js` (subsumed: bumped here to 1.13.3)
+- PR #5 — `node-webpmux` (subsumed: bumped here to 3.2.1)
+- PR #6 — `github/codeql-action` v3→v4 (subsumed)
+- PR #7 — `docker/build-push-action` v6→v7 (subsumed)
+- PR #8 — `docker/setup-buildx-action` v3→v4 (subsumed)
+- PR #10 — esbuild/vite/plugin-react in dashboard (subsumed by vite 8 bump)
+- PR #11 — vite/plugin-react in dashboard (subsumed by vite 8 bump)
+- PR #12 — `better-sqlite3` 11→12 (subsumed: bumped here to 12.4.1)
+- PR #13 — `form-data` 4.0.5→4.0.6 (subsumed: handled via overrides)
+
+After landing v1.10.0 close all 11 PRs from the GitHub UI — they're
+strictly older than `origin/main` now and the same bumps are already
+present here.
+
+### Changed — dependencies
+
+- `package.json`:
+  - **deps:** `better-sqlite3` 11.8.1 → 12.4.1, `libphonenumber-js` 1.11.0 → 1.13.3, `moment-timezone` 0.5.45 → 0.6.2, `node-webpmux` 3.2.0 → 3.2.1, `yargs` 17.7.2 → 18.0.0 (yargs not currently used in source; safe bump).
+  - **overrides (new):** `form-data ^4.0.6`, `protobufjs ^7.6.4` (top-level).
+- `dashboard/package.json`:
+  - `vite` ^5.4.2 → ^8.0.0
+  - `@vitejs/plugin-react` ^4.3.1 → ^5.0.0
+- `package-lock.json` + `dashboard/package-lock.json`: regenerated.
+
+### Changed — CI workflows
+
+- `.github/workflows/docker.yml`:
+  - `docker/setup-buildx-action` v3 → v4
+  - `docker/build-push-action` v6 → v7
+- `.github/workflows/security.yml`:
+  - `github/codeql-action/init` v3 → v4
+  - `github/codeql-action/analyze` v3 → v4
+- `.github/dependabot.yml`: removed the bogus `'needs-triage'` label
+  (it doesn't exist in the repo and was blocking Dependabot from
+  applying its label set — see the warning at the top of every
+  Dependabot PR).
+
+### Fixed — v1.9.0 regression
+
+- Restored `src/__tests__/integration/commands-v190.test.js` — was
+  missed during the v1.9.0 manual Copy-Item step (`commit shows 8 files
+  changed instead of 9). Adds back 9 tests + 1 contract auto-discovery
+  = +10 passing tests (213 → 223).
+
+### Documentation
+
+- `SECURITY.md`: new "Known accepted-risk advisories" section listing
+  the 5 transitive advisories that can't be fixed locally, with status
+  - mitigation rationale + a re-check command. Re-evaluated on every
+    release.
+
+### Notes
+
+- **No source-code changes** in `src/` apart from restoring the test file.
+- All gates: tests 223/223, lint 0/0, prettier clean, headers 151/151,
+  dashboard tsc clean.
+- Release notes inline per the post-v1.5.0 preference.
+
+---
+
 ## [1.9.0] — 2026-06-17
 
 > **Dev-utils + YouTube downloader release.** Adds 4 new commands across

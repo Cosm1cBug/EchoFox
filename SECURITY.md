@@ -62,6 +62,31 @@ Out of scope:
 
 ---
 
+## Known accepted-risk advisories
+
+`npm audit` will report a small number of advisories that originate from
+deep transitive dependencies we cannot fix without breaking changes
+upstream. Each one is reviewed and accepted with a rationale below.
+Re-evaluated on every release.
+
+| Advisory                                                                 | Package                  | Path                                        | Status             | Rationale                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------ | ------------------------ | ------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [GHSA-4gp8-rjrq-ch6q](https://github.com/advisories/GHSA-4gp8-rjrq-ch6q) | `link-preview-js` ≤4.0.0 | `@whiskeysockets/baileys → link-preview-js` | Mitigated app-side | Baileys uses this for link previews. Our v1.5.0 SSRF hardening (`src/services/ai/toolRegistry.js`) covers the IPv6/loopback SSRF concern for our own code paths. Bot does not call link-preview-js directly. Waiting for upstream Baileys to bump. |
+| [GHSA-67mh-4wv8-2f99](https://github.com/advisories/GHSA-67mh-4wv8-2f99) | `esbuild` ≤0.28.0        | `vitepress → vite → esbuild`                | Dev-only           | Dev-server only. Only used at `npm run docs:build` time inside the GitHub Actions runner. Not present at runtime, not in Docker image, not in npm package. Waiting for vitepress 2 to land a newer vite.                                           |
+| [GHSA-gv7w-rqvm-qjhr](https://github.com/advisories/GHSA-gv7w-rqvm-qjhr) | `esbuild` ≤0.28.0        | same as above                               | Dev-only           | Same as above.                                                                                                                                                                                                                                     |
+
+If you find a way to mitigate any of these properly please open a
+private security advisory or PR — happy to upgrade.
+
+### How to re-check
+
+```bash
+npm audit
+# Anything outside the table above is a regression — please report.
+```
+
+---
+
 ## Recognition
 
 We thank everyone who responsibly discloses security issues to us. With your permission, we'll add your name to the [Security Hall of Fame](https://github.com/Cosm1cBug/EchoFox/blob/main/SECURITY.md#hall-of-fame) below.

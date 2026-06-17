@@ -36,6 +36,7 @@ const { run: runCommand } = require('../core/commandRunner');
 const ai = require('../services/ai');
 const { makeRateLimiter } = require('../middleware/rateLimit');
 const metrics = require('../services/metrics');
+const afkState = require('../services/afkState');
 
 // ─── Inbound rate limiter (token bucket per sender) ──────────────────────
 const senderLimiter = makeRateLimiter({
@@ -181,6 +182,34 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
 
   // Fire-and-forget side effects
   rememberUser(ctx, sock).catch(() => {});
+
+  // ─── v1.6.0 AFK auto-handler ──────────────────────────────────────
+  // 1) If the sender was AFK, clear it and welcome them back.
+  // 2) For any mentions or quoted-reply of an AFK user, announce their
+  //    AFK status once per 30 s per (mentioned-user × chat) pair.
+  if (afkState.isAfk(ctx.sender)) {
+    const entry = afkState.get(ctx.sender);
+    afkState.clear(ctx.sender);
+    const dur = afkState.formatDuration(Date.now() - (entry?.since || Date.now()));
+    ctx.reply(`👋 Welcome back! You were AFK for ${dur}.`).catch(() => {});
+  }
+  for (const mentioned of ctx.mentions || []) {
+    if (!afkState.isAfk(mentioned)) continue;
+    if (!afkState.shouldAnnounce(mentioned)) continue;
+    const e = afkState.get(mentioned);
+    if (!e) continue;
+    const dur = afkState.formatDuration(Date.now() - e.since);
+    ctx.reply(`💤 That user is *AFK* (${dur} ago)\n*Reason:* ${e.reason}`).catch(() => {});
+  }
+  if (ctx.quoted?.participant && afkState.isAfk(ctx.quoted.participant)) {
+    if (afkState.shouldAnnounce(ctx.quoted.participant)) {
+      const e = afkState.get(ctx.quoted.participant);
+      if (e) {
+        const dur = afkState.formatDuration(Date.now() - e.since);
+        ctx.reply(`💤 That user is *AFK* (${dur} ago)\n*Reason:* ${e.reason}`).catch(() => {});
+      }
+    }
+  }
 
   if (config.features.readMessages) {
     sock.readMessages([m.key]).catch(() => {});

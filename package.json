@@ -1,6 +1,6 @@
 {
   "name": "echofox",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "A production-grade WhatsApp bot built on Baileys 7.x — typed, observable, scalable.",
   "main": "src/core/bootstrap.js",
   "scripts": {
@@ -121,6 +121,7 @@
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.5",
     "socks-proxy-agent": "^8.0.4",
+    "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
     "spinnies": "^0.5.1",
     "wa-sticker-formatter": "^4.4.4",

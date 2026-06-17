@@ -61,6 +61,7 @@ const {
   checkAndDeliver: checkVtWatch,
   CHECK_INTERVAL: VTW_INTERVAL_MIN,
 } = require('../services/vtWatchService');
+const reminderService = require('../services/reminderService');
 
 const log = logger.child({ mod: 'worker' });
 
@@ -277,6 +278,9 @@ async function start(retry = 0) {
   });
 
   sock.ev.on('creds.update', saveCreds);
+
+  // v1.6.0 — start reminder ticker once we have a sock
+  reminderService.start(sock);
   store.bind(sock.ev);
 
   await lifecycle.startLoginFlow(sock);

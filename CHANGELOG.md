@@ -12,6 +12,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] — 2026-06-17
+
+> **Engagement & utility release.** Adds 5 new commands across `tools/`
+> and `user/` categories, plus the supporting infra for persistent
+> reminders and AFK state.
+
+### Added — new commands
+
+- **`.qr <text>`** _(tools)_ — generate a QR-code PNG (512×512, EC=M)
+  from any text or URL. Powered by the `qrcode` package — fully offline,
+  no network dependency. Soft cap 2 KB input. _Aliases: `qrcode`, `qrgen`._
+- **`.weather <city|lat,lon>`** _(tools)_ — current conditions + 3-day
+  forecast via Open-Meteo (free, no API key, 10k req/day). Auto-geocodes
+  city names, accepts raw coordinates, renders WMO weather codes to
+  human-readable emoji lines. Uses the existing circuit-breaker + retry
+  HTTP client. _Aliases: `w`, `forecast`._
+- **`.poll [-m] "Question" "Opt A" "Opt B" …`** _(tools)_ — create a
+  native WhatsApp poll. Quote-aware tokenizer supports multi-word
+  options. `-m`/`--multi` flag enables multi-select. Validates against
+  the WA protocol limits (2–12 options, ≤255 char question, ≤100 char
+  per option). _Aliases: `vote`._
+- **`.remindme <duration> <message>`** _(tools)_ — schedule a one-shot
+  reminder delivered to the same chat. Duration grammar combines units
+  (`10s`, `5m`, `2h30m`, `1d12h`, `1w`). Plain integers parse as seconds.
+  Sub-commands: `list`, `cancel <id>`, `clear`. Persisted via the existing
+  `subscriber_meta` table (no migration needed) so reminders survive
+  restarts. Up to 50 pending per user, 1-year max horizon. Backed by a
+  new minute-tick cron started from `core/worker.js`. _Aliases: `remind`,
+  `reminder`._
+- **`.afk [reason | off]`** _(user)_ — mark yourself away. The bot
+  auto-replies once per 30 s per chat when AFK users are mentioned or
+  quoted-to, and automatically clears the flag the next time the AFK
+  user sends a message. In-memory state (LRU, bounded to 10k users,
+  7-day TTL ceiling). _Aliases: `away`._
+
+### Added — infrastructure
+
+- **`src/services/afkState.js`** — bounded LRU store of currently-AFK
+  users with debounced announce helper and human-readable duration
+  formatter. Exposes `mark`, `clear`, `isAfk`, `shouldAnnounce`, `get`.
+- **`src/services/reminderService.js`** — persistent reminder ticker.
+  Per-minute scan of all subscribers under the synthetic `reminders`
+  service; fires due items via `sock.sendMessage` with `@mention` of the
+  user; rewrites meta in place. Hardened: per-user failures don't stop
+  the tick, and the service is restart-safe.
+- **`src/__tests__/integration/commands-v160.test.js`** — 14 new
+  tests covering AFK state, duration parsing, and command-module shape.
+
+### Changed
+
+- **`src/events/messages.upsert.js`** — small AFK auto-handler block
+  added near the top of `handleMessage` (5-line require + 30-line hook).
+  Surfaces AFK announcements for `ctx.mentions` and quoted-reply
+  participants, and auto-clears on the AFK user's next message.
+- **`src/core/worker.js`** — single-line require + 2-line `reminderService.start(sock)`
+  call after `creds.update` listener registration. Service guards against
+  double-init on reconnect.
+- **`package.json`** — bumped to `1.6.0`; added top-level dep `qrcode@^1.5.4`.
+
+### Notes
+
+- No new schema migration. `.remindme` persistence rides the existing
+  `service_subscribers.meta` JSON column that was added in migration 001.
+- AFK is intentionally in-memory only. Persisting AFK across restarts
+  would create stuck-AFK states when the bot restarts overnight.
+- Release notes for v1.6.0+ live inline in this CHANGELOG and the squash
+  commit message — no separate `RELEASE_NOTES_v*.md` file (per
+  user preference established post-v1.5.0).
+
+---
+
 ## [1.5.0] — 2026-06-14
 
 > **Security hardening release.** Closes 8 audit findings (3 critical,

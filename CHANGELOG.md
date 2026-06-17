@@ -12,6 +12,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.0] — 2026-06-17
+
+> **Dev-utils + YouTube downloader release.** Adds 4 new commands across
+> `tools/` and `download/` categories. Adds one new config flag
+> (`features.ytdl`, default false) to gate the YouTube downloader.
+> No new npm dependencies — `@distube/ytdl-core` was already a dep.
+
+### Added — new commands
+
+- **`.base64 <enc|dec> [text|reply]`** _(tools)_ — base64 encode/decode.
+  Reply-aware (operate on a quoted message). Validates base64 alphabet
+  on decode. Soft cap 8 KB input. _Aliases: `b64`._
+- **`.hash <algo> [text|reply]`** _(tools)_ — hash text with md5, sha1,
+  sha256, sha384, or sha512 (Node's `crypto.createHash`). Reply-aware.
+  Hex output. Soft cap 64 KB input. Help text warns md5/sha1 are
+  cryptographically broken. _Aliases: `digest`._
+- **`.uuid [N | short [N] | hex [N]]`** _(tools)_ — generate UUIDs (v4),
+  URL-safe short IDs (base64url), or 16-byte hex strings. Max 25 per
+  call. _Aliases: `guid`, `id`._
+- **`.ytdl [audio|video|info] <url>`** _(download)_ — YouTube downloader
+  via the already-installed `@distube/ytdl-core`. **Gated behind
+  `config.features.ytdl` (default false)** — operator must opt in.
+  Default mode: audio (m4a, highest bitrate). Video mode: mp4 ≤720p.
+  Info mode: metadata only, no download. Hard caps: 15 min duration,
+  50 MB file size. Defence-in-depth host allow-list rejects anything
+  outside youtube.com / youtu.be / m.youtube.com / music.youtube.com.
+  Refuses livestreams and private videos. Uses `tempManager.getTempFile`
+  so files are garbage-collected after 30 min by the existing sweeper.
+  _Aliases: `yt`, `youtube`._
+
+### Added — configuration
+
+- **`features.ytdl`** _(boolean, default `false`)_ — opt-in toggle for
+  the `.ytdl` command. Off by default because downloading from YouTube
+  is a ToS grey area; bot operators should enable it deliberately.
+
+### Added — tests
+
+- **`src/__tests__/integration/commands-v190.test.js`** — 9 new tests
+  covering command module shape, base64 round-trip, hash digest
+  lengths/format, UUID format + uniqueness, YouTube host allow-list
+  positive + negative cases, and the schema flag default.
+
+### Changed
+
+- **`src/lib/configSchema.js`** — 3-line addition: new `ytdl` boolean
+  in the `features` object with default `false`.
+- **`package.json`** — bumped to `1.9.0`. **No new dependencies.**
+
+### Notes
+
+- `.ytdl` will short-circuit with a friendly "disabled" message until
+  an admin sets `features.ytdl = true` in config. The command file
+  doesn't require any new package — `@distube/ytdl-core` was already
+  in deps for `.song`. A defensive `try { require(...) } catch` falls
+  back to a friendly error if the package is ever missing on a host.
+- All 3 dev-utils commands are pure (no I/O, no upstream calls), so
+  they're instant and immune to upstream-API rate limits or outages.
+- Release notes inline per the post-v1.5.0 preference — no separate
+  `RELEASE_NOTES_v1.9.0.md` file.
+
+---
+
 ## [1.8.0] — 2026-06-17
 
 > **Batch 3 commands release.** Adds 7 new commands packaged as 5 logical

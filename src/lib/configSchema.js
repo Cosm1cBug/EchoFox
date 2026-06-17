@@ -101,6 +101,9 @@ const schema = z
         reactStatus: z.boolean().default(false),
         antiCall: z.boolean().default(false),
         syncHistory: z.boolean().default(true),
+        // v1.9.0 — opt-in YouTube downloader (.ytdl). YT ToS grey area;
+        // operator MUST enable explicitly. Defaults to false.
+        ytdl: z.boolean().default(false),
       })
       .default({}),
 

@@ -12,6 +12,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] — 2026-06-14
+
+> **Security hardening release.** Closes 8 audit findings (3 critical,
+> 5 high/medium). No new user-facing features — just stronger defaults,
+> harder bypass surfaces, and one safer dependency tree. Drop-in upgrade
+> from v1.4.6.
+
+### Security fixes
+
+- **Dashboard default password is now refused at startup** when
+  `dashboard.enabled = true`. Booting with `password: "change-me-please"`
+  (or any password <12 chars) now fails Zod validation with a clear
+  error message pointing at `config.bot.password` or the
+  `ECHOFOX_DASHBOARD_PASSWORD` env var.
+
+- **Session files moved outside the `src/` tree by default.** New
+  fresh installs put WhatsApp credentials at `./data/sessions/`
+  (relative to `process.cwd()`) instead of `src/@session/`. The new
+  `config.bot.sessionDir` field accepts an absolute or
+  cwd-relative path; the legacy `config.bot.sessionName` field still
+  works (with a startup warning) for back-compat with existing
+  deployments. If you have an existing `src/@session/` folder, **move
+  it to `./data/sessions/` and set `config.bot.sessionDir` to silence
+  the warning** — your WA pairing survives.
+
+- **SSRF guard hardened significantly** in `fetch_url`:
+  - Now also blocks `100.64.0.0/10` (CGNAT, some AWS configs),
+    `0.0.0.0/8`, `metadata.google.internal`, `.internal` / `.corp` /
+    `.lan` TLDs, IPv6 link-local (`fe80::/10`), IPv6 unique-local
+    (`fc00::/7`), IPv4-mapped IPv6 (`::ffff:`), and the docs prefix
+    `2001:db8::`.
+  - **Hostnames are now actually resolved via DNS before fetching.**
+    Prevents DNS-rebinding (attacker.com resolves to `8.8.8.8` at the
+    literal-check stage, then `127.0.0.1` at fetch time). If the
+    resolved address is private, the fetch is refused with
+    `error: 'private_host_blocked', detail: 'resolved_to_private'`.
+  - Added explicit `maxBodyLength: 200_000` alongside the existing
+    `maxContentLength` (closes the gap where axios was only checking
+    the `Content-Length` header).
+
+- **`xml2js` removed** (CVE-2023-0842, prototype pollution).
+  - `src/services/thehackersnewsService.js` and
+    `src/services/genericRssService.js` migrated to `fast-xml-parser`
+    (which was already a dependency).
+  - Includes a compatibility helper for the differing attribute /
+    text-node conventions so Atom feeds still parse correctly.
+
+- **AI cost cap now uses in-flight reservations** to close the
+  concurrent-request race window. New API in
+  `src/services/ai/costTracker.js`:
+  - `reserve(estimatedUsd)` → opaque id; called before each LLM
+    request with an upper-bound cost estimate (max_tokens × the most
+    expensive whitelisted model's completion price + 20% margin).
+  - `release(id)` → called after each LLM call to remove the
+    reservation.
+  - `isOverCap()` now includes active reservations in its total,
+    so two concurrent requests can't both pass when their combined
+    estimated cost would exceed the cap.
+
+- **Config loader now emits a structured fatal log** when
+  `src/config.js` has a JS syntax error or throws at `require()` time.
+  Previously surfaced as a cryptic Node parse stack (especially
+  invisible inside Docker). Now prints a boxed message with the
+  exact file path, the error message, and a suggested action before
+  the worker exits.
+
+### Operational improvements
+
+- **Baileys version warning at startup.** If the installed
+  `@whiskeysockets/baileys` is a prerelease (`-rc`, `-beta`,
+  `-alpha`, `-next`, `-preview`, `-dev`), the bot emits a `WARN`-level
+  log at boot pointing operators at the Baileys releases page and
+  recommending pinning to a GA version when one is available.
+  Prereleases are subject to silent WhatsApp protocol breakage.
+
+### Removed
+
+- **`xml2js` dependency** — replaced by `fast-xml-parser` (already
+  present). One fewer prototype-pollution-prone library.
+- **`@vitalets/google-translate-api`** — was a leftover from an
+  earlier translate command; the active library is
+  `google-translate-api-x`. Unused, removed.
+
+### Added
+
+- 6 new integration tests in
+  `src/__tests__/integration/security-v150.test.js`:
+  default-password rejection, sessionDir schema, full
+  `_isPrivateHost` matrix (24 cases incl. v1.5.0 additions),
+  reserve/release/isOverCap interaction, `estimateMaxCostUsd`,
+  Baileys version sanity check.
+
+### Migration notes
+
+- **No schema breakage.** All v1.4.x configs still parse. New
+  validators only run when `dashboard.enabled = true`.
+- If you run with `dashboard.enabled = true` and you've never changed
+  the default password, **the bot will now refuse to start.** Set a
+  strong password (≥12 chars) in your `config.js` or via the
+  `ECHOFOX_DASHBOARD_PASSWORD` env var.
+- If you have an existing `src/@session/` directory it keeps working
+  with a deprecation warning. Set `config.bot.sessionDir` to silence
+  it and move the directory to its safer location.
+- **No new dependencies.** v1.5.0 removes 2 (`xml2js`,
+  `@vitalets/google-translate-api`) and adds 0.
+- AI cost cap is now stricter — concurrent requests that would
+  collectively exceed the cap are now refused, where previously they
+  could "leak" past it by racing through `isOverCap()`. If you see
+  unexpected `cost_cap` rejects in your AI logs, raise
+  `config.ai.costCapPerDayUsd`.
+
+### Audit findings deferred to a later release
+
+- TypeScript migration — discussed, deferred to v2.0.0.
+- `node-cache` → `lru-cache` consolidation — Baileys' caches API
+  is sensitive to method-signature differences; defer until proper
+  integration testing.
+
+---
+
 ## [1.4.6] — 2026-06-14
 
 > **Docs deploy hotfix.** The `docs.yml` workflow was failing with

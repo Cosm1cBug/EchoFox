@@ -90,7 +90,37 @@ async function selectAuth() {
     // MULTIFILE (default)
     const { useMultiFileAuthState } = require('@whiskeysockets/baileys');
 
-    const sessionDir = path.join(__dirname, '..', config.bot.sessionName);
+    // v1.5.0 security: session files are NOT inside src/ anymore by default.
+    // Resolution rules (in order):
+    //   1. Absolute path in config.bot.sessionDir → use as-is
+    //   2. Relative path in config.bot.sessionDir → relative to process.cwd()
+    //   3. Legacy fallback: config.bot.sessionName joined to ../src (back-compat
+    //      for users with existing src/@session/ folders — emit a warning)
+    let sessionDir;
+    const cfgDir = config.bot.sessionDir;
+    if (cfgDir && path.isAbsolute(cfgDir)) {
+      sessionDir = cfgDir;
+    } else if (cfgDir) {
+      sessionDir = path.resolve(process.cwd(), cfgDir);
+    } else {
+      // Legacy path — still works but warns
+      sessionDir = path.join(__dirname, '..', config.bot.sessionName);
+      if (fs.existsSync(sessionDir)) {
+        log.warn(
+          {
+            phase: 'auth',
+            legacyDir: sessionDir,
+            recommended: path.resolve(process.cwd(), 'data', 'sessions'),
+          },
+          'v1.5.0 security warning: session files are inside the src/ tree. ' +
+            'Move them outside (e.g. ./data/sessions/) and set config.bot.sessionDir. ' +
+            'A web exploit exposing static files could leak your WA credentials.',
+        );
+      } else {
+        // Fresh install — default to the safe location
+        sessionDir = path.resolve(process.cwd(), 'data', 'sessions');
+      }
+    }
 
     if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
 
@@ -264,10 +294,42 @@ async function fetchVersion() {
   }
 }
 
+// ─── v1.5.0: Baileys package version sanity check ───────────────────────
+//
+// Baileys is a reverse-engineered library that breaks when Meta pushes
+// a WhatsApp protocol update. RC/beta versions are pre-release and can
+// stop working without notice. Warn loudly so operators know they're
+// running on potentially-unstable software.
+function checkBaileysVersion() {
+  try {
+    const pkg = require('@whiskeysockets/baileys/package.json');
+    const v = pkg.version || 'unknown';
+    const isPrerelease = /-(?:rc|beta|alpha|next|preview|dev)\b/i.test(v);
+    if (isPrerelease) {
+      log.warn(
+        { phase: 'baileys-version', version: v, status: 'prerelease' },
+        '⚠️  Baileys is a pre-release (' +
+          v +
+          '). WhatsApp protocol updates ' +
+          'may silently break the bot. Watch https://github.com/WhiskeySockets/Baileys/releases ' +
+          'and pin to a GA version when available.',
+      );
+    } else {
+      log.info({ phase: 'baileys-version', version: v, status: 'stable' }, 'Baileys version: ' + v);
+    }
+  } catch (e) {
+    log.warn(
+      { phase: 'baileys-version', err: e.message },
+      'Could not read Baileys package version',
+    );
+  }
+}
+
 module.exports = {
   logBoot,
   selectAuth,
   selectStore,
+  checkBaileysVersion,
   initMetrics,
   startLoginFlow,
   fetchVersion,

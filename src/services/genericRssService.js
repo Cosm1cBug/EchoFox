@@ -22,7 +22,10 @@
  */
 
 const { axiosWithBreaker, isOpenBreakerError } = require('../lib/network');
-const xml2js = require('xml2js');
+// v1.5.0 security: migrated from xml2js (prototype pollution risk per CVE-2023-0842)
+// to fast-xml-parser. Attribute prefix '@_' and text node '#text' replace
+// xml2js' $ and _ conventions; normaliseCategories + extractLink handle both.
+const { XMLParser } = require('fast-xml-parser');
 const { config } = require('../lib/configLoader');
 const { getStore } = require('../store/instance');
 const logger = require('../core/logger').child({ mod: 'rss-service' });
@@ -31,14 +34,45 @@ const SERVICE = 'rss';
 const CHECK_INTERVAL = config.apis?.rss?.checkIntervalMin || 30;
 const MAX_ARTICLES = config.apis?.rss?.maxArticlesPerFeed || 5;
 
-const parser = new xml2js.Parser({ explicitArray: false });
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  textNodeName: '#text',
+  trimValues: true,
+  parseTagValue: false,
+});
+
+// v1.5.0: extract a feed item's URL from BOTH xml2js and fast-xml-parser shapes.
+//   RSS:   <link>https://...</link>            -> string
+//   Atom:  <link href="https://..."/>          -> xml2js: { $: { href: ... } }
+//                                                -> f-x-p: { @_href: ... }
+//   Atom (multiple):                            -> array of the above
+function _extractLink(item) {
+  const l = item.link;
+  if (!l) return item.guid?.['#text'] || item.guid?._ || item.guid || '';
+  if (typeof l === 'string') return l;
+  if (Array.isArray(l)) return _extractLink({ link: l[0] });
+  if (typeof l === 'object') {
+    return l['@_href'] || l['#text'] || (l.$ && l.$.href) || l._ || '';
+  }
+  return '';
+}
 
 function normaliseCategories(item) {
   let cats = [];
   if (Array.isArray(item.category)) cats = item.category;
   else if (typeof item.category === 'string') cats = [item.category];
-  // Some feeds use <category term="..."> attribute (Atom)
-  cats = cats.map((c) => (c && typeof c === 'object' ? c._ || c.$?.term || '' : c));
+  else if (item.category) cats = [item.category];
+  // v1.5.0: handle BOTH xml2js shape ({_, $.term}) and fast-xml-parser shape
+  // ({#text, @_term}) so the migration is safe even mid-deploy.
+  cats = cats.map((c) => {
+    if (c == null) return '';
+    if (typeof c === 'string') return c;
+    if (typeof c === 'object') {
+      return c['#text'] || c._ || c['@_term'] || (c.$ && c.$.term) || '';
+    }
+    return String(c);
+  });
   return cats
     .map((c) =>
       String(c || '')
@@ -57,7 +91,7 @@ async function fetchFeed(url) {
       responseType: 'text',
       headers: { 'User-Agent': 'EchoFox/1.0 (RSS subscription)' },
     });
-    const result = await parser.parseStringPromise(data);
+    const result = parser.parse(data); // sync
     // RSS 2.0
     let items = result?.rss?.channel?.item;
     // Atom
@@ -67,11 +101,8 @@ async function fetchFeed(url) {
     return arr
       .slice(0, MAX_ARTICLES)
       .map((item) => ({
-        title: item.title?._ || item.title || '(untitled)',
-        link:
-          typeof item.link === 'string'
-            ? item.link
-            : item.link?.$?.href || item.link?.[0]?.$?.href || item.guid?._ || item.guid || '',
+        title: (item.title && (item.title['#text'] || item.title._)) || item.title || '(untitled)',
+        link: _extractLink(item),
         pubDate: item.pubDate || item.published || item.updated || null,
         categories: normaliseCategories(item),
       }))

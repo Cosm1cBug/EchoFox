@@ -97,11 +97,61 @@ async function todayTotalUsd() {
   }
 }
 
+// ─── v1.5.0: in-flight cost reservations ────────────────────────────────
+// Closes the race window where two concurrent requests both pass the cap
+// check before either records its cost. We track pending reservations in
+// a process-local Map; isOverCap() includes them in its total. The
+// reservation is finalised (or released) when the LLM call returns.
+//
+// Each reservation uses an upper-bound estimate from the configured
+// max_tokens × the most expensive model's completion price. Conservative
+// by design — false positives (refusing a request that would have been
+// fine) are better than letting the cap leak.
+
+const _reservations = new Map(); // id -> { usd, ts }
+let _resCounter = 0;
+
+function _activeReservationsUsd() {
+  let total = 0;
+  for (const r of _reservations.values()) total += r.usd;
+  return total;
+}
+
+/** Reserve `estimatedUsd` of the daily cap. Returns an opaque id used to
+ *  release/finalise the reservation. Always call release() in a finally. */
+function reserve(estimatedUsd) {
+  const id = String(++_resCounter);
+  _reservations.set(id, { usd: Math.max(0, Number(estimatedUsd) || 0), ts: Date.now() });
+  return id;
+}
+
+/** Release a reservation made by reserve(). Idempotent. */
+function release(id) {
+  if (id != null) _reservations.delete(String(id));
+}
+
+/** Estimate the upper-bound USD cost of a single chat call given the
+ *  configured max_tokens and the most expensive whitelisted model. */
+function estimateMaxCostUsd(provider, model) {
+  const maxTok = Number(config.ai?.maxTokens) || 800;
+  const [pIn, pOut] = priceFor(provider, model);
+  // Assume worst case: all tokens are completion tokens (the more expensive side).
+  // Add a 20% safety margin.
+  return (maxTok * Math.max(pIn, pOut) * 1.2) / 1_000_000;
+}
+
 async function isOverCap() {
   const cap = Number(config.ai?.costCapPerDayUsd) || 0;
   if (!cap) return false;
   const used = await todayTotalUsd();
-  return used >= cap;
+  const reserved = _activeReservationsUsd();
+  return used + reserved >= cap;
+}
+
+// Test-only: clear all reservations (used by ai-rate-persist.test.js etc.)
+function _resetReservationsForTests() {
+  _reservations.clear();
+  _resCounter = 0;
 }
 
 async function summary({ days = 7 } = {}) {
@@ -122,4 +172,9 @@ module.exports = {
   todayTotalUsd,
   isOverCap,
   summary,
+  // v1.5.0 — reservation API
+  reserve,
+  release,
+  estimateMaxCostUsd,
+  _resetReservationsForTests,
 };

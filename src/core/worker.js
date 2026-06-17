@@ -179,7 +179,10 @@ setInterval(
 async function start(retry = 0) {
   if (shuttingDown) return;
 
-  if (retry === 0) lifecycle.logBoot();
+  if (retry === 0) {
+    lifecycle.logBoot();
+    lifecycle.checkBaileysVersion(); // v1.5.0
+  }
 
   auth = await lifecycle.selectAuth();
   const { state, saveCreds, clear } = auth;

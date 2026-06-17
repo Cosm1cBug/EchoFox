@@ -6,7 +6,15 @@
 'use strict';
 
 const { axiosWithBreaker, isOpenBreakerError } = require('../lib/network');
-const xml2js = require('xml2js');
+// v1.5.0 security: migrated from xml2js (prototype pollution risk per CVE-2023-0842)
+// to fast-xml-parser which doesn't materialise __proto__ keys from input.
+const { XMLParser } = require('fast-xml-parser');
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  trimValues: true,
+  parseTagValue: false, // keep CDATA as strings, don't coerce
+});
 const config = require('../lib/configLoader').config;
 const { getStore } = require('../store/instance');
 const logger = require('../core/logger').child({ mod: 'thehackersnews-service' });
@@ -22,8 +30,8 @@ async function fetchLatestArticles(limit = 5) {
       timeout: 15000,
     });
 
-    const parser = new xml2js.Parser({ explicitArray: false });
-    const result = await parser.parseStringPromise(data);
+    // fast-xml-parser is synchronous; no async needed
+    const result = xmlParser.parse(data);
 
     const items = result?.rss?.channel?.item;
     if (!items) return [];
@@ -108,77 +116,3 @@ async function checkAndDeliver(sock) {
 }
 
 module.exports = { checkAndDeliver, CHECK_INTERVAL, fetchLatestArticles, matchesTopics };
-
-/*
-
-Updated code using fast-xml-parser
-
-'use strict';
-
-const axios = require('axios');
-const { XMLParser } = require('fast-xml-parser');
-const config = require('../lib/configLoader').config;
-const store = require('../store/db');
-const logger = require('../core/logger').child({ mod: 'thehackersnews-service' });
-
-const THEHACKERSNEWS_RSS = 'https://feeds.feedburner.com/TheHackersNews';
-const CHECK_INTERVAL = config.apis?.thehackersnews?.checkIntervalMin || 60;
-
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  trimValues: true,
-});
-
-async function fetchLatestArticles(limit = 5) {
-  try {
-    const { data } = await axios.get(THEHACKERSNEWS_RSS, {
-      timeout: 15000,
-      responseType: 'text',
-    });
-
-    const result = parser.parse(data);
-
-    const items = result?.rss?.channel?.item;
-
-    if (!items) {
-      logger.warn('No articles found in RSS feed');
-      return [];
-    }
-
-    const articles = Array.isArray(items) ? items : [items];
-
-    return articles.slice(0, limit).map(item => ({
-      guid: typeof item.guid === 'object'
-        ? item.guid['#text'] || item.link
-        : item.guid || item.link,
-
-      title: item.title || '',
-      link: item.link || '',
-      pubDate: item.pubDate || '',
-      description: item.description || '',
-      author: item.author || '',
-
-      image:
-        item.enclosure?.['@_url'] ||
-        item['media:content']?.['@_url'] ||
-        null,
-    }));
-  } catch (error) {
-    logger.error(
-      {
-        err: error.message,
-        stack: error.stack,
-      },
-      'Failed to fetch articles from The Hacker News RSS'
-    );
-
-    return [];
-  }
-}
-
-module.exports = {
-  fetchLatestArticles,
-  CHECK_INTERVAL,
-};
-*/

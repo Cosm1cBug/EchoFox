@@ -342,9 +342,26 @@ const DEFS = {
         return { error: 'bad_url' };
       }
       if (!/^https?:$/.test(u.protocol)) return { error: 'bad_scheme' };
+      // First line of defence: literal hostname check (fast, catches obvious cases)
       if (_isPrivateHost(u.hostname)) return { error: 'private_host_blocked' };
 
-      const ax = axiosWithBreaker('fetch-url-tool', { timeout: 10_000, maxContentLength: 200_000 });
+      // Second line of defence: actually resolve the hostname. Prevents
+      // DNS-rebinding (attacker.com resolves to 8.8.8.8 at the literal
+      // check, then 127.0.0.1 at fetch time).
+      const resolved = await _resolveAndCheck(u.hostname);
+      if (resolved.blocked) {
+        return {
+          error: 'private_host_blocked',
+          detail: resolved.reason,
+          address: resolved.address,
+        };
+      }
+
+      const ax = axiosWithBreaker('fetch-url-tool', {
+        timeout: 10_000,
+        maxContentLength: 200_000,
+        maxBodyLength: 200_000, // v1.5.0: also cap request body just in case
+      });
       try {
         const r = await ax.get(u.toString(), {
           headers: { 'User-Agent': config.network?.userAgent || 'EchoFox/1.2 (+intel)' },
@@ -373,17 +390,70 @@ function _detectIoc(s) {
   return 'domain';
 }
 
+// v1.5.0 security: comprehensive SSRF deny-list. Beyond RFC 1918 we also block:
+//   - 100.64.0.0/10   CGNAT space (AWS ECS task-metadata uses 169.254. but
+//                     some cloud setups use 100.64. for inter-VPC routing)
+//   - All IPv6 loopback (::1) + unique local (fc00::/7) + link-local (fe80::/10)
+//   - Cloud metadata hostnames (metadata.google.internal, etc.)
+//   - .internal, .corp, .lan (common local DNS suffixes)
 function _isPrivateHost(host) {
-  const h = String(host || '').toLowerCase();
+  const h = String(host || '')
+    .toLowerCase()
+    .trim();
   if (!h) return true;
-  if (h === 'localhost' || h.endsWith('.local')) return true;
-  if (/^127\./.test(h)) return true;
-  if (/^10\./.test(h)) return true;
-  if (/^192\.168\./.test(h)) return true;
-  if (/^169\.254\./.test(h)) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(h)) return true;
-  if (h === '0.0.0.0' || h === '::1') return true;
+
+  // Hostname-based deny list
+  if (h === 'localhost' || h === 'ip6-localhost' || h === 'ip6-loopback') return true;
+  if (h.endsWith('.local') || h.endsWith('.internal') || h.endsWith('.corp') || h.endsWith('.lan'))
+    return true;
+  if (h === 'metadata.google.internal') return true;
+
+  // IPv4 ranges (RFC 1918 + extras)
+  if (/^127\./.test(h)) return true; // loopback
+  if (/^10\./.test(h)) return true; // RFC 1918 /8
+  if (/^192\.168\./.test(h)) return true; // RFC 1918 /16
+  if (/^169\.254\./.test(h)) return true; // link-local (incl. AWS metadata 169.254.169.254)
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(h)) return true; // RFC 1918 /12
+  if (/^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])\./.test(h)) return true; // CGNAT /10
+  if (h === '0.0.0.0') return true; // wildcard
+  if (/^0\./.test(h)) return true; // 0.0.0.0/8
+
+  // IPv6 — anything with a colon needs careful handling
+  if (h.includes(':')) {
+    if (h === '::1' || h === '::') return true;
+    // strip brackets if URL-form
+    const ip = h.replace(/^\[/, '').replace(/\]$/, '');
+    // ::ffff:127.0.0.1 (IPv4-mapped IPv6)
+    if (/^::ffff:[\d.]+/.test(ip)) {
+      const v4 = ip.split(':').pop();
+      return _isPrivateHost(v4);
+    }
+    if (/^fe[89ab][0-9a-f]:/.test(ip)) return true; // fe80::/10 link-local
+    if (/^f[cd][0-9a-f]{2}:/.test(ip)) return true; // fc00::/7 unique local
+    if (/^2001:db8:/.test(ip)) return true; // documentation prefix
+  }
+
   return false;
+}
+
+// v1.5.0: actually RESOLVE the hostname before fetching. The hostname-only
+// check above can be bypassed by a DNS-rebinding attack: attacker.com
+// resolves to 8.8.8.8 at check time, then 127.0.0.1 at fetch time. So
+// we resolve first and bail if any of the returned A/AAAA records is private.
+async function _resolveAndCheck(hostname) {
+  const dns = require('node:dns').promises;
+  try {
+    // Resolve BOTH A and AAAA; lookup with all:true returns every record
+    const addrs = await dns.lookup(hostname, { all: true, verbatim: true });
+    for (const a of addrs) {
+      if (_isPrivateHost(a.address)) {
+        return { blocked: true, reason: 'resolved_to_private', address: a.address };
+      }
+    }
+    return { blocked: false };
+  } catch (e) {
+    return { blocked: true, reason: 'dns_resolution_failed', error: e.code || e.message };
+  }
 }
 
 // Very-small RSS shim — enough for THN.

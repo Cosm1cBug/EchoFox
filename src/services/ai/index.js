@@ -81,6 +81,12 @@ async function chat({
     persona: pname,
   } = _resolveSettings({ optIn, providerName, modelName, persona: personaName });
 
+  // v1.5.0: reserve estimated cost BEFORE doing any work. Closes the race
+  // window where two concurrent requests both pass cost.isOverCap() and
+  // collectively exceed the cap. The actual recorded cost replaces the
+  // reservation on completion in the finally block below.
+  const _reservationId = cost.reserve(cost.estimateMaxCostUsd(provider, model));
+
   const system = personas.pick({ persona: pname, customPersona: aiCfg.customPersona });
   const prov = _resolveProvider(provider);
 
@@ -189,6 +195,7 @@ async function chat({
     logger.warn({ err: e }, 'noteSent failed');
   }
 
+  cost.release(_reservationId);
   return {
     reply: finalContent,
     rounds,

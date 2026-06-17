@@ -43,7 +43,35 @@ const PATHS = {
 function loadRaw() {
   if (fs.existsSync(PATHS.real)) {
     delete require.cache[require.resolve(PATHS.real)];
-    return { source: 'config.js', raw: require(PATHS.real) };
+    try {
+      return { source: 'config.js', raw: require(PATHS.real) };
+    } catch (err) {
+      // v1.5.0: config.js has a JS syntax error or threw at require time.
+      // Emit a structured fatal log so users see a clear field-path
+      // instead of a cryptic Node parse stack trace (especially helpful
+      // in Docker where console output isn't visible by default).
+      const message =
+        '\n────────────────────────────────────────────────────────────\n' +
+        '  FATAL: src/config.js failed to load.\n' +
+        '  ' +
+        (err && err.message ? err.message : String(err)) +
+        '\n' +
+        '  File:    ' +
+        PATHS.real +
+        '\n' +
+        '  Action:  fix the syntax error in your config.js, or rename\n' +
+        '           it temporarily to fall back to config.example.js.\n' +
+        '────────────────────────────────────────────────────────────';
+      // Use both console.error (visible everywhere) AND throw a structured error
+      // that the supervisor can catch and pretty-print.
+      console.error(message);
+      const e = new Error(
+        'config.js load failed: ' + (err && err.message ? err.message : String(err)),
+      );
+      e.code = 'CONFIG_LOAD_FAILED';
+      e.cause = err;
+      throw e;
+    }
   }
   if (fs.existsSync(PATHS.example)) {
     delete require.cache[require.resolve(PATHS.example)];

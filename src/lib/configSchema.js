@@ -84,6 +84,10 @@ const schema = z
         prefix: z.union([z.string().min(1), z.instanceof(RegExp)]).default('.'),
         adminPrefix: z.union([z.string().min(1), z.instanceof(RegExp)]).default('$'),
         sessionName: z.string().min(1).default('@session'),
+        // v1.5.0 security: prefer sessionDir (resolved from process.cwd())
+        // over sessionName (resolved from __dirname inside src/).
+        // Default './data/sessions' keeps WA credentials outside the source tree.
+        sessionDir: z.string().default(''),
         timezone: z.string().min(1).default('Asia/Kolkata'),
         language: z.string().length(2).default('en'),
         public: z.boolean().default(true),
@@ -137,7 +141,20 @@ const schema = z
         username: z.string().default('admin'),
         password: z.string().default('change-me-please'),
       })
-      .default({}),
+      .default({})
+      .refine((d) => !d.enabled || d.password !== 'change-me-please', {
+        message:
+          'v1.5.0 security: dashboard.password must be changed from the default ' +
+          '"change-me-please" when dashboard.enabled is true. Set a strong password ' +
+          'in config.js or via the ECHOFOX_DASHBOARD_PASSWORD env var.',
+        path: ['password'],
+      })
+      .refine((d) => !d.enabled || d.password.length >= 12, {
+        message:
+          'v1.5.0 security: dashboard.password must be at least 12 characters ' +
+          'when dashboard.enabled is true.',
+        path: ['password'],
+      }),
 
     processing: z
       .object({

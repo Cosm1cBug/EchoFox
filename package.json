@@ -103,7 +103,7 @@
     "lru-cache": "^11.0.1",
     "mime-types": "^2.1.35",
     "moment-timezone": "^0.6.2",
-    "mongoose": "^8.7.0",
+    "mongoose": "^9.7.0",
     "msedge-tts": "^2.0.5",
     "music-metadata": "^11.13.0",
     "node-cache": "^5.1.2",

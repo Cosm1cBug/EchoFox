@@ -37,6 +37,7 @@ const ai = require('../services/ai');
 const { makeRateLimiter } = require('../middleware/rateLimit');
 const metrics = require('../services/metrics');
 const afkState = require('../services/afkState');
+const antilink = require('../services/antilinkService');
 
 // ─── Inbound rate limiter (token bucket per sender) ──────────────────────
 const senderLimiter = makeRateLimiter({
@@ -214,6 +215,54 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
   if (config.features.readMessages) {
     sock.readMessages([m.key]).catch(() => {});
   }
+
+  // ─── v1.8.0 antilink hook ────────────────────────────────────────
+  // Per-group, opt-in. Group admins are exempt. Bot must be group admin
+  // for the delete action to work. Whitelist supports host suffixes.
+  if (ctx.isGroup && antilink.containsLink(ctx.body)) {
+    try {
+      const alCfg = await antilink.getConfig(ctx.chat);
+      if (alCfg.enabled) {
+        const host = antilink.findFirstHost(ctx.body);
+        const whitelisted = antilink.isWhitelisted(host, alCfg.whitelist);
+        const callerIsAdmin = (config.admins || []).includes(ctx.sender);
+        // Group-admin exemption — fetch metadata lazily
+        let groupAdmin = callerIsAdmin;
+        if (!groupAdmin) {
+          try {
+            const meta =
+              (await store.getGroupMetadata(ctx.chat).catch(() => null)) ||
+              (await sock.groupMetadata(ctx.chat).catch(() => null));
+            const p = meta?.participants?.find((x) => x.id === ctx.sender);
+            groupAdmin = !!p?.admin;
+          } catch (_e) {
+            /* fall back to non-admin */
+          }
+        }
+        if (!groupAdmin && !whitelisted) {
+          const wantDelete = alCfg.action === 'delete' || alCfg.action === 'delete+warn';
+          const wantWarn = alCfg.action === 'warn' || alCfg.action === 'delete+warn';
+          if (wantDelete) {
+            sock
+              .sendMessage(ctx.chat, { delete: m.key })
+              .catch((e) => logger.debug?.({ err: e }, 'antilink delete failed'));
+          }
+          if (wantWarn) {
+            sock
+              .sendMessage(ctx.chat, {
+                text: `🚫 *Antilink* — links are not allowed here.\n@${ctx.sender.split('@')[0]}, please avoid posting links.`,
+                mentions: [ctx.sender],
+              })
+              .catch((e) => logger.debug?.({ err: e }, 'antilink warn failed'));
+          }
+          return; // don't process further (no command dispatch on offending msg)
+        }
+      }
+    } catch (e) {
+      logger.debug?.({ err: e, chat: ctx.chat }, 'antilink check failed');
+    }
+  }
+
   // ── Prefix detection (admin prefix wins on tie) ────────────────────
   const text = ctx.body || '';
   const adminMatch = matchPrefix(text, config.bot.adminPrefix);

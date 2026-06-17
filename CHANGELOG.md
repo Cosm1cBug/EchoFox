@@ -12,6 +12,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.0] — 2026-06-17
+
+> **Batch 3 commands release.** Adds 7 new commands packaged as 5 logical
+> picks (warn = warn+warnings in one file; tools utility trio shipped
+> together). No new dependencies — reuses ai.providers, axiosWithBreaker,
+> moment-timezone, and the subscriber_meta persistence pattern.
+
+### Added — new commands
+
+- **`.ask <question>`** _(general)_ — one-shot AI query that bypasses
+  per-chat opt-in AND conversation memory. Honours the v1.5.0 cost-cap
+  reservation pattern. Reply-aware: combines the quoted message + the
+  user's follow-up into a single prompt. _Aliases: `q`, `gpt`._
+- **`.explain [eli5|code|auto] [text]`** _(general)_ — explain a replied
+  message or arbitrary text. Auto-detects code vs prose (heuristic on
+  keywords + brace density). `eli5` mode does kid-level explanations,
+  `code` mode does line-by-line. _Aliases: `eli5`, `wat`._
+- **`.warn @user [reason]`** _(group)_ — group-admin warn system with
+  auto-kick at threshold. Sub-verbs: `list`, `remove`, `clear`,
+  `config threshold <N>`. `.warnings` / `.warns` aliases work bare to
+  show all warned users. Per-user warn log persisted via
+  `subscriber_meta` (synthetic `warnings` service keyed by group jid).
+  Default threshold: 3, configurable 1–20. _Aliases: `warning`,
+  `warnings`, `warns`._
+- **`.antilink [on|off|action|whitelist …]`** _(group)_ — auto-delete
+  and/or warn on non-admin posted links. Group admins exempt. Per-host
+  whitelist (case-insensitive, suffix match — `github.com` allows
+  `api.github.com` too, max 50 entries). 3 action modes:
+  `warn`, `delete`, `delete+warn` (default). The detection +
+  enforcement hook lives in `messages.upsert.js`. _Aliases: `nolink`,
+  `linkblock`._
+- **`.define <word>`** _(tools)_ — English dictionary via
+  dictionaryapi.dev (free, no key). Returns first 2 part-of-speech
+  meanings with definition + example. _Aliases: `def`, `dict`._
+- **`.timezone <tz|city>`** _(tools)_ — current time in any IANA tz or
+  city. Bare `.worldclock` (alias) shows 9 major cities preset
+  (LA, NY, London, Berlin, Dubai, Mumbai, Singapore, Tokyo, Sydney).
+  City→tz resolution via Open-Meteo geocoding. Uses the existing
+  moment-timezone dep. _Aliases: `tz`, `time`, `worldclock`._
+- **`.convert <amount> <from> <to>`** _(tools)_ — currency conversion
+  (fiat + crypto). Fiat via Frankfurter (ECB-backed, ~30 currencies);
+  crypto via CoinGecko (18 common tickers). Supports fiat→crypto and
+  crypto→crypto. _Aliases: `cv`, `fx`, `currency`._
+
+### Added — infrastructure
+
+- **`src/services/warnService.js`** — warn CRUD + threshold management
+  over `subscriber_meta`. Hard cap 100 warns/user, 20 max threshold.
+- **`src/services/antilinkService.js`** — link detection (regex-based,
+  http/https or www. only — won't false-positive on `node.js`), host
+  extraction, whitelist matching (suffix-aware), config CRUD.
+- **`src/__tests__/integration/commands-v180.test.js`** — 13 new tests
+  covering link-detection edge cases, whitelist suffix-match semantics,
+  service exports, and module-shape for all 7 new commands.
+
+### Changed
+
+- **`src/events/messages.upsert.js`** — single-line require + ~50-line
+  antilink hook inserted just before the prefix-detection block. Hook
+  is fully gated on `config.enabled` and lazy-fetches group metadata
+  only when a link is detected, so it has zero cost for normal traffic.
+  Failed delete/warn sends are logged at debug-level and never crash
+  the message pipeline.
+- **`package.json`** — bumped to `1.8.0`. No new dependencies.
+
+### Notes
+
+- The antilink hook is **per-group opt-in** (default off). Users with
+  existing groups see no behavioural change until they explicitly run
+  `.antilink on`.
+- The warn auto-kick requires the bot to also be a group admin —
+  graceful message surfaces if it isn't.
+- `.convert` crypto pricing comes from CoinGecko's public endpoint
+  (rate-limited ~30 req/min unauthenticated). Heavy use should consider
+  configuring an API key in a future release.
+- Release notes inline per the post-v1.5.0 preference — no separate
+  `RELEASE_NOTES_v1.8.0.md` file.
+
+---
+
 ## [1.7.0] — 2026-06-17
 
 > **Batch 2 commands release.** Adds 5 more commands across `tools/`,

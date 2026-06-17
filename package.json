@@ -78,7 +78,7 @@
     ]
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.1",
+    "@anthropic-ai/sdk": "^0.104.2",
     "@google/generative-ai": "^0.24.1",
     "@whiskeysockets/baileys": "7.0.0-rc13",
     "@hapi/boom": "^10.0.1",

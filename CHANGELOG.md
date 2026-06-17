@@ -12,6 +12,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.11.0] — 2026-06-17
+
+> **CI/CD plumbing release.** Fixes the Docker + npm release pipelines
+> that have been silently no-op since v1.5.0 (they required a `git push
+--tags` that wasn't being done), adds Dependabot auto-merge for safe
+> bumps, and unblocks the GitHub Pages docs site that was never
+> deploying.
+
+### Fixed — release pipeline (the root cause of "Docker/npm not releasing")
+
+- **`.github/workflows/docker.yml`** — was tag-trigger only (`tags: ['v*']`).
+  Since v1.5.0 you've been pushing main only (`git push origin main` without
+  `--tags`), so this workflow never fired. Result: no Docker images at
+  `:1.5.0` through `:1.10.0` on GHCR or Docker Hub.
+  **Fix:** added the same "push-to-main + version-bump detection" logic
+  that `release.yml` already had. Now: push to main with a version
+  bump → Docker image builds and publishes automatically.
+- **`.github/workflows/npm-publish.yml`** — same root cause, same fix.
+  npm registry has been stuck on whatever last got tagged (likely v1.4.x).
+  Now: push to main with a version bump → npm publish runs (idempotent;
+  skips if already published).
+
+### Added — Dependabot auto-merge
+
+- **`.github/workflows/dependabot-auto-merge.yml`** — auto-merges
+  Dependabot PRs that pass CI when the bump is **patch or minor**.
+  Major bumps still require manual review. Implementation uses
+  `dependabot/fetch-metadata@v2` to read the bump severity, then
+  `gh pr merge --auto --squash` to enable GitHub's native auto-merge
+  (which respects all your branch-protection status checks).
+  Result: routine dep maintenance happens with zero clicks; major
+  bumps still land in your PR queue for a deliberate look.
+
+### Fixed — GitHub Pages docs site
+
+- **`.github/workflows/docs.yml`** — dropped the `paths: ['docs/**']`
+  filter that was preventing deploys from firing on most commits.
+  Also added a `npm run docs:commands` step that regenerates
+  `docs/commands.md` from `src/commands/` before each build, so the
+  docs site always reflects the live command catalog (currently 55
+  commands across 10 categories).
+- **`docs/.vitepress/config.mjs`** — `base: '/'` → `base: '/EchoFox/'`
+  so CSS/JS asset URLs resolve correctly when served from a project
+  Pages namespace (`https://cosm1cbug.github.io/EchoFox/`).
+- **`SETUP-PAGES.md`** _(new)_ — 30-second walkthrough for the
+  one-time GitHub Pages enable step in repo settings. Once enabled,
+  every push to main auto-rebuilds and redeploys.
+
+### Notes
+
+- **No source-code changes** in `src/`. This release is pure CI/CD
+  plumbing.
+- **No new npm dependencies.** All workflows use first-party or
+  existing GitHub Actions.
+- After this lands, your release UX becomes: edit `package.json`
+  version → `git push origin main` → 3 workflows run in parallel
+  (Release, Docker, npm) → 2-3 minutes later, GitHub Release page +
+  Docker tags + npm registry all show the new version. No
+  `git push --tags` needed.
+- Release notes inline per the post-v1.5.0 preference.
+
+---
+
 ## [1.10.0] — 2026-06-17
 
 > **Security & dependency consolidation release.** Closes 2 of 7 npm-audit

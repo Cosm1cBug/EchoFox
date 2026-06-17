@@ -1,14 +1,16 @@
 name: npm publish
 
-# v1.4.0:
-#   - Triggered by v* tag push, after the Release workflow has succeeded.
+# v1.11.0:
+#   - Triggered by v* tag push (legacy path)
+#   - Push-to-main fallback: detects version change in package.json and
+#     publishes that version (matches release.yml + docker.yml behaviour).
 #   - Requires repository secret NPM_TOKEN (npm automation token with
 #     publish scope on the 'echofox' package).
-#   - Skips if the package version is already published to the registry
-#     (no-op rerun safety).
+#   - Idempotent: skips if the version is already published to the registry.
 #   - Uses provenance attestation (npm supply-chain hardening).
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
@@ -23,8 +25,34 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # need HEAD~1 for the version-bump diff
+
+      - name: Decide whether to publish
+        id: decide
+        run: |
+          # Tag pushes + manual: always publish.
+          # Push-to-main: only publish if package.json version changed.
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "publish=true" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "publish=true" >> $GITHUB_OUTPUT
+          else
+            CURRENT=$(node -p "require('./package.json').version")
+            PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null \
+              | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).version||'0.0.0')}catch{console.log('0.0.0')}})" \
+              || echo '0.0.0')
+            if [ "$CURRENT" != "$PREVIOUS" ]; then
+              echo "publish=true" >> $GITHUB_OUTPUT
+              echo "🔼 version bumped: $PREVIOUS → $CURRENT — publishing"
+            else
+              echo "publish=false" >> $GITHUB_OUTPUT
+              echo "⏭️  no version change on main — skipping npm publish"
+            fi
+          fi
 
       - name: Setup Node.js
+        if: steps.decide.outputs.publish == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -32,13 +60,16 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies (without scripts to be safe)
+        if: steps.decide.outputs.publish == 'true'
         run: npm ci --ignore-scripts
 
       - name: Run tests (gate the publish)
+        if: steps.decide.outputs.publish == 'true'
         run: npm test
 
       - name: Resolve version
         id: ver
+        if: steps.decide.outputs.publish == 'true'
         run: |
           VERSION=$(node -p "require('./package.json').version")
           TAG="${GITHUB_REF_NAME}"
@@ -50,6 +81,7 @@ jobs:
 
       - name: Check if version already published
         id: check
+        if: steps.decide.outputs.publish == 'true'
         run: |
           if npm view "echofox@${{ steps.ver.outputs.version }}" version >/dev/null 2>&1; then
             echo "already=true"  >> $GITHUB_OUTPUT
@@ -59,7 +91,7 @@ jobs:
           fi
 
       - name: Publish to npm (with provenance)
-        if: steps.check.outputs.already == 'false'
+        if: steps.decide.outputs.publish == 'true' && steps.check.outputs.already == 'false'
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

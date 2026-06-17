@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'EchoFox',
   description: 'Production-grade WhatsApp bot built on Baileys 7.x — AI + tooling + Telegram log bridge',
-  base: '/',
+  base: '/EchoFox/',
 
   lastUpdated: true,
   cleanUrls: true,

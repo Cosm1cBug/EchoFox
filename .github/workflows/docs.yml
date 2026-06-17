@@ -1,10 +1,16 @@
 name: Deploy Documentation
 
+# v1.11.0:
+#   - Triggers on every push to main (was: only docs/** changes).
+#     Reason: `scripts/generate-command-docs.js` regenerates docs/commands.md
+#     from src/commands/ — we want the docs site to reflect the latest
+#     command catalog on every release, not just when docs/ is hand-edited.
+#   - One-time setup required: enable GitHub Pages in repo settings →
+#     Pages → Source: GitHub Actions. See SETUP-PAGES.md in repo root.
+
 on:
   push:
     branches: [main]
-    paths:
-      - 'docs/**'
   workflow_dispatch:
 
 jobs:
@@ -36,6 +42,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Regenerate command catalog from source
+        # Keep docs/commands.md in sync with src/commands/ before building.
+        run: npm run docs:commands
 
       - name: Build VitePress site
         run: npm run docs:build

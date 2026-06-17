@@ -1,12 +1,15 @@
 name: Docker
 
+# v1.11.0:
+#   - tag-trigger: pushing a v* tag still builds + publishes (legacy path)
+#   - push-to-main fallback: detects version change in package.json and builds
+#     the image with that version (matches release.yml behaviour)
+#   - schedule: weekly rebuild to absorb base-image security patches
 on:
-  # v1.4.0: build & publish on every v* tag (release-driven)
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
   schedule:
-    # Weekly rebuild to absorb base-image security patches
     - cron: '0 0 * * 1'
   workflow_dispatch:
 
@@ -21,9 +24,36 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # need HEAD~1 for the version-bump diff
+
+      - name: Decide whether to build
+        id: decide
+        run: |
+          # Tag pushes + schedule + manual: always build.
+          # Push-to-main: only build if package.json version changed.
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "build=true" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "build=true" >> $GITHUB_OUTPUT
+          else
+            # Push to main — check for version bump
+            CURRENT=$(node -p "require('./package.json').version")
+            PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null \
+              | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).version||'0.0.0')}catch{console.log('0.0.0')}})" \
+              || echo '0.0.0')
+            if [ "$CURRENT" != "$PREVIOUS" ]; then
+              echo "build=true" >> $GITHUB_OUTPUT
+              echo "🔼 version bumped: $PREVIOUS → $CURRENT — building"
+            else
+              echo "build=false" >> $GITHUB_OUTPUT
+              echo "⏭️  no version change on main — skipping Docker build"
+            fi
+          fi
 
       - name: Get version
         id: version
+        if: steps.decide.outputs.build == 'true'
         run: |
           VERSION=$(node -p "require('./package.json').version")
           MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
@@ -33,9 +63,11 @@ jobs:
           echo "short_sha=$SHORT_SHA"         >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
+        if: steps.decide.outputs.build == 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Login to GitHub Container Registry
+        if: steps.decide.outputs.build == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -43,12 +75,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
+        if: steps.decide.outputs.build == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
+        if: steps.decide.outputs.build == 'true'
         uses: docker/build-push-action@v7
         with:
           context: .

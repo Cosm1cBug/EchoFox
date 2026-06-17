@@ -39,6 +39,7 @@ const { startDashboard } = require('../dashboard/server');
 const { startGC } = require('../lib/tempManager');
 const { wrapSocketSend } = require('../middleware/sendQueue');
 const { wrapWithPresence } = require('../middleware/presence');
+const sentMessageTracker = require('../services/sentMessageTracker');
 const { getWsAgent } = require('../lib/network');
 const { startMemoryGuard } = require('../lib/memoryGuard');
 const leakDetector = require('../lib/leakDetector');
@@ -303,6 +304,8 @@ async function start(retry = 0) {
 
       if (!sock._sendWrapped) {
         wrapSocketSend(sock, { concurrency: config.processing.sendConcurrency || 4 });
+        // v1.7.0 — track sent messages for .purge
+        sentMessageTracker.wrap(sock);
         sock._sendWrapped = true;
         log.info(
           { concurrency: config.processing.sendConcurrency || 4 },

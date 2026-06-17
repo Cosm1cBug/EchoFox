@@ -22,6 +22,7 @@
 
 const { classifyAction } = require('../store/schema/participants');
 const { config } = require('../lib/configLoader');
+const greetings = require('../services/greetingService');
 const logger = require('../core/logger').child({ mod: 'gp.update' });
 
 module.exports = async function onGroupParticipants({ sock, store, u }) {
@@ -87,4 +88,44 @@ module.exports = async function onGroupParticipants({ sock, store, u }) {
       })
       .catch((e) => logger.debug({ err: e }, 'failed to post groupUpdates notification'));
   }
+
+  // ─── v1.7.0 — per-group welcome/goodbye dispatch ──────────────────
+  await dispatchGreetings({ sock, groupJid, classified }).catch((e) =>
+    logger.debug({ err: e, groupJid }, 'greeting dispatch failed'),
+  );
 };
+
+async function dispatchGreetings({ sock, groupJid, classified }) {
+  const cfg = await greetings.getConfig(groupJid);
+  if (!cfg.welcomeEnabled && !cfg.goodbyeEnabled) return;
+
+  // Best-effort: pull live group meta for name + count. Failure is non-fatal.
+  let groupName = groupJid.split('@')[0];
+  let count;
+  try {
+    const meta = await sock.groupMetadata(groupJid);
+    groupName = meta?.subject || groupName;
+    count = Array.isArray(meta?.participants) ? meta.participants.length : undefined;
+  } catch (_e) {
+    /* fall through with defaults */
+  }
+
+  for (const { participant, action } of classified) {
+    const isWelcome = action === 'add' || action === 'join';
+    const isGoodbye = action === 'leave' || action === 'kick';
+    if (isWelcome && !cfg.welcomeEnabled) continue;
+    if (isGoodbye && !cfg.goodbyeEnabled) continue;
+    if (!isWelcome && !isGoodbye) continue;
+
+    const tpl = isWelcome ? cfg.welcomeTemplate : cfg.goodbyeTemplate;
+    const text = greetings.renderTemplate(tpl, {
+      userJid: participant,
+      groupName,
+      count,
+    });
+
+    sock
+      .sendMessage(groupJid, { text, mentions: [participant] })
+      .catch((err) => logger.debug({ err, groupJid, participant, action }, 'greeting send failed'));
+  }
+}

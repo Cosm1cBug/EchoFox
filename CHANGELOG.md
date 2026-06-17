@@ -12,6 +12,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.0] — 2026-06-17
+
+> **Batch 2 commands release.** Adds 5 more commands across `tools/`,
+> `general/`, `admin/`, and `group/` categories. No new dependencies —
+> all infra reuses existing primitives (axiosWithBreaker, ai.providers,
+> subscriber_meta, lru-cache, wrapSocketSend).
+
+### Added — new commands
+
+- **`.shorten <url>`** _(tools)_ — URL shortener via is.gd (free, no API
+  key). Reuses the v1.5.0 SSRF private-host guard from `toolRegistry`
+  to refuse shortening links to internal/private hosts. Soft cap 2 KB
+  input. _Aliases: `short`, `tinyurl`._
+- **`.summarize [N | reply]`** _(general)_ — AI summary of the last N
+  messages in the chat (default 50, cap 200) or the quoted message.
+  Calls the configured AI provider directly so conversation memory is
+  NOT mutated. Honours the v1.5.0 cost-cap reservation pattern. Falls
+  back gracefully when the store backend lacks `getRecentMessages`.
+  _Aliases: `sum`, `tldr`, `recap`._
+- **`.purge [N | <duration>]`** _(admin)_ — admin-only. Revokes the
+  bot's recently-sent messages in this chat using Baileys' `delete`
+  protocol message. Backed by the new `sentMessageTracker` service
+  (bounded LRU, 100 entries/chat, 24h TTL). Accepts either count
+  (`.purge 25`, max 100) or duration (`.purge 5m`, `.purge 1h`).
+  In-process tracking only by design. _Aliases: `clear`, `cleanup`._
+- **`.welcome [bye] [on|off|set|reset|test]`** _(group)_ — group-admin-only.
+  Configures per-group welcome/goodbye templates with `{user}`,
+  `{group}`, `{count}` placeholders. Templates persisted via
+  `subscriber_meta` under the synthetic `greetings` service. Actual
+  dispatch happens automatically from `group-participants.update.js` on
+  `add`/`join`/`leave`/`kick` events. _Aliases: `greet`, `goodbye`._
+- **`.imagine [-s 256|512|1024|1792] [-q standard|hd] <prompt>`** _(general)_ —
+  text→image via OpenAI Images (`gpt-image-1`). Strict cost-cap aware:
+  per-image price reserved up-front, recorded on completion. Supports
+  HD quality flag and multiple sizes. Returns generated image as
+  attachment with prompt + cost in caption. 60s cooldown.
+  _Aliases: `img`, `gen`, `dalle`._
+
+### Added — infrastructure
+
+- **`src/services/sentMessageTracker.js`** — non-destructive wrapper
+  around `sock.sendMessage` that captures every outbound message key
+  into a per-chat ring buffer (100/chat, 24h TTL, 2k chats LRU-bounded).
+  `wrap(sock)` is idempotent so reconnects don't double-wrap.
+- **`src/services/greetingService.js`** — per-group welcome/goodbye
+  template store + renderer with placeholder substitution and
+  template-validation helpers.
+- **`src/__tests__/integration/commands-v170.test.js`** — 14 new tests
+  covering tracker behaviour, greeting rendering/validation, and
+  command-module shape for all 5 new commands.
+
+### Changed
+
+- **`src/core/worker.js`** — single-line require + 2-line
+  `sentMessageTracker.wrap(sock)` call inside the existing
+  `wrapSocketSend` block. Both wrappers chain cleanly.
+- **`src/events/group-participants.update.js`** — single-line require +
+  invocation of new `dispatchGreetings()` helper after the existing
+  `groupUpdates` channel notification. The helper is fire-and-forget so
+  greeting send failures never block participant-event processing.
+- **`package.json`** — bumped to `1.7.0`. No new dependencies.
+
+### Notes
+
+- Reminder service from v1.6.0 unchanged; AFK state unchanged.
+- The `imagine` command depends on `config.ai.providers.openai.apiKey`
+  (or `OPENAI_API_KEY`). Failure mode is a friendly user-facing error,
+  not a crash.
+- `sentMessageTracker` is intentionally in-memory: purge after a process
+  restart will find nothing to revoke, which matches user expectation
+  (you only purge "recent" stuff).
+- Release notes inline per the post-v1.5.0 preference — no separate
+  `RELEASE_NOTES_v1.7.0.md` file.
+
+---
+
 ## [1.6.0] — 2026-06-17
 
 > **Engagement & utility release.** Adds 5 new commands across `tools/`

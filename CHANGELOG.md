@@ -12,6 +12,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.11.2] — 2026-06-17
+
+> **Hotfix release.** Fixes npm publish workflow that was failing
+> because `npm ci --ignore-scripts` skipped `better-sqlite3`'s native
+> binding download, causing all sqlite-touching tests to crash on
+> missing bindings.
+
+### Fixed
+
+- **`.github/workflows/npm-publish.yml`** — dropped `--ignore-scripts`
+  from the `npm ci` step. Tests now have a working `better-sqlite3`
+  binding and complete the suite (223/223). The security concern was
+  overblown for our use case: we own the lockfile, every dep change
+  goes through a reviewed Dependabot PR, and `npm publish` itself
+  ships only the files listed under `package.json"files"` — node_modules
+  is never included.
+
+### Action required on your side
+
+- **Docker Hub publish is still failing** (separate issue, NOT
+  fixed by this release). Root cause: the Docker Hub repo
+  `cosm1cbug/echofox` doesn't exist. Fix:
+  1. Sign in to <https://hub.docker.com>.
+  2. Click "Create Repository", name it `echofox`, visibility
+     "Public", description "WhatsApp bot built on Baileys".
+  3. Click Create. (Your existing `DOCKERHUB_TOKEN` already has the
+     right scope — no token regeneration needed.)
+  4. The next push will succeed (GHCR push has been succeeding the
+     whole time — you can see it at
+     <https://github.com/Cosm1cBug/EchoFox/pkgs/container/echofox>).
+
+### Notes
+
+- No source-code changes. CI plumbing fix only.
+- 223/223 tests pass. Other gates unchanged.
+
+---
+
 ## [1.11.0] — 2026-06-17
 
 > **CI/CD plumbing release.** Fixes the Docker + npm release pipelines

@@ -1,13 +1,5 @@
 name: npm publish
 
-# v1.11.0:
-#   - Triggered by v* tag push (legacy path)
-#   - Push-to-main fallback: detects version change in package.json and
-#     publishes that version (matches release.yml + docker.yml behaviour).
-#   - Requires repository secret NPM_TOKEN (npm automation token with
-#     publish scope on the 'echofox' package).
-#   - Idempotent: skips if the version is already published to the registry.
-#   - Uses provenance attestation (npm supply-chain hardening).
 on:
   push:
     branches: [main]
@@ -59,9 +51,10 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
-      - name: Install dependencies (without scripts to be safe)
+      - name: Install dependencies
+        # v1.11.2: dropped --ignore-scripts — see header comment.
         if: steps.decide.outputs.publish == 'true'
-        run: npm ci --ignore-scripts
+        run: npm ci
 
       - name: Run tests (gate the publish)
         if: steps.decide.outputs.publish == 'true'

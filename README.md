@@ -53,7 +53,7 @@
 ### Ops polish
 
 - 🚀 **CI/CD auto-release** — `git push origin v1.x.x` triggers GitHub Release + Docker (GHCR + Docker Hub, multi-arch) + npm publish (with provenance) + Pages deploy in parallel
-- 📚 **VitePress docs site** auto-deployed to [cosm1cbug.github.io/echofox](https://cosm1cbug.github.io/echofox/)
+- 📚 **VitePress docs site** auto-deployed to [cosm1cbug.github.io/echofox](https://cosm1cbug.github.io/EchoFox/)
 - 📊 **22 Grafana panels** out of the box (defaults + AI + Telegram + Signal Protocol Health)
 - 🚨 **2 built-in alert rules**: AI cost > 80% of cap, Telegram failure rate > 20% — mirrored to both WhatsApp `errLogs` AND Telegram
 - 🩹 **Signal protocol self-healing** (v1.4.2) — auto-recovers from `Bad MAC` / `No session found` decryption errors without operator intervention; demotes the noisy ERROR logs to DEBUG

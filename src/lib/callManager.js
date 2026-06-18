@@ -1,8 +1,3 @@
-/*
- * EchoFox - WhatsApp bot built on Baileys
- * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
- * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
- */
 'use strict';
 
 const dc = require('node-datachannel');
@@ -14,12 +9,14 @@ class CallManager {
     this.activeCalls = new Map(); // callId -> { peer, from, state }
   }
 
-  // ==================== ACCEPT CALL ====================
-  async acceptCall(callId, from, offer) {
-    logger.info({ from, callId }, 'Accepting call');
+  // ==================== HANDLE INCOMING OFFER ====================
+  async handleOffer(callId, from, offer) {
+    logger.info({ from, callId }, 'Received call offer');
 
     const peer = new dc.PeerConnection(`call-${callId}`, {
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+      ],
     });
 
     this.activeCalls.set(callId, { peer, from, state: 'connecting' });
@@ -27,11 +24,17 @@ class CallManager {
     // Handle incoming media tracks
     peer.onTrack = (track) => {
       logger.info({ callId, kind: track.kind }, 'Received media track');
-      if (track.kind === 'audio') this.handleAudioTrack(track, callId);
-      if (track.kind === 'video') this.handleVideoTrack(track, callId);
+
+      if (track.kind === 'audio') {
+        this.handleAudioTrack(track, callId);
+      }
+
+      if (track.kind === 'video') {
+        this.handleVideoTrack(track, callId);
+      }
     };
 
-    // Send ICE candidates to remote peer
+    // Send ICE candidates to the remote peer
     peer.onIceCandidate = (candidate) => {
       this.sendSignalingMessage(from, {
         type: 'ice-candidate',
@@ -41,10 +44,10 @@ class CallManager {
     };
 
     try {
-      // Set remote description (offer from caller)
+      // Set remote description (offer)
       await peer.setRemoteDescription(offer, 'offer');
 
-      // Create and set local description (answer)
+      // Create answer
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
 
@@ -58,7 +61,7 @@ class CallManager {
       this.activeCalls.get(callId).state = 'connected';
       logger.info({ callId, from }, 'Call accepted and answer sent');
     } catch (err) {
-      logger.error({ err, callId }, 'Failed to accept call');
+      logger.error({ err, callId }, 'Failed to handle offer');
       this.endCall(callId);
     }
 
@@ -76,23 +79,7 @@ class CallManager {
     }
   }
 
-  // ==================== HANDLE REMOTE ICE CANDIDATE ====================
-  async addRemoteCandidate(callId, candidate) {
-    const call = this.activeCalls.get(callId);
-    if (!call || !call.peer) {
-      logger.warn({ callId }, 'No active peer for ICE candidate');
-      return;
-    }
-
-    try {
-      await call.peer.addRemoteCandidate(candidate);
-      logger.debug({ callId }, 'Added remote ICE candidate');
-    } catch (err) {
-      logger.error({ err, callId }, 'Failed to add remote ICE candidate');
-    }
-  }
-
-  // ==================== HANDLE ANSWER FROM REMOTE ====================
+  // ==================== HANDLE REMOTE ANSWER ====================
   async handleAnswer(callId, answer) {
     const call = this.activeCalls.get(callId);
     if (!call || !call.peer) return;
@@ -105,15 +92,17 @@ class CallManager {
     }
   }
 
-  // ==================== MEDIA TRACK HANDLERS ====================
-  handleAudioTrack(track, callId) {
-    logger.info({ callId }, 'Audio track ready for processing');
-    // You can record, play, or process audio here
-  }
+  // ==================== HANDLE REMOTE ICE CANDIDATE ====================
+  async addRemoteCandidate(callId, candidate) {
+    const call = this.activeCalls.get(callId);
+    if (!call || !call.peer) return;
 
-  handleVideoTrack(track, callId) {
-    logger.info({ callId }, 'Video track ready for processing');
-    // You can record or process video here
+    try {
+      await call.peer.addRemoteCandidate(candidate);
+      logger.debug({ callId }, 'Added remote ICE candidate');
+    } catch (err) {
+      logger.error({ err, callId }, 'Failed to add remote ICE candidate');
+    }
   }
 
   // ==================== SEND SIGNALING MESSAGES ====================
@@ -127,13 +116,22 @@ class CallManager {
     }
   }
 
+  // ==================== MEDIA TRACK HANDLERS ====================
+  handleAudioTrack(track, callId) {
+    logger.info({ callId }, 'Audio track ready for processing');
+  }
+
+  handleVideoTrack(track, callId) {
+    logger.info({ callId }, 'Video track ready for processing');
+  }
+
   // ==================== END CALL ====================
   endCall(callId) {
     const call = this.activeCalls.get(callId);
     if (call?.peer) {
       call.peer.close();
       this.activeCalls.delete(callId);
-      logger.info({ callId }, 'Call ended and peer closed');
+      logger.info({ callId }, 'Call ended');
     }
   }
 }

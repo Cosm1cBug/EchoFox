@@ -29,7 +29,7 @@ const {
 const logger = require('./logger');
 const caches = require('./caches');
 const { config } = require('../lib/configLoader');
-
+const { CallManager } = require('../lib/callManager');
 const lifecycle = require('./lifecycle');
 const metrics = require('../services/metrics');
 const signalHealth = require('../services/signalHealth');
@@ -278,9 +278,15 @@ async function start(retry = 0) {
       jid?.endsWith('@newsletter') || (jid === 'status@broadcast' && !config.features.readStatus),
   });
 
+  let callManager = null;
+    if (sock) {
+    callManager = new CallManager(sock);
+    log.info('CallManager initialized');
+  }
+
   sock.ev.on('creds.update', saveCreds);
 
-  // v1.6.0 — start reminder ticker once we have a sock
+
   reminderService.start(sock);
   store.bind(sock.ev);
 
@@ -406,34 +412,17 @@ async function start(retry = 0) {
     }
   });
 
-  sock.ev.on('messaging-history.set', (payload) =>
-    eventRouter.emit('messaging-history.set', { sock, store, payload }),
-  );
-  sock.ev.on('messaging-history.status', (u) =>
-    eventRouter.emit('messaging-history.status', { sock, store, u }),
-  );
-
-  sock.ev.on('contacts.update', (updates) =>
-    eventRouter.emit('contacts.update', { sock, updates }),
-  );
-  sock.ev.on('group-participants.update', (u) =>
-    eventRouter.emit('group-participants.update', { sock, store, u }),
-  );
+  sock.ev.on('messaging-history.set', (payload) => eventRouter.emit('messaging-history.set', { sock, store, payload }));
+  sock.ev.on('messaging-history.status', (u) => eventRouter.emit('messaging-history.status', { sock, store, u }));
+  sock.ev.on('contacts.update', (updates) => eventRouter.emit('contacts.update', { sock, updates }));
+  sock.ev.on('group-participants.update', (u) => eventRouter.emit('group-participants.update', { sock, store, u }));
   sock.ev.on('contacts.upsert', (u) => eventRouter.emit('contacts.upsert', { sock, u }));
-  sock.ev.on('call', (u) => eventRouter.emit('call', { sock, u }));
+  sock.ev.on('call', (u) => eventRouter.emit('call', { sock, u, callManager }));
   sock.ev.on('groups.update', (u) => eventRouter.emit('groups.update', { sock, store, u }));
-  sock.ev.on('messages.update', (payload) =>
-    eventRouter.emit('messages.update', { sock, store, payload }),
-  );
-  sock.ev.on('messages.delete', (payload) =>
-    eventRouter.emit('messages.delete', { sock, store, payload }),
-  );
-  sock.ev.on('messages.reaction', (payload) =>
-    eventRouter.emit('messages.reaction', { sock, store, payload }),
-  );
-  sock.ev.on('message-receipt.update', (payload) =>
-    eventRouter.emit('message-receipt.update', { sock, store, payload }),
-  );
+  sock.ev.on('messages.update', (payload) => eventRouter.emit('messages.update', { sock, store, payload }));
+  sock.ev.on('messages.delete', (payload) => eventRouter.emit('messages.delete', { sock, store, payload }));
+  sock.ev.on('messages.reaction', (payload) => eventRouter.emit('messages.reaction', { sock, store, payload }));
+  sock.ev.on('message-receipt.update', (payload) => eventRouter.emit('message-receipt.update', { sock, store, payload }));
   sock.ev.on('newsletter.upsert', (u) => eventRouter.emit('newsletter.upsert', { sock, u }));
   sock.ev.on('newsletters.update', (u) => eventRouter.emit('newsletters.update', { sock, u }));
   sock.ev.on('blocklist.set', (u) => eventRouter.emit('blocklist.set', { sock, u }));
@@ -444,13 +433,8 @@ async function start(retry = 0) {
   sock.ev.on('labels.association', (u) => eventRouter.emit('labels.association', { sock, u }));
   sock.ev.on('labels.edit', (u) => eventRouter.emit('labels.edit', { sock, u }));
   sock.ev.on('lid-mapping.update', (u) => eventRouter.emit('lid-mapping.update', { sock, u }));
-  sock.ev.on('message-capping.update', (u) =>
-    eventRouter.emit('message-capping.update', { sock, u }),
-  );
-
-  sock.ev.on('newsletter-settings.update', (u) =>
-    eventRouter.emit('newsletter-settings.update', { sock, u }),
-  );
+  sock.ev.on('message-capping.update', (u) => eventRouter.emit('message-capping.update', { sock, u }));
+  sock.ev.on('newsletter-settings.update', (u) => eventRouter.emit('newsletter-settings.update', { sock, u }));
   sock.ev.on('newsletter.reaction', (u) => eventRouter.emit('newsletter.reaction', { sock, u }));
   sock.ev.on('newsletter.view', (u) => eventRouter.emit('newsletter.view', { sock, u }));
   sock.ev.on('presence.update', (u) => eventRouter.emit('presence.update', { sock, u }));
@@ -459,6 +443,16 @@ async function start(retry = 0) {
     if (!payload?.messages?.length) return;
 
     metrics.incReceived(payload.messages.length);
+
+    if (m.message?.conversation) {
+      try {
+        const data = JSON.parse(m.message.conversation);
+        if (data.callId && (data.type === 'answer' || data.type === 'ice-candidate')) {
+          eventRouter.emit('call.signaling', { sock, m, data, callManager });
+          continue;
+        }
+      } catch {}
+    }
 
     for (const m of payload.messages) {
       const jid = m?.key?.remoteJid;

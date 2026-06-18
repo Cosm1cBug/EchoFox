@@ -20,6 +20,7 @@ const onGroupParticipants = require('./group-participants.update');
 const onContactsUpsert = require('./contacts.upsert');
 const onContactsUpdate = require('./contacts.update');
 const onCall = require('./call');
+const onCallSignaling = require('./call-signaling');
 const onMessagesUpdate = require('./messages.update');
 const onMessagesDelete = require('./messages.delete');
 const onMessageReaction = require('./messages.reaction');
@@ -50,6 +51,7 @@ bus.on('group-participants.update', (p) => Promise.resolve(onGroupParticipants(p
 bus.on('contacts.upsert', (p) => Promise.resolve(onContactsUpsert(p)).catch(() => {}));
 bus.on('contacts.update', (p) => Promise.resolve(onContactsUpdate(p)).catch(() => {}));
 bus.on('call', (p) => Promise.resolve(onCall(p)).catch(() => {}));
+bus.on('call.signaling', (p) => Promise.resolve(onCallSignaling(p)).catch(() => {}));
 bus.on('messages.update', (p) => Promise.resolve(onMessagesUpdate(p)).catch(() => {}));
 bus.on('messages.delete', (p) => Promise.resolve(onMessagesDelete(p)).catch(() => {}));
 bus.on('messages.reaction', (p) => Promise.resolve(onMessageReaction(p)).catch(() => {}));
@@ -58,16 +60,12 @@ bus.on('newsletter.upsert', (p) => Promise.resolve(onNewsletterUpsert(p)).catch(
 bus.on('newsletters.update', (p) => Promise.resolve(onNewsletterUpdate(p)).catch(() => {}));
 bus.on('newsletter.reaction', (p) => Promise.resolve(onNewsletterReaction(p)).catch(() => {}));
 bus.on('newsletter.view', (p) => Promise.resolve(onNewsletterView(p)).catch(() => {}));
-bus.on('newsletter-settings.update', (p) =>
-  Promise.resolve(onNewsletterSettingsUpdate(p)).catch(() => {}),
-);
+bus.on('newsletter-settings.update', (p) => Promise.resolve(onNewsletterSettingsUpdate(p)).catch(() => {}));
 bus.on('blocklist.set', (p) => Promise.resolve(onBlocklistSet(p)).catch(() => {}));
 bus.on('blocklist.update', (p) => Promise.resolve(onBlocklistUpdate(p)).catch(() => {}));
 bus.on('lid-mapping.update', (p) => Promise.resolve(onLidMappingUpdate(p)).catch(() => {}));
 bus.on('messaging-history.set', (p) => Promise.resolve(onMessagingHistorySet(p)).catch(() => {}));
-bus.on('messaging-history.status', (p) =>
-  Promise.resolve(onMessagingHistoryStatus(p)).catch(() => {}),
-);
+bus.on('messaging-history.status', (p) => Promise.resolve(onMessagingHistoryStatus(p)).catch(() => {}));
 bus.on('chats.upsert', (p) => Promise.resolve(onChatsUpsert(p)).catch(() => {}));
 bus.on('chats.update', (p) => Promise.resolve(onChatsUpdate(p)).catch(() => {}));
 bus.on('chats.delete', (p) => Promise.resolve(onChatsDelete(p)).catch(() => {}));

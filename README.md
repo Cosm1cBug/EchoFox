@@ -72,22 +72,38 @@
 
 ### Install
 
+EchoFox can be installed three ways — pick whichever fits your workflow.
+
+#### ⚡ Option A — npm package _(easiest, recommended)_
+
+```bash
+mkdir my-echofox && cd my-echofox
+npm init -y
+npm install echofox
+# Copy the example config from the installed package:
+cp node_modules/echofox/src/config.example.js src/config.js   # Linux/macOS
+# Or on Windows PowerShell:
+# Copy-Item node_modules\echofox\src\config.example.js src\config.js
+```
+
+Latest published version: **[![npm version](https://img.shields.io/npm/v/echofox?logo=npm&label=)](https://www.npmjs.com/package/echofox)**
+
+#### 🐳 Option B — Docker image _(zero-Node-install, multi-arch)_
+
+```bash
+docker pull ghcr.io/cosm1cbug/echofox:latest
+# or pin a specific version:
+docker pull ghcr.io/cosm1cbug/echofox:1.11.3
+```
+
+Then run with your config mounted in (see [Docker](#-docker) section below).
+
+#### 🛠️ Option C — Clone from source _(for hacking on the bot itself)_
+
 ```bash
 git clone https://github.com/Cosm1cBug/EchoFox.git
 cd EchoFox
 npm install
-```
-
-Or use the published npm package:
-
-```bash
-npm install echofox
-```
-
-Or pull the Docker image:
-
-```bash
-docker pull cosm1cbug/echofox:latest      # or :1.4, :1.4.2, :sha-abc1234
 ```
 
 ### Configure
@@ -125,7 +141,15 @@ Then `npm start` prints an 8-character code; enter it on your phone in the same 
 
 ## 🖥️ Dashboard
 
-The bot ships a React-based web dashboard at `:3001/dashboard`. **11 tabs** covering everything the bot tracks:
+The bot ships a React-based web dashboard at `:3001/dashboard` with **12 tabs** covering everything the bot tracks.
+
+<p align="center">
+  <a href="./.github/assets/dashboard.svg">
+    <img src="./.github/assets/dashboard.svg" alt="EchoFox dashboard — Overview tab" width="80%">
+  </a>
+</p>
+
+The tabs:
 
 | Tab           | Shows                                                              |
 | ------------- | ------------------------------------------------------------------ |
@@ -363,7 +387,7 @@ Hot reload picks it up immediately. The contract test (`npm test`) verifies ever
 ```bash
 curl http://localhost:3000/healthz       # supervisor health
 curl http://localhost:3000/metrics       # supervisor + Node.js defaults
-curl http://localhost:3001/metrics       # store-backed counters (AI + Telegram + Signal + …)
+curl http://localhost:3001/metrics       # store-backed counters
 ```
 
 Prometheus metrics exposed (28 counters + 9 gauges across 2 endpoints):
@@ -489,6 +513,14 @@ Hardening summary:
 - 🔒 npm published with `--provenance` for SLSA-style supply-chain attestation
 - 🔒 TruffleHog scans every push for leaked secrets
 - 🔒 Weekly Docker image rebuild for base-image security patches
+
+---
+
+## ⭐ Star history
+
+[![Star History Chart](https://api.star-history.com/chart?repos=Cosm1cBug/EchoFox&type=date&legend=bottom-right)](https://www.star-history.com/?repos=Cosm1cBug%2FEchoFox&type=date&legend=bottom-right)
+
+If EchoFox is useful to you, please [⭐ star the repo](https://github.com/Cosm1cBug/EchoFox) — it's the cheapest way to say "this is cool, keep going."
 
 ---
 

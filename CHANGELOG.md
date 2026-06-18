@@ -12,6 +12,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.11.3] — 2026-06-18
+
+> **Diagnostic hotfix.** v1.11.2 fixed the test step but the actual
+> `npm publish` command still fails with an unhelpful "exit code 1"
+> annotation. This release adds explicit pre-publish diagnostics so the
+> next failure log tells us exactly what's wrong (token missing? bad
+> scope? wrong account? 2FA?). Also makes the publish step non-fatal so
+> a transient npm-side failure doesn't poison the rest of the workflow
+> chain.
+
+### Changed — `.github/workflows/npm-publish.yml`
+
+- **NEW: "Pre-publish diagnostics" step** — runs before `npm publish`
+  and emits a clear log section:
+  - Confirms `NPM_TOKEN` secret is set (and prints its length, never
+    the value).
+  - Runs `npm whoami` so you can see which account the token belongs
+    to (or that it's invalid/expired).
+  - Lists granular token scopes if available.
+  - Fails fast with a remediation hint if any check fails.
+- **`npm publish` step now uses `--loglevel=verbose`** — captures the
+  actual npm-side error (rate limit, scope error, validation failure,
+  etc.) in the workflow log instead of just exit code 1.
+- **`npm publish` step marked `continue-on-error: true`** — a transient
+  npm-side failure no longer breaks the workflow chain. A new
+  "Final status" step reports the real result + a prioritised list of
+  common causes if it failed.
+
+### Why
+
+After v1.11.2 fixed the test-step failure, the npm publish step still
+returned exit 1 with no useful log line — just "Process completed with
+exit code 1". That's not enough to diagnose remotely. v1.11.3 makes
+the workflow self-diagnose so the next failure log includes:
+
+- whether the token is set
+- whether it's valid (whoami succeeds)
+- which account it's bound to
+- the verbose npm publish output (HTTP status, error code, etc.)
+
+After this lands, push v1.11.3 → watch the run log → the actual root
+cause is one click away in the "Pre-publish diagnostics" or "Publish
+to npm" step output.
+
+### Notes
+
+- No source changes. Pure CI plumbing.
+- 223/223 tests still pass.
+- Docker Hub fix (separate issue) still needs the manual repo
+  creation at hub.docker.com — see v1.11.2 changelog entry above.
+
+---
+
 ## [1.11.2] — 2026-06-17
 
 > **Hotfix release.** Fixes npm publish workflow that was failing

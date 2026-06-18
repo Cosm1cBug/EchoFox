@@ -1,5 +1,26 @@
 name: npm publish
 
+# v1.11.3:
+#   - Added pre-publish diagnostics: `npm whoami` + token-scope check
+#     surface the EXACT npm-side error in the workflow log on the next
+#     failure. The previous "exit code 1" annotation was unhelpful.
+#   - `npm publish` step uses --loglevel=verbose so the actual npm error
+#     message is captured.
+#   - Both publish-related steps marked `continue-on-error: true` so a
+#     transient npm-side failure doesn't break the whole workflow chain
+#     (Docker/Release/CI all run independently). The job still reports
+#     failure overall via the explicit final-status step so you can see
+#     at a glance whether the publish succeeded.
+#
+# v1.11.2:
+#   - Removed --ignore-scripts from `npm ci` so better-sqlite3 native
+#     binding installs correctly and tests can run.
+#
+# v1.11.0:
+#   - Push-to-main fallback: detects version change in package.json and
+#     publishes that version (matches release.yml + docker.yml behaviour).
+#   - Idempotent: skips if the version is already published to the registry.
+
 on:
   push:
     branches: [main]
@@ -52,7 +73,6 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # v1.11.2: dropped --ignore-scripts — see header comment.
         if: steps.decide.outputs.publish == 'true'
         run: npm ci
 
@@ -83,8 +103,63 @@ jobs:
             echo "already=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Publish to npm (with provenance)
+      # ─── v1.11.3 NEW: diagnostic step ──────────────────────────────
+      # Surfaces the EXACT npm-side state before attempting publish.
+      # If publish fails next time, the log will show:
+      #   • whether NPM_TOKEN is recognised by npm (whoami succeeds)
+      #   • which account it belongs to
+      #   • whether the token has publish scope
+      # This makes the "exit code 1" annotation actionable.
+      - name: Pre-publish diagnostics
         if: steps.decide.outputs.publish == 'true' && steps.check.outputs.already == 'false'
-        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "::group::🔐 npm auth state"
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "❌ NPM_TOKEN secret is EMPTY or NOT SET."
+            echo "   Fix: create a token at https://www.npmjs.com/settings/<your-account>/tokens"
+            echo "        choose type 'Automation' (or 'Granular' with publish scope on 'echofox')"
+            echo "        then add it as repo secret NPM_TOKEN at"
+            echo "        https://github.com/Cosm1cBug/EchoFox/settings/secrets/actions"
+            exit 1
+          fi
+          echo "✅ NPM_TOKEN is set (length: ${#NODE_AUTH_TOKEN} chars)"
+          echo
+          echo "▶ npm whoami:"
+          if npm whoami 2>&1; then
+            echo "✅ token is recognised by npm registry"
+          else
+            echo "❌ npm whoami FAILED — token is invalid, expired, or revoked"
+            echo "   Fix: regenerate the token at"
+            echo "        https://www.npmjs.com/settings/<your-account>/tokens"
+            exit 1
+          fi
+          echo
+          echo "▶ npm token list (if granular, shows scopes):"
+          npm token list 2>&1 || echo "   (skipped — classic tokens don't support this)"
+          echo "::endgroup::"
+
+      - name: Publish to npm (with provenance)
+        id: publish
+        if: steps.decide.outputs.publish == 'true' && steps.check.outputs.already == 'false'
+        continue-on-error: true # don't break the workflow chain — final-status step decides job result
+        run: npm publish --access public --provenance --loglevel=verbose
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Final status
+        if: steps.decide.outputs.publish == 'true' && steps.check.outputs.already == 'false'
+        run: |
+          if [[ "${{ steps.publish.outcome }}" == "success" ]]; then
+            echo "✅ Published echofox@${{ steps.ver.outputs.version }} to npm"
+          else
+            echo "::error::npm publish failed. Scroll up to the 'Publish to npm' step for the verbose error output."
+            echo "   Common causes (in priority order):"
+            echo "     1. NPM_TOKEN is missing or expired       → regenerate at https://www.npmjs.com/settings/~/tokens"
+            echo "     2. Token lacks publish scope             → use 'Automation' or 'Granular(publish)' type"
+            echo "     3. Account does not own 'echofox' name   → claim it once manually with 'npm publish' locally"
+            echo "     4. 2FA required but no OTP provided      → set 2FA to 'auth-only' (not 'auth-and-writes') on the account"
+            echo "     5. Provenance OIDC misconfigured         → check that 'id-token: write' is present (it is)"
+            exit 1
+          fi

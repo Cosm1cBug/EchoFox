@@ -1,3 +1,8 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
 'use strict';
 
 const dc = require('node-datachannel');
@@ -14,9 +19,7 @@ class CallManager {
     logger.info({ from, callId }, 'Received call offer');
 
     const peer = new dc.PeerConnection(`call-${callId}`, {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-      ],
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
 
     this.activeCalls.set(callId, { peer, from, state: 'connecting' });

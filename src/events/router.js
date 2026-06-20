@@ -60,12 +60,16 @@ bus.on('newsletter.upsert', (p) => Promise.resolve(onNewsletterUpsert(p)).catch(
 bus.on('newsletters.update', (p) => Promise.resolve(onNewsletterUpdate(p)).catch(() => {}));
 bus.on('newsletter.reaction', (p) => Promise.resolve(onNewsletterReaction(p)).catch(() => {}));
 bus.on('newsletter.view', (p) => Promise.resolve(onNewsletterView(p)).catch(() => {}));
-bus.on('newsletter-settings.update', (p) => Promise.resolve(onNewsletterSettingsUpdate(p)).catch(() => {}));
+bus.on('newsletter-settings.update', (p) =>
+  Promise.resolve(onNewsletterSettingsUpdate(p)).catch(() => {}),
+);
 bus.on('blocklist.set', (p) => Promise.resolve(onBlocklistSet(p)).catch(() => {}));
 bus.on('blocklist.update', (p) => Promise.resolve(onBlocklistUpdate(p)).catch(() => {}));
 bus.on('lid-mapping.update', (p) => Promise.resolve(onLidMappingUpdate(p)).catch(() => {}));
 bus.on('messaging-history.set', (p) => Promise.resolve(onMessagingHistorySet(p)).catch(() => {}));
-bus.on('messaging-history.status', (p) => Promise.resolve(onMessagingHistoryStatus(p)).catch(() => {}));
+bus.on('messaging-history.status', (p) =>
+  Promise.resolve(onMessagingHistoryStatus(p)).catch(() => {}),
+);
 bus.on('chats.upsert', (p) => Promise.resolve(onChatsUpsert(p)).catch(() => {}));
 bus.on('chats.update', (p) => Promise.resolve(onChatsUpdate(p)).catch(() => {}));
 bus.on('chats.delete', (p) => Promise.resolve(onChatsDelete(p)).catch(() => {}));

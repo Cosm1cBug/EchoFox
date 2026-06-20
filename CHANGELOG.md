@@ -12,6 +12,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.12.1] — 2026-06-19
+
+> **Hotfix release.** Fixes a runtime-fatal syntax error in
+> `src/core/worker.js` introduced by the `fix: call handler` commit
+> (post-v1.12.0). Also normalises three AGPL headers and clears
+> 4 lint warnings + 3 prettier nits.
+
+### Fixed — CRITICAL: worker.js parse error
+
+- **`src/core/worker.js`** — the call-signaling intercept block was
+  inserted **before** the `for (const m of payload.messages)` loop,
+  which made it reference an undefined `m` and use `continue` outside
+  any loop. ESLint flagged it as `Parsing error: Unsyntactic continue`,
+  and Node would refuse to load the file on bot start.
+  The fix moves the call-signaling check **inside** the for-loop where
+  `m` is in scope and `continue` is legal. Same behaviour as intended;
+  just legal JavaScript now.
+
+### Fixed — lint warnings
+
+- `src/store/authState.js` — `let creds`, `let keysData` → `const` (prefer-const).
+- `src/events/call-signaling.js` — unused `sock`, `m` args renamed to
+  `_sock`, `_m` (no-unused-vars, matches the `^_` allow-list).
+
+### Fixed — missing AGPL headers
+
+- Added short-form AGPL headers to 3 new files from the
+  `fix: call handler` commit:
+  - `src/events/call-signaling.js`
+  - `src/events/call.js`
+  - `src/lib/callManager.js`
+
+  Normalised to match the rest of the repo's short-form convention
+  (the auto-header tool defaults to a longer GPL preamble; we use the
+  one-liner everywhere else).
+
+### Fixed — prettier
+
+- 3 files re-formatted: `src/lib/callManager.js`, `src/store/authState.js`,
+  `src/events/router.js`. Pure whitespace.
+
+### Notes
+
+- No new code, no new dependencies. Pure cleanup of the
+  post-v1.12.0 commits.
+- All 246 tests still pass.
+- Audit posture unchanged (5 transitive advisories, all documented in
+  SECURITY.md).
+- Without this patch, `npm start` would crash on boot with
+  `SyntaxError: Illegal continue statement: no surrounding iteration`
+  before the bot even tries to connect to WhatsApp.
+
+---
+
 ## [1.12.0] — 2026-06-18
 
 > **Engagement release.** Adds 3 new commands (`.reddit`, `.readqr`,

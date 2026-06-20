@@ -1,3 +1,8 @@
+/*
+ * EchoFox - WhatsApp bot built on Baileys
+ * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
+ * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
+ */
 'use strict';
 
 const logger = require('../core/logger').child({ mod: 'call' });
@@ -27,7 +32,6 @@ module.exports = async function onCall({ sock, u, callManager }) {
 
       logger.info({ from: ev.from }, 'Accepting call');
       await callManager.handleOffer(ev.id, ev.from, ev.offer);
-
     } catch (err) {
       logger.error({ err, from: ev.from }, 'Error handling incoming call');
     }

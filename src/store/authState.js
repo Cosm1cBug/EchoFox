@@ -40,7 +40,7 @@ async function useRedisAuthStateWithHSet({ redisOptions, sessionId, logger = con
     throw err;
   }
 
-  let creds = credsData ? JSON.parse(credsData) : initAuthCreds();
+  const creds = credsData ? JSON.parse(credsData) : initAuthCreds();
 
   if (!credsData) {
     await redis.hset(hsetKey, 'creds', JSON.stringify(creds));
@@ -63,7 +63,7 @@ async function useRedisAuthStateWithHSet({ redisOptions, sessionId, logger = con
         const results = {};
         try {
           const pipeline = redis.pipeline();
-          ids.forEach(id => pipeline.hget(hsetKey, `keys:${type}:${id}`));
+          ids.forEach((id) => pipeline.hget(hsetKey, `keys:${type}:${id}`));
           const replies = await pipeline.exec();
 
           replies.forEach((reply, index) => {
@@ -136,7 +136,7 @@ async function makeKeyvAuthState({ sessionId, store, logger = console.log }) {
     creds = JSON.parse(creds);
   }
 
-  let keysData = await store.get(keysKey);
+  const keysData = await store.get(keysKey);
   const keys = keysData ? JSON.parse(keysData) : {};
 
   const saveCreds = async () => {

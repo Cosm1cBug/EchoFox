@@ -23,6 +23,7 @@
 
 const fs = require('node:fs');
 const { profilePicCache } = require('../../core/caches');
+const leveling = require('../../services/levelingService');
 const path = require('node:path');
 
 const DEFAULT_AVATAR = path.join(__dirname, '..', '..', 'Utils', 'assets', 'default.jpg');
@@ -94,10 +95,17 @@ module.exports = {
 
     const targetShort = targetJid.split('@')[0];
 
-    const [about, avatar] = await Promise.all([
+    const [about, avatar, level] = await Promise.all([
       fetchStatusSafely(sock, targetJid),
       fetchAvatar(sock, targetJid),
+      leveling.getLevel(targetJid).catch(() => null),
     ]);
+
+    // v1.12.0 — render the leveling line. Falls back gracefully if
+    // leveling is unavailable (store error / fresh user).
+    const levelLine = level
+      ? `*Level:* ${level.level}  (${level.intoLevelXp.toLocaleString()} / ${level.neededForNext.toLocaleString()} XP — ${level.percentToNext}%)`
+      : `*Level:* 1  (0 / ${leveling.BASE_THRESHOLD} XP — 0%)`;
 
     const lines = [
       `👤 *Profile*`,
@@ -106,6 +114,7 @@ module.exports = {
       `*Number:* +${targetShort}`,
       ctx.quoted ? null : `*Display name:* ${ctx.pushName}`,
       about ? `*About:* ${about}` : `*About:* _(unavailable)_`,
+      levelLine,
     ].filter(Boolean);
 
     const payload = {

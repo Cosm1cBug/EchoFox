@@ -38,6 +38,7 @@ const { makeRateLimiter } = require('../middleware/rateLimit');
 const metrics = require('../services/metrics');
 const afkState = require('../services/afkState');
 const antilink = require('../services/antilinkService');
+const muteService = require('../services/muteService');
 
 // ─── Inbound rate limiter (token bucket per sender) ──────────────────────
 const senderLimiter = makeRateLimiter({
@@ -361,6 +362,14 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
     metadata =
       (await store.getGroupMetadata(ctx.chat).catch(() => null)) ||
       (await sock.groupMetadata(ctx.chat).catch(() => null));
+  }
+
+  // ─── v1.12.0 mute check ─────────────────────────────────────────
+  // Silently drop the command for muted users in this group. Their
+  // non-command messages still flow normally (mute is soft).
+  if (ctx.isGroup && muteService.isMuted(ctx.chat, ctx.sender)) {
+    logger.debug?.({ chat: ctx.chat, sender: ctx.sender }, 'mute: command dropped');
+    return;
   }
 
   // Delegate to command runner

@@ -12,6 +12,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.12.0] — 2026-06-18
+
+> **Engagement release.** Adds 3 new commands (`.reddit`, `.readqr`,
+> `.mute`), introduces a user-leveling system visible only in
+> `.profile`, and consolidates 2 app-internal caches from `node-cache`
+> onto `lru-cache` via a thin compatibility shim.
+
+### Added — new commands
+
+- **`.reddit r/<sub> [hot|new|top|rising] [N]`** _(general)_ — top
+  posts from a public subreddit via Reddit's no-key JSON endpoint.
+  NSFW posts filtered out. Strict subreddit-name allow-list (3–21
+  alphanumeric chars per Reddit's spec). Returns title, author, score,
+  comment count, age, and permalink for up to 10 posts.
+  _Aliases: `rdt`, `sub`._
+- **`.readqr`** _(misc)_ — decode a QR code from a quoted image.
+  Pipeline: `ctx.downloadMsg()` → Jimp (decode to RGBA) → jsqr (scan
+  pixel buffer) → format-by-type (URL / WiFi / vCard / SMS / plain).
+  Hard limits: 10 MB input, 2048px max dimension (auto-scaled),
+  30s timeout. _Aliases: `qrread`, `scanqr`._
+- **`.mute @user [duration] [reason]`** _(group)_ — group-admin-only
+  soft-mute. Bot ignores muted user's COMMANDS in this group until
+  expiry; other messages flow normally. Sub-verbs: `list`, `clear`.
+  Default 30 min, max 7 days. Duration grammar: `60` (= minutes),
+  `30m`, `2h`, `1d`. Refuses to mute self or other admins.
+  In-memory only (cleared on restart — same rationale as AFK).
+  _Aliases: `silence`, `quiet`._
+
+### Added — user leveling
+
+- **`src/services/levelingService.js`** — per-user XP + level tracking
+  shown only in `.profile` output (no leaderboard by design — privacy).
+- **XP curve:** Fibonacci-style with growth factor 1.5×.
+  L1→L2 = 100 xp, L5→L6 = 506 xp, L10→L11 = 3,844 xp,
+  L20→L21 = 221,495 xp. High levels are genuinely rare.
+- **XP per command** (by category, AI commands always 15):
+  - 5 XP — general, tools, convert, download, entertainment
+  - 10 XP — admin, group, user, misc, main
+  - 15 XP — AI commands (`.ai`, `.ask`, `.summarize`, `.explain`, `.imagine`)
+- **Storage:** new `user_levels` table (jid PK, xp BIGINT, last_at).
+  Migrations for all 4 backends (sqlite + postgres + mongo + redis).
+- **Accrual:** hooked into `commandRunner.js` on successful command
+  completion. Fire-and-forget; never blocks the runner.
+- **Display:** `.profile` shows one extra line:
+  `*Level:* 3  (47 / 225 XP — 20.9%)`
+
+### Changed — cache consolidation (partial)
+
+- **`src/lib/lruCacheShim.js`** _(NEW)_ — thin wrapper around
+  `lru-cache` that exposes the NodeCache-compatible methods our app
+  uses (`get/set/del/has/flushAll/keys/size/getStats`). Lets us drop
+  `node-cache` for app-internal caches without changing call sites.
+- **`src/core/caches.js`** — `profilePicCache` and `parseCache` now
+  use `LruCacheShim` instead of `NodeCache`. Net effect: bounded
+  memory pressure on profile-pic lookups (was unbounded TTL-only),
+  slightly tighter API surface.
+- **The 5 Baileys-facing caches** (`msgRetryCounterCache`,
+  `callOfferCache`, `placeholderResendCache`, `userDevicesCache`,
+  `mediaCache`) **stay on `node-cache`** by design — Baileys calls
+  `await` on `.get/.set/.del` and feature-detects `.mget/.mset/.close`.
+  The shim intentionally doesn't expose those to keep its surface
+  small. node-cache stays in `package.json` to support these caches.
+
+### Added — store methods
+
+- All 4 store backends (sqlite, postgres, mongo, redis) gain:
+  - `getUserLevel(jid)` → `{ jid, xp, last_at } | null`
+  - `addUserXp(jid, amount)` → `Promise<number>` (new total XP)
+
+### Changed — files modified
+
+- `src/core/commandRunner.js` — single-line require + 5-line awardXP hook
+  on successful command completion (fire-and-forget).
+- `src/commands/user/profile.js` — single-line require + 1 extra
+  `Promise.all` slot + 1 new line in the output template.
+- `src/events/messages.upsert.js` — single-line require + 7-line mute
+  check just before command dispatch.
+
+### Added — tests
+
+- **`src/__tests__/integration/commands-v1120.test.js`** — 19 new tests
+  covering: lruCacheShim API + bounds + TTL, leveling formula edge
+  cases, XP-per-command rules, muteService duration parsing + state
+  transitions, and module-shape checks for the 3 new commands.
+
+### Dependencies
+
+- **+ `jsqr ^1.4.0`** — pure-JS QR-code reader (no native deps).
+  Needed by `.readqr`. ~50 KB unpacked.
+- **No removals** — `node-cache` stays (still used by the 5
+  Baileys-facing caches).
+
+### Notes
+
+- Leveling is **per-user, not per-chat**. Sending `.weather` in a DM
+  and in a group both award the same XP to the same user.
+- Leveling shows up **only in `.profile`** by design — no leaderboard,
+  no `/api/leaderboard` endpoint, no group-wide rankings. Keeps the
+  feature feel personal rather than competitive.
+- Bot's own messages don't earn XP (the runner skips `m.key.fromMe`
+  before reaching this code path).
+- Mute state is **in-memory only** by design — persistence would create
+  stuck-mute states across overnight restarts (same rationale as AFK
+  in v1.6.0).
+- Release notes inline per the post-v1.5.0 preference.
+
+---
+
 ## [1.11.3] — 2026-06-18
 
 > **Diagnostic hotfix.** v1.11.2 fixed the test step but the actual

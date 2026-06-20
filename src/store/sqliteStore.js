@@ -234,6 +234,14 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       PRIMARY KEY (chat_jid, day_bucket)
     );
     CREATE INDEX IF NOT EXISTS idx_ai_rate_chat_exp ON ai_rate_chat (expires_at);
+
+    -- v1.12.0 user leveling ────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS user_levels (
+      jid      TEXT    PRIMARY KEY,
+      xp       INTEGER NOT NULL DEFAULT 0,
+      last_at  INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_levels_xp ON user_levels (xp);
     
   `);
 
@@ -398,6 +406,14 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     msgUpdateStatus: db.prepare(
       `UPDATE messages SET status = MAX(IFNULL(status,0), ?) WHERE jid = ? AND id = ?`,
     ),
+
+    // v1.12.0 — user leveling
+    levelGet: db.prepare(`SELECT xp, last_at FROM user_levels WHERE jid = ?`),
+    levelUpsertAdd: db.prepare(
+      `INSERT INTO user_levels (jid, xp, last_at) VALUES (?, ?, ?)
+       ON CONFLICT(jid) DO UPDATE SET xp = xp + excluded.xp, last_at = excluded.last_at`,
+    ),
+    levelGetXp: db.prepare(`SELECT xp FROM user_levels WHERE jid = ?`),
     deletedInGroup: db.prepare(
       `SELECT id, participant, deleted_at FROM messages WHERE jid = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT ?`,
     ),
@@ -1643,6 +1659,33 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         stmts.updateSubscriberMeta.run(meta == null ? null : JSON.stringify(meta), service, jid);
       } catch (e) {
         logger.warn({ err: e, service, jid }, 'updateSubscriberMeta failed');
+      }
+    },
+
+    // ─── v1.12.0 — user leveling ──────────────────────────────────
+    async getUserLevel(jid) {
+      try {
+        const row = stmts.levelGet.get(jid);
+        return row ? { jid, xp: Number(row.xp) || 0, last_at: Number(row.last_at) || 0 } : null;
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getUserLevel failed');
+        return null;
+      }
+    },
+    async addUserXp(jid, amount) {
+      const xp = Math.max(0, Math.floor(Number(amount) || 0));
+      if (xp === 0) {
+        const row = stmts.levelGetXp.get(jid);
+        return row ? Number(row.xp) : 0;
+      }
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        stmts.levelUpsertAdd.run(jid, xp, now);
+        const row = stmts.levelGetXp.get(jid);
+        return row ? Number(row.xp) : xp;
+      } catch (e) {
+        logger.debug({ err: e, jid, amount }, 'addUserXp failed');
+        return 0;
       }
     },
 

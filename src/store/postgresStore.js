@@ -1413,6 +1413,42 @@ function makePostgresStore(url, logger, groupCache) {
       return this.recordSentItem(service, jid, articleUrl);
     },
 
+    // ─── v1.12.0 — user leveling ──────────────────────────────────
+    async getUserLevel(jid) {
+      try {
+        const r = await pool.query(`SELECT xp, last_at FROM user_levels WHERE jid = $1`, [jid]);
+        const row = r.rows[0];
+        return row ? { jid, xp: Number(row.xp) || 0, last_at: Number(row.last_at) || 0 } : null;
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getUserLevel failed');
+        return null;
+      }
+    },
+    async addUserXp(jid, amount) {
+      const xp = Math.max(0, Math.floor(Number(amount) || 0));
+      if (xp === 0) {
+        try {
+          const r = await pool.query(`SELECT xp FROM user_levels WHERE jid = $1`, [jid]);
+          return r.rows[0] ? Number(r.rows[0].xp) : 0;
+        } catch {
+          return 0;
+        }
+      }
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const r = await pool.query(
+          `INSERT INTO user_levels (jid, xp, last_at) VALUES ($1, $2, $3)
+           ON CONFLICT (jid) DO UPDATE SET xp = user_levels.xp + EXCLUDED.xp, last_at = EXCLUDED.last_at
+           RETURNING xp`,
+          [jid, xp, now],
+        );
+        return r.rows[0] ? Number(r.rows[0].xp) : xp;
+      } catch (e) {
+        logger.debug({ err: e, jid, amount }, 'addUserXp failed');
+        return 0;
+      }
+    },
+
     pool,
     async close() {
       try {

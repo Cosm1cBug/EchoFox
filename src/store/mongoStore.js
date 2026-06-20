@@ -1429,6 +1429,43 @@ function makeMongoStore(uri, logger, groupCache) {
       return this.recordSentItem(service, jid, articleUrl);
     },
 
+    // ─── v1.12.0 — user leveling ──────────────────────────────────
+    async getUserLevel(jid) {
+      try {
+        const doc = await conn.collection('user_levels').findOne({ jid });
+        return doc ? { jid, xp: Number(doc.xp) || 0, last_at: Number(doc.last_at) || 0 } : null;
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getUserLevel failed');
+        return null;
+      }
+    },
+    async addUserXp(jid, amount) {
+      const xp = Math.max(0, Math.floor(Number(amount) || 0));
+      if (xp === 0) {
+        try {
+          const doc = await conn.collection('user_levels').findOne({ jid });
+          return doc ? Number(doc.xp) : 0;
+        } catch {
+          return 0;
+        }
+      }
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const r = await conn
+          .collection('user_levels')
+          .findOneAndUpdate(
+            { jid },
+            { $inc: { xp }, $set: { last_at: now } },
+            { upsert: true, returnDocument: 'after' },
+          );
+        const after = r?.value || r;
+        return after ? Number(after.xp) : xp;
+      } catch (e) {
+        logger.debug({ err: e, jid, amount }, 'addUserXp failed');
+        return 0;
+      }
+    },
+
     conn,
     async close() {
       try {

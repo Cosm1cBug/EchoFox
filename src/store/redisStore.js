@@ -1342,6 +1342,40 @@ function makeRedisStore(url, logger, groupCache) {
       return this.recordSentItem(service, jid, articleUrl);
     },
 
+    // ─── v1.12.0 — user leveling ──────────────────────────────────
+    async getUserLevel(jid) {
+      try {
+        const xpStr = await client.hget(`user_levels:${jid}`, 'xp');
+        const lastStr = await client.hget(`user_levels:${jid}`, 'last_at');
+        if (xpStr == null) return null;
+        return { jid, xp: Number(xpStr) || 0, last_at: Number(lastStr) || 0 };
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getUserLevel failed');
+        return null;
+      }
+    },
+    async addUserXp(jid, amount) {
+      const xp = Math.max(0, Math.floor(Number(amount) || 0));
+      const key = `user_levels:${jid}`;
+      if (xp === 0) {
+        try {
+          const cur = await client.hget(key, 'xp');
+          return cur == null ? 0 : Number(cur);
+        } catch {
+          return 0;
+        }
+      }
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const total = await client.hincrby(key, 'xp', xp);
+        await client.hset(key, 'last_at', now);
+        return Number(total) || xp;
+      } catch (e) {
+        logger.debug({ err: e, jid, amount }, 'addUserXp failed');
+        return 0;
+      }
+    },
+
     client,
     close() {
       client.quit();

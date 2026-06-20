@@ -10,11 +10,23 @@
  *   • clear them from a single point on shutdown
  *
  * We use:
- *   • LRU for bounded memory pressure (group metadata, message keys)
- *   • node-cache for TTL-only structures (retry counters, call offers)
+ *   • LRUCache (native) for size-bounded caches we control fully.
+ *   • LruCacheShim for size+TTL caches the APP USES that previously
+ *     used node-cache. The shim exposes a NodeCache-compatible API
+ *     so call sites don't need to change.
+ *   • node-cache for the 5 caches passed to Baileys (msgRetry,
+ *     callOffer, placeholderResend, userDevices, media). Baileys's
+ *     code does `await` on `.get/.set/.del` and feature-detects
+ *     `.mget/.mset/.close` — node-cache satisfies all of that
+ *     natively; the shim intentionally doesn't.
+ *
+ * v1.12.0:
+ *   profilePicCache + parseCache migrated from node-cache → shim.
+ *   The 5 Baileys-facing caches remain on node-cache (untouched).
  */
 const { LRUCache } = require('lru-cache');
 const NodeCache = require('node-cache');
+const { LruCacheShim } = require('../lib/lruCacheShim');
 
 // ─── Group metadata (the *single biggest* perf win for group sends) ──────
 //    Baileys consults `cachedGroupMetadata` before every group message.
@@ -38,10 +50,13 @@ const userDevicesCache = new NodeCache({ stdTTL: 60 * 5, useClones: false });
 const mediaCache = new NodeCache({ stdTTL: 60 * 30, useClones: false });
 
 // --- profile picture URLs — 1h TTL, avoids repeated sock.profilePictureUrl() calls
-const profilePicCache = new NodeCache({ stdTTL: 60 * 60, useClones: false });
+// v1.12.0: NodeCache → LruCacheShim. App-only cache, bounded to 5k entries.
+const profilePicCache = new LruCacheShim({ max: 5_000, stdTTL: 60 * 60 });
 
 // ─── App-level command/argument parse cache (cheap micro-opt) ────────────
-const parseCache = new LRUCache({ max: 500, ttl: 1000 * 30 });
+// v1.12.0: was a plain LRUCache; keep as LruCacheShim so its API matches
+// profilePicCache (so future code that touches either gets a consistent surface).
+const parseCache = new LruCacheShim({ max: 500, stdTTL: 30 });
 
 module.exports = {
   groupMetadataCache,
@@ -60,6 +75,6 @@ module.exports = {
     userDevicesCache.flushAll();
     mediaCache.flushAll();
     profilePicCache.flushAll();
-    parseCache.clear();
+    parseCache.flushAll();
   },
 };

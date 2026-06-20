@@ -27,6 +27,7 @@ const { config } = require('../lib/configLoader');
 const metrics = require('../services/metrics');
 const alertEngine = require('../services/alertEngine');
 const telegram = require('../services/telegram');
+const leveling = require('../services/levelingService');
 const { isUserFacingError, shouldCountAsFailure } = require('../lib/errors');
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -137,6 +138,13 @@ async function run({ sock, cmd, m, ctx, handlerArgs }) {
     await withTimeout(cmd.start(sock, m, handlerArgs), timeoutMs, cmd.name);
     metrics.incCommand(cmd.name, 'success');
     alertEngine.record(cmd.name, 'success');
+    // v1.12.0 — award per-user XP for successful commands.
+    // Fire-and-forget; failure inside leveling never blocks the runner.
+    leveling
+      .awardForCommand(ctx.sender, cmd)
+      .catch((e) =>
+        logger.debug({ err: e, cmd: cmd.name, sender: ctx.sender }, 'awardForCommand failed'),
+      );
     logger.debug({ cmd: cmd.name, ms: Date.now() - t0, sender: ctx.sender }, 'command ok');
   } catch (err) {
     const isTimeout = err.code === 'ETIMEDOUT';

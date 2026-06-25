@@ -1463,6 +1463,50 @@ function makePostgresStore(url, logger, groupCache) {
       }
     },
 
+    // v1.14.0 — group settings event log
+    async recordGroupSettingsChange(jid, field, oldValue, newValue, actor, ts) {
+      try {
+        await pool.query(
+          `INSERT INTO group_settings_events (jid, field, old_value, new_value, actor, ts)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            jid,
+            field,
+            oldValue == null ? null : String(oldValue),
+            newValue == null ? null : String(newValue),
+            actor || null,
+            Math.floor(Number(ts) || Date.now() / 1000),
+          ],
+        );
+      } catch (e) {
+        logger.debug({ err: e, jid, field }, 'recordGroupSettingsChange failed');
+      }
+    },
+    async getGroupSettingsHistory(jid, limit = 200) {
+      try {
+        const cap = Math.max(1, Math.min(2000, Number(limit) || 200));
+        const r = await pool.query(
+          `SELECT id, field, old_value, new_value, actor, ts
+           FROM group_settings_events
+           WHERE jid = $1
+           ORDER BY ts DESC, id DESC
+           LIMIT $2`,
+          [jid, cap],
+        );
+        return r.rows.map((row) => ({
+          id: Number(row.id),
+          field: row.field,
+          old_value: row.old_value,
+          new_value: row.new_value,
+          actor: row.actor,
+          ts: Number(row.ts),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getGroupSettingsHistory failed');
+        return [];
+      }
+    },
+
     pool,
     async close() {
       try {

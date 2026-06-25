@@ -31,6 +31,10 @@ export const getGroups = () => fetchJson("/api/groups");
 export const getGroupFull = (jid: string, historyLimit = 200) =>
   fetchJson(`/api/groups/${encodeURIComponent(jid)}/full?historyLimit=${historyLimit}`);
 
+// v1.14.0 — group settings change history (also bundled into getGroupFull)
+export const getGroupSettingsHistory = (jid: string, limit = 200) =>
+  fetchJson(`/api/groups/${encodeURIComponent(jid)}/settings/history?limit=${limit}`);
+
 export const getDiagnostics = () => fetchJson("/api/diagnostics");
 export const getAlerts = () => fetchJson("/api/alerts");
 export const getSubscriptions = () => fetchJson("/api/subscriptions");

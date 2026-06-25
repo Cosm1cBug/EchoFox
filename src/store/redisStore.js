@@ -1383,6 +1383,50 @@ function makeRedisStore(url, logger, groupCache) {
       return null;
     },
 
+    // v1.14.0 — group settings event log (LPUSH-capped LIST of JSON events)
+    async recordGroupSettingsChange(jid, field, oldValue, newValue, actor, ts) {
+      try {
+        const key = `group_settings_events:${jid}`;
+        const event = {
+          field,
+          old_value: oldValue == null ? null : String(oldValue),
+          new_value: newValue == null ? null : String(newValue),
+          actor: actor || null,
+          ts: Math.floor(Number(ts) || Date.now() / 1000),
+        };
+        await client.lpush(key, JSON.stringify(event));
+        await client.ltrim(key, 0, 1999);
+      } catch (e) {
+        logger.debug({ err: e, jid, field }, 'recordGroupSettingsChange failed');
+      }
+    },
+    async getGroupSettingsHistory(jid, limit = 200) {
+      try {
+        const cap = Math.max(1, Math.min(2000, Number(limit) || 200));
+        const raw = await client.lrange(`group_settings_events:${jid}`, 0, cap - 1);
+        const out = [];
+        for (let i = 0; i < raw.length; i++) {
+          try {
+            const e = JSON.parse(raw[i]);
+            out.push({
+              id: `r${i}`,
+              field: e.field,
+              old_value: e.old_value,
+              new_value: e.new_value,
+              actor: e.actor,
+              ts: Number(e.ts),
+            });
+          } catch {
+            /* skip malformed entry */
+          }
+        }
+        return out;
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getGroupSettingsHistory failed');
+        return [];
+      }
+    },
+
     client,
     close() {
       client.quit();

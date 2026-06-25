@@ -119,8 +119,7 @@ export function SettingsPanel({ meta }: Props) {
       </dl>
 
       <div className="border-t border-white/5 bg-slate-900/30 px-4 py-2.5 text-xs text-slate-500">
-        💡 Settings change history (who changed what when) is planned for v1.14.0 —
-        it needs a new event-log table to capture diffs.
+        💡 Settings change history is captured below as admins modify the group.
       </div>
     </div>
   );

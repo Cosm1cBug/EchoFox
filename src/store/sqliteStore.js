@@ -242,6 +242,19 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       last_at  INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_user_levels_xp ON user_levels (xp);
+
+    -- v1.14.0 group settings event log ─────────────────────────
+    CREATE TABLE IF NOT EXISTS group_settings_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      jid        TEXT    NOT NULL,
+      field      TEXT    NOT NULL,
+      old_value  TEXT,
+      new_value  TEXT,
+      actor      TEXT,
+      ts         INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_gse_jid_ts ON group_settings_events (jid, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_gse_field ON group_settings_events (field);
     
   `);
 
@@ -417,6 +430,19 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
 
     // v1.13.0 — last human (non-bot) message timestamp per group
     lastHumanMsgTs: db.prepare(`SELECT MAX(ts) AS ts FROM messages WHERE jid = ? AND from_me = 0`),
+
+    // v1.14.0 — group settings event log
+    gseInsert: db.prepare(
+      `INSERT INTO group_settings_events (jid, field, old_value, new_value, actor, ts)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ),
+    gseHistory: db.prepare(
+      `SELECT id, field, old_value, new_value, actor, ts
+       FROM group_settings_events
+       WHERE jid = ?
+       ORDER BY ts DESC, id DESC
+       LIMIT ?`,
+    ),
     deletedInGroup: db.prepare(
       `SELECT id, participant, deleted_at FROM messages WHERE jid = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT ?`,
     ),
@@ -1700,6 +1726,38 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       } catch (e) {
         logger.debug({ err: e, jid }, 'getLastHumanMessageTs failed');
         return null;
+      }
+    },
+
+    // v1.14.0 — group settings event log
+    async recordGroupSettingsChange(jid, field, oldValue, newValue, actor, ts) {
+      try {
+        stmts.gseInsert.run(
+          jid,
+          field,
+          oldValue == null ? null : String(oldValue),
+          newValue == null ? null : String(newValue),
+          actor || null,
+          Math.floor(Number(ts) || Date.now() / 1000),
+        );
+      } catch (e) {
+        logger.debug({ err: e, jid, field }, 'recordGroupSettingsChange failed');
+      }
+    },
+    async getGroupSettingsHistory(jid, limit = 200) {
+      try {
+        const cap = Math.max(1, Math.min(2000, Number(limit) || 200));
+        return stmts.gseHistory.all(jid, cap).map((r) => ({
+          id: Number(r.id),
+          field: r.field,
+          old_value: r.old_value,
+          new_value: r.new_value,
+          actor: r.actor,
+          ts: Number(r.ts),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getGroupSettingsHistory failed');
+        return [];
       }
     },
 

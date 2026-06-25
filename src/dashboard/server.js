@@ -213,13 +213,17 @@ function startDashboard(port, store, config) {
       const jid = req.params.jid;
       const historyLimit = Math.min(Number(req.query.historyLimit) || 200, 2000);
 
-      const [meta, participants, history, lastHumanMsgTs] = await Promise.all([
+      const [meta, participants, history, lastHumanMsgTs, settingsHistory] = await Promise.all([
         store.getGroupMetadata(jid).catch(() => null),
         store.getCurrentParticipants(jid).catch(() => []),
         store.getParticipantHistory(jid, historyLimit).catch(() => []),
         typeof store.getLastHumanMessageTs === 'function'
           ? store.getLastHumanMessageTs(jid).catch(() => null)
           : Promise.resolve(null),
+        // v1.14.0 — settings change log
+        typeof store.getGroupSettingsHistory === 'function'
+          ? store.getGroupSettingsHistory(jid, historyLimit).catch(() => [])
+          : Promise.resolve([]),
       ]);
 
       if (!meta) return res.status(404).json({ error: 'not_found' });
@@ -233,6 +237,7 @@ function startDashboard(port, store, config) {
         meta,
         participants,
         history,
+        settingsHistory,
         lastHumanMsgTs,
         active,
         inactiveAfterDays: inactiveDays,

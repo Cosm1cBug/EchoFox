@@ -362,6 +362,28 @@ async function start(retry = 0) {
               }
             }
           }
+
+          // v1.14.0 — seed an initial settings snapshot per group, ONCE.
+          // Subsequent boots skip (guarded by getGroupSettingsHistory length).
+          // Diff-capture (in groups.update.js) takes over from there.
+          if (typeof store.getGroupSettingsHistory === 'function') {
+            try {
+              const existingSettings = await store.getGroupSettingsHistory(jid, 1).catch(() => []);
+              if (!existingSettings.length) {
+                const { TRACKED_FIELDS } = require('../store/schema/groupSettingsEvents');
+                const now = Math.floor(Date.now() / 1000);
+                for (const field of TRACKED_FIELDS) {
+                  const v = meta[field];
+                  if (v === undefined || v === null) continue;
+                  await store
+                    .recordGroupSettingsChange(jid, field, null, String(v), null, now)
+                    .catch(() => {});
+                }
+              }
+            } catch (_e) {
+              /* best-effort; never block boot on settings snapshot */
+            }
+          }
         }
         log.info(
           { phase: 'warm', groups: Object.keys(groups).length },

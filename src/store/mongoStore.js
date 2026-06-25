@@ -1482,6 +1482,44 @@ function makeMongoStore(uri, logger, groupCache) {
       }
     },
 
+    // v1.14.0 — group settings event log
+    async recordGroupSettingsChange(jid, field, oldValue, newValue, actor, ts) {
+      try {
+        await conn.collection('group_settings_events').insertOne({
+          jid,
+          field,
+          old_value: oldValue == null ? null : String(oldValue),
+          new_value: newValue == null ? null : String(newValue),
+          actor: actor || null,
+          ts: Math.floor(Number(ts) || Date.now() / 1000),
+        });
+      } catch (e) {
+        logger.debug({ err: e, jid, field }, 'recordGroupSettingsChange failed');
+      }
+    },
+    async getGroupSettingsHistory(jid, limit = 200) {
+      try {
+        const cap = Math.max(1, Math.min(2000, Number(limit) || 200));
+        const docs = await conn
+          .collection('group_settings_events')
+          .find({ jid })
+          .sort({ ts: -1, _id: -1 })
+          .limit(cap)
+          .toArray();
+        return docs.map((d) => ({
+          id: String(d._id),
+          field: d.field,
+          old_value: d.old_value,
+          new_value: d.new_value,
+          actor: d.actor,
+          ts: Number(d.ts),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getGroupSettingsHistory failed');
+        return [];
+      }
+    },
+
     conn,
     async close() {
       try {

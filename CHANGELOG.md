@@ -12,6 +12,123 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.14.0] — 2026-06-25
+
+> **Groups dashboard 2.0 — Phase B: settings change history.** Captures
+> every change to tracked group settings (subject, description, modes,
+> ephemeral timer, member-add-mode, join-approval-mode) into a new
+> append-only event log. Renders the history in the group detail view.
+>
+> **Also restores `dashboard/src/pages/Groups.tsx`** — Phase A shipped
+> the 5 new components + backend changes but the rewritten Groups.tsx
+> file didn't make it through the manual Copy-Item step, so the
+> dashboard's Groups tab was still showing the old table view. v1.14.0
+> drops the rewritten file in.
+
+### Fixed — Phase A regression
+
+- **`dashboard/src/pages/Groups.tsx`** — restores the v1.13.0 rewrite
+  (grid of tiles + drill-down detail). The file slipped through the
+  v1.13.0 push by accident — the 5 new components in
+  `dashboard/src/components/groups/` were sitting in the repo unused
+  because Groups.tsx was still importing only the old table. After
+  this drop the dashboard Groups tab actually uses the new UI.
+
+### Added — settings change history
+
+- **`src/store/schema/groupSettingsEvents.js`** _(NEW)_ — defines the
+  7 TRACKED_FIELDS (subject, desc, announce, restrict, ephemeralDuration,
+  memberAddMode, joinApprovalMode) and helpers:
+  - `serialise(value)` — uniform string coercion for storage/equality
+  - `isChanged(old, new)` — boolean diff with serialised semantics
+  - `diff(oldMeta, newMeta)` — returns event list of every tracked field
+    that differs; treats null oldMeta as "initial snapshot"
+  - `actorForField(field, newMeta)` — pulls subjectOwner/descOwner from
+    Baileys metadata; returns null for fields where actor isn't reported
+- **`src/store/migrations/{sqlite,postgres,mongo,redis}/008_group_settings_events.js`**
+  _(NEW)_ — 4 backend migrations:
+  - sqlite/postgres: append-only table with (id PK, jid, field, old_value,
+    new_value, actor, ts) + `(jid, ts DESC)` index for fast per-group
+    history queries + `(field)` index for field-scoped analytics
+  - mongo: 2 indexes on the equivalent collection
+  - redis: schemaless marker (Redis uses LPUSH-capped LISTs keyed by
+    `group_settings_events:<jid>` with each entry a JSON event)
+- **Inline schema in `sqliteStore.js`** — `CREATE TABLE IF NOT EXISTS
+group_settings_events ...` added to the init block so fresh test-time
+  DBs work (matches the v1.12.0 user_levels pattern).
+- All 4 store backends gain:
+  - `recordGroupSettingsChange(jid, field, oldValue, newValue, actor, ts)`
+  - `getGroupSettingsHistory(jid, limit=200)` → array newest-first
+- **`src/events/groups.update.js`** — captures diffs **before**
+  refreshing the cache (so the OLD value is still available). Reads the
+  previous metadata from store, re-fetches the authoritative new
+  metadata, computes diffs via `diff(oldMeta, newMeta)`, and persists
+  each change via `recordGroupSettingsChange`. Fail-closed at every
+  layer — never blocks the cache refresh or the bot.
+- **`src/core/worker.js`** — boot-time snapshot seeds an initial event
+  per tracked field per group on first boot (so freshly-upgraded
+  deployments see a baseline 'initial snapshot' row rather than an
+  empty history). Guards on `getGroupSettingsHistory(jid, 1)` length so
+  it only seeds once per group; subsequent boots skip.
+
+### Added — server
+
+- **`/api/groups/:jid/settings/history`** _(NEW)_ — returns the event
+  log newest-first. `?limit=N` (default 200, max 2000).
+- **`/api/groups/:jid/full`** — response now includes a
+  `settingsHistory` field with the same data so the detail UI can load
+  everything in one round-trip.
+
+### Added — frontend
+
+- **`dashboard/src/components/groups/SettingsHistory.tsx`** _(NEW)_ —
+  renders the event log: field label + emoji + old→new diff +
+  relative+absolute timestamps + actor when known. Pretty-formats
+  booleans (`true` → "admins only" / "everyone" depending on field) and
+  ephemeral seconds (`86400` → "24 hours"). Initial-snapshot rows render
+  as "set to <value> · (initial snapshot)". Empty state explains that
+  history is captured forwards from the v1.14.0 upgrade.
+- **`dashboard/src/components/groups/GroupDetail.tsx`** — renders
+  `<SettingsHistory>` below `<SettingsPanel>` in the left column of the
+  drill-down view.
+- **`dashboard/src/components/groups/SettingsPanel.tsx`** — replaces
+  the "deferred to v1.14.0" footer note with a positive pointer to the
+  now-live history below it.
+- **`dashboard/src/lib/api.ts`** — `getGroupSettingsHistory(jid, limit?)`
+  wrapper for stand-alone use (the bundled `/full` endpoint also
+  returns the same data).
+
+### Added — tests
+
+- **`src/__tests__/integration/settings-history-v1140.test.js`** —
+  11 new tests:
+  - schema helpers: serialise / isChanged / diff (single + multi
+    field + null oldMeta + tracked vs untracked field filtering) /
+    actorForField (subject/desc vs everything else)
+  - store: record + read round-trip / newest-first ordering / jid
+    scoping + limit honouring / limit clamping at bounds
+  - end-to-end: diff(oldMeta, newMeta) output feeds straight into
+    recordGroupSettingsChange and getGroupSettingsHistory returns
+    expected events
+
+### Notes
+
+- **"Who changed it" is sometimes unknowable.** Baileys' groups.update
+  payload only includes subjectOwner/descOwner for subject + desc.
+  announce, restrict, ephemeralDuration, memberAddMode, and
+  joinApprovalMode arrive without an actor. The SettingsHistory UI
+  renders `(actor unknown)` for those rows — by design, not a bug.
+- **Initial snapshot:** when v1.14.0 first boots against an existing
+  installation, the boot loop seeds one event per tracked field per
+  group (old_value=null, new_value=current). This gives the SettingsHistory
+  panel a baseline rather than an empty list. The guard on
+  `getGroupSettingsHistory(jid, 1).length` ensures it only seeds once.
+- **No new npm dependencies.** Pure schema + storage + UI work.
+- Tests: **265/265** (was 254, +11 new).
+- Release notes inline per the post-v1.5.0 preference.
+
+---
+
 ## [1.13.0] — 2026-06-20
 
 > **Groups dashboard 2.0 (Phase A).** Rewrites the Groups tab as a

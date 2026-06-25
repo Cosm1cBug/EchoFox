@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { getGroupFull } from "../../lib/api";
 import { Loading, ErrorMessage } from "../LoadingError";
 import { SettingsPanel } from "./SettingsPanel";
+import { SettingsHistory } from "./SettingsHistory";
 import { ParticipantsList } from "./ParticipantsList";
 import { HistoryTimeline } from "./HistoryTimeline";
 
@@ -25,6 +26,7 @@ interface FullResponse {
   meta: any;
   participants: any[];
   history: any[];
+  settingsHistory: any[];
   lastHumanMsgTs: number | null;
   active: boolean | null;
   inactiveAfterDays: number;
@@ -135,6 +137,7 @@ export function GroupDetail({ jid, onBack }: Props) {
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           <SettingsPanel meta={data.meta} />
+          <SettingsHistory events={data.settingsHistory || []} />
         </div>
         <div className="space-y-6">
           <ParticipantsList

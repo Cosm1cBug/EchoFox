@@ -12,6 +12,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.13.0] — 2026-06-20
+
+> **Groups dashboard 2.0 (Phase A).** Rewrites the Groups tab as a
+> click-to-drill-down grid of tiles with active/inactive status dots.
+> Each tile shows subject + member count + last-human-message age.
+> Clicking a tile opens a detail view with settings, current
+> participants (with admin tags), and the full participant event
+> history (joins / leaves / kicks / promotes — with exact dates).
+
+### Added — UI
+
+- **Grid of tiles** replaces the old table on the Groups tab. Responsive
+  (2/3/4 columns at sm/md/xl breakpoints). Each tile shows subject,
+  member count, last-human-message age, and a colour-coded status dot:
+  - 🟢 **green** — at least one human (non-bot) message in the last
+    `dashboard.inactiveAfterDays` days (default 14)
+  - 🔴 **red** — no human messages in that window
+  - ⚪ **grey** — no message data available (Redis backend, fresh
+    install, or just-joined group)
+- **Search box** filters tiles by subject or JID, live.
+- **Smart sort:** active → unknown → inactive, then by member count desc.
+- **Drill-down detail view** on tile click:
+  - Header card with status dot, subject, JID, and 4 quick stats
+    (participants, events recorded, last human msg, inactive threshold)
+  - **Settings panel** — current group settings: subject, description
+    (with last-changed timestamp + author when known), creator, owner,
+    announce-mode, restrict-mode, disappearing-messages timer,
+    member-add-mode, join-approval-mode.
+  - **Participants list** — current members with `admin` / ⭐ `superadmin`
+    badges sourced from live Baileys metadata. Sorted superadmins →
+    admins → members → alpha.
+  - **History timeline** — full append-only event log from
+    `group_participants_events`: every add / join / leave / kick /
+    promote / demote / request / approve / reject with exact date,
+    relative age, actor (when known), and a colour-coded emoji label.
+
+### Added — config
+
+- **`dashboard.inactiveAfterDays`** _(integer 1–365, default 14)_ — how
+  many days of human-message silence before a group is marked inactive
+  in the dashboard. Configurable so low-traffic deployments can extend
+  the window.
+
+### Added — store
+
+- All 4 store backends gain **`getLastHumanMessageTs(jid)`** →
+  `Promise<number | null>`:
+  - sqlite: `SELECT MAX(ts) FROM messages WHERE jid = ? AND from_me = 0`
+  - postgres: same logic with `from_me = false`
+  - mongo: `find({ jid, from_me: { $ne: 1 } }).sort({ ts: -1 }).limit(1)`
+  - redis: returns `null` (no queryable messages table — `active` flag
+    will show as 'unknown' / grey dot for redis-backed installs)
+
+### Added — server
+
+- **`/api/groups`** enriched: each group now includes `lastHumanMsgTs`,
+  `active`, and `inactiveAfterDays`. Backwards compatible (extra
+  fields; old UIs ignore them).
+- **`/api/groups/:jid/full`** _(NEW)_ — bundled drill-down endpoint
+  returning `{ jid, meta, participants, history, lastHumanMsgTs,
+active, inactiveAfterDays }` in one round-trip. Each sub-fetch
+  fails closed so a missing piece doesn't blank the response.
+
+### Added — frontend modules
+
+- `dashboard/src/components/groups/GroupTile.tsx` _(NEW)_
+- `dashboard/src/components/groups/GroupDetail.tsx` _(NEW)_
+- `dashboard/src/components/groups/SettingsPanel.tsx` _(NEW)_
+- `dashboard/src/components/groups/ParticipantsList.tsx` _(NEW)_
+- `dashboard/src/components/groups/HistoryTimeline.tsx` _(NEW)_
+- `dashboard/src/lib/api.ts` — added `getGroupFull(jid, historyLimit?)`
+
+### Changed — frontend
+
+- **`dashboard/src/pages/Groups.tsx`** rewritten end-to-end. Old
+  table-with-3-columns view is gone. New grid + drill-down + search
+  - smart sort + 15s polling (matches Overview tab).
+
+### Added — tests
+
+- **`src/__tests__/integration/groups-dashboard-v1130.test.js`** —
+  7 new tests covering: config default + override + bounds + coercion;
+  `getLastHumanMessageTs` behaviour across empty / bot-only / mixed /
+  multi-group scenarios.
+
+### Notes
+
+- **Settings change history is deferred to v1.14.x.** The detail view's
+  Settings panel shows current values + a clear note that change-history
+  needs a new event-log table. Capturing "subject changed from X to Y
+  at time T by user U" requires intercepting the `groups.update` event
+  and persisting diffs — currently those events are only logged to Pino
+  and the old values are lost. The new table + 4 backend migrations
+  would push this release out by ~1.5 days; deferred so Phase A can
+  ship.
+- **No new npm dependencies.** All-React frontend + zero new server deps.
+- **Redis users:** active/inactive dots show as 'unknown' (grey) since
+  the Redis store doesn't have a queryable messages collection. The
+  rest of the UI (settings, participants, history) works identically.
+- Tests: **253/253** (was 246, +7 new).
+- Release notes inline per the post-v1.5.0 preference.
+
+---
+
 ## [1.12.1] — 2026-06-19
 
 > **Hotfix release.** Fixes a runtime-fatal syntax error in

@@ -1466,6 +1466,22 @@ function makeMongoStore(uri, logger, groupCache) {
       }
     },
 
+    // v1.13.0 — groups dashboard helper
+    async getLastHumanMessageTs(jid) {
+      try {
+        const doc = await conn
+          .collection('messages')
+          .find({ jid, from_me: { $ne: 1 } })
+          .sort({ ts: -1 })
+          .limit(1)
+          .next();
+        return doc?.ts ? Number(doc.ts) : null;
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getLastHumanMessageTs failed');
+        return null;
+      }
+    },
+
     conn,
     async close() {
       try {

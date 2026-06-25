@@ -26,6 +26,11 @@ async function fetchJson<T>(path: string): Promise<T> {
 export const getHealth = () => fetchJson("/api/health");
 export const getStats = () => fetchJson("/api/stats");
 export const getGroups = () => fetchJson("/api/groups");
+
+// v1.13.0 — bundled drill-down endpoint: meta + participants + history + activity
+export const getGroupFull = (jid: string, historyLimit = 200) =>
+  fetchJson(`/api/groups/${encodeURIComponent(jid)}/full?historyLimit=${historyLimit}`);
+
 export const getDiagnostics = () => fetchJson("/api/diagnostics");
 export const getAlerts = () => fetchJson("/api/alerts");
 export const getSubscriptions = () => fetchJson("/api/subscriptions");

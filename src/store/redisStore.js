@@ -1376,6 +1376,13 @@ function makeRedisStore(url, logger, groupCache) {
       }
     },
 
+    // v1.13.0 — groups dashboard helper
+    // Redis store doesn't have a queryable messages table — return null
+    // so the server falls back to 'unknown' (active=null in API output).
+    async getLastHumanMessageTs(_jid) {
+      return null;
+    },
+
     client,
     close() {
       client.quit();

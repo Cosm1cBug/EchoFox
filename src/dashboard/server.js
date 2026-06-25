@@ -154,7 +154,25 @@ function startDashboard(port, store, config) {
   app.get('/api/groups', async (_req, res, next) => {
     try {
       const rows = typeof store.listGroups === 'function' ? await store.listGroups() : [];
-      res.json(rows);
+      // v1.13.0 — enrich each group with `lastHumanMsgTs` + `active` flag.
+      // Inactivity threshold defaults to 14 days (config.dashboard.inactiveAfterDays).
+      const inactiveDays = Number(config.dashboard?.inactiveAfterDays) || 14;
+      const cutoffSec = Math.floor(Date.now() / 1000) - inactiveDays * 86400;
+      const enriched = await Promise.all(
+        rows.map(async (g) => {
+          let lastHumanMsgTs = null;
+          try {
+            if (typeof store.getLastHumanMessageTs === 'function') {
+              lastHumanMsgTs = await store.getLastHumanMessageTs(g.jid);
+            }
+          } catch {
+            /* fail-closed: null = unknown */
+          }
+          const active = lastHumanMsgTs == null ? null : lastHumanMsgTs >= cutoffSec;
+          return { ...g, lastHumanMsgTs, active, inactiveAfterDays: inactiveDays };
+        }),
+      );
+      res.json(enriched);
     } catch (e) {
       next(e);
     }
@@ -182,6 +200,43 @@ function startDashboard(port, store, config) {
     try {
       const limit = Math.min(Number(req.query.limit) || 200, 2000);
       res.json(await store.getParticipantHistory(req.params.jid, limit));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // v1.13.0 — bundled detail endpoint: meta + participants + history + activity
+  // Single round-trip for the drill-down UI. Each sub-fetch fails closed
+  // so a missing piece doesn't blank the whole response.
+  app.get('/api/groups/:jid/full', async (req, res, next) => {
+    try {
+      const jid = req.params.jid;
+      const historyLimit = Math.min(Number(req.query.historyLimit) || 200, 2000);
+
+      const [meta, participants, history, lastHumanMsgTs] = await Promise.all([
+        store.getGroupMetadata(jid).catch(() => null),
+        store.getCurrentParticipants(jid).catch(() => []),
+        store.getParticipantHistory(jid, historyLimit).catch(() => []),
+        typeof store.getLastHumanMessageTs === 'function'
+          ? store.getLastHumanMessageTs(jid).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
+      if (!meta) return res.status(404).json({ error: 'not_found' });
+
+      const inactiveDays = Number(config.dashboard?.inactiveAfterDays) || 14;
+      const cutoffSec = Math.floor(Date.now() / 1000) - inactiveDays * 86400;
+      const active = lastHumanMsgTs == null ? null : lastHumanMsgTs >= cutoffSec;
+
+      res.json({
+        jid,
+        meta,
+        participants,
+        history,
+        lastHumanMsgTs,
+        active,
+        inactiveAfterDays: inactiveDays,
+      });
     } catch (e) {
       next(e);
     }

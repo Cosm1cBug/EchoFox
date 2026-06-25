@@ -143,6 +143,9 @@ const schema = z
         port: z.coerce.number().int().min(1).max(65535).default(3001),
         username: z.string().default('admin'),
         password: z.string().default('change-me-please'),
+        // v1.13.0 — groups dashboard: how many days of human-message
+        // silence before a group is marked inactive (red dot).
+        inactiveAfterDays: z.coerce.number().int().min(1).max(365).default(14),
       })
       .default({})
       .refine((d) => !d.enabled || d.password !== 'change-me-please', {

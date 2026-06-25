@@ -1449,6 +1449,20 @@ function makePostgresStore(url, logger, groupCache) {
       }
     },
 
+    // v1.13.0 — groups dashboard helper
+    async getLastHumanMessageTs(jid) {
+      try {
+        const r = await pool.query(
+          `SELECT MAX(ts) AS ts FROM messages WHERE jid = $1 AND from_me = false`,
+          [jid],
+        );
+        return r.rows[0]?.ts ? Number(r.rows[0].ts) : null;
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getLastHumanMessageTs failed');
+        return null;
+      }
+    },
+
     pool,
     async close() {
       try {

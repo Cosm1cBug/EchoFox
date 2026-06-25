@@ -414,6 +414,9 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
        ON CONFLICT(jid) DO UPDATE SET xp = xp + excluded.xp, last_at = excluded.last_at`,
     ),
     levelGetXp: db.prepare(`SELECT xp FROM user_levels WHERE jid = ?`),
+
+    // v1.13.0 — last human (non-bot) message timestamp per group
+    lastHumanMsgTs: db.prepare(`SELECT MAX(ts) AS ts FROM messages WHERE jid = ? AND from_me = 0`),
     deletedInGroup: db.prepare(
       `SELECT id, participant, deleted_at FROM messages WHERE jid = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT ?`,
     ),
@@ -1686,6 +1689,17 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       } catch (e) {
         logger.debug({ err: e, jid, amount }, 'addUserXp failed');
         return 0;
+      }
+    },
+
+    // v1.13.0 — groups dashboard helper
+    async getLastHumanMessageTs(jid) {
+      try {
+        const row = stmts.lastHumanMsgTs.get(jid);
+        return row && typeof row.ts === 'number' ? row.ts : null;
+      } catch (e) {
+        logger.debug({ err: e, jid }, 'getLastHumanMessageTs failed');
+        return null;
       }
     },
 

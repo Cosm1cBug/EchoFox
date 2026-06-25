@@ -12,6 +12,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.15.0] — 2026-06-25
+
+> **Commands batch:** `.ocr` + `.hn` (new), `.toimg` flag enhancements,
+> `.ytdl` subtitle + clip-range support, mute history persistence
+> (in-memory mutes now survive restarts).
+
+### Added — new commands
+
+- **`.ocr [lang]`** _(misc)_ — extract text from a quoted image via
+  Tesseract.js (pure JS, runs locally, no API key). Supports 100+
+  language packs; default `eng`. Multi-lang via `eng+hin`. Auto-
+  downscales images >2048px. Returns trimmed recognised text in a
+  fenced code block. Hard caps: 10 MB image, 60s timeout, 4000-char
+  output truncation. _Aliases: `scan`, `readtext`._
+- **`.hn [type] [N]`** _(general)_ — top stories from Hacker News.
+  Types: `top` (default), `new`, `best`, `ask`, `show`, `job`.
+  Up to 10 stories with title + score + comments + URL + HN discussion
+  link. Uses the official Firebase API (no key). Parallel item-fetch.
+  _Aliases: `hackernews`, `ycombinator`._
+
+### Changed — `.toimg` enhancements
+
+Backwards-compat default behaviour preserved (no flags = PNG via
+ffmpeg, same as v1.0–v1.14). New optional flags:
+
+- **`-f png|jpg`** — output format (default PNG)
+- **`-q 1-100`** — JPEG quality (only with `-f jpg`)
+- **`-s 64-4096`** — resize so longest side caps at N pixels
+- **`-g`** — greyscale
+
+When any flag is set, conversion routes through jimp for resize/quality/
+greyscale control. Without flags, the original lossless ffmpeg pipe
+path stays unchanged.
+
+### Changed — `.ytdl` improvements
+
+- **`-c <lang>`** — also send subtitles in the requested language
+  (e.g. `-c en`, `-c hi`). Fetches the closest matching caption track
+  from the video, strips XML, sends as a `.txt` document attachment.
+  If the language doesn't exist, replies with `ℹ️ no subtitles
+available` rather than failing.
+- **`-t <MM:SS-MM:SS>`** — clip a time range (e.g. `-t 1:00-2:30`).
+  Hard cap 10 minutes per clip. Uses ffmpeg to trim the downloaded
+  file. Video clips re-encode (ultrafast preset) for clean keyframe
+  starts; audio clips use `-c copy` for speed.
+- **Friendlier error messages** for common ytdl-core failures:
+  private / age-restricted / region-locked / removed / copyright /
+  login-required / rate-limited. Falls back to the raw error text
+  for unclassified failures.
+- **`.ytdl info`** now lists available subtitle languages.
+
+### Changed — mute history persistence
+
+- **`src/services/muteService.js`** — in-memory LRU stays the primary
+  fast-path. NEW: mute / unmute actions now also write to the store
+  asynchronously (fail-closed; never blocks).
+- **`src/core/worker.js`** — boot-time `muteService.hydrateFromStore()`
+  rebuilds the LRU from any active persisted mutes. Mutes survive
+  restarts now.
+
+### Added — store
+
+- All 4 backends gain 5 new methods:
+  - `recordMute(chatJid, userJid, { expiresAt, byJid, reason })`
+  - `markMuteUnmuted(chatJid, userJid)`
+  - `getActiveMutes()` — all currently-active mutes across all chats
+  - `getMuteHistoryByChat(chatJid, limit=100)`
+  - `getMuteHistoryByUser(userJid, limit=100)` — Redis returns `[]`
+    (chat-keyed layout would need a full SCAN; dashboard falls back
+    gracefully)
+
+### Added — migrations
+
+- 4 new backend migrations (sqlite/postgres/mongo/redis) for the
+  `mutes` append-only log table. Inline schema added to sqliteStore.js
+  for test-time DBs (same pattern as v1.12.0 user_levels +
+  v1.14.0 group_settings_events).
+
+### Added — tests
+
+- **`src/__tests__/integration/commands-v1150.test.js`** — 9 new tests:
+  module-shape for all 4 affected commands, mute persistence round-trip,
+  unmute marks `unmuted_at`, cross-chat per-user history aggregation,
+  active-mutes excludes expired/unmuted entries, hydration skips
+  expired entries, recordMute handles empty opts.
+
+### Dependencies
+
+- **+ `tesseract.js ^5.1.0`** — pure JS OCR for `.ocr`. ~5 MB
+  unpacked. Language packs download on first use (~5 MB per lang).
+- **No removals.**
+
+### Notes
+
+- `.ocr` first run will be slow (~10s) while it downloads the default
+  English language pack to `~/.tesseract` or equivalent. Subsequent
+  runs are ~2–5s depending on image size.
+- `.ytdl` clip ranges use ffmpeg (already a dep via `fluent-ffmpeg`).
+  Video clips re-encode for clean starts; audio uses lossless `-c copy`.
+- Mute history is append-only: every mute action is a row, even for
+  the same user/chat pair. Lets the dashboard show "muted 3 times
+  this month" patterns.
+- Redis users get a limited mute history experience: per-chat works
+  fine; per-user history returns `[]` (the Redis layout is chat-keyed,
+  full-scan would be expensive — accept the limitation).
+- Release notes inline per the post-v1.5.0 preference.
+- Tests: **274/274** (was 265, +9 new).
+
+---
+
 ## [1.14.0] — 2026-06-25
 
 > **Groups dashboard 2.0 — Phase B: settings change history.** Captures

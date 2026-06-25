@@ -63,6 +63,7 @@ const {
   CHECK_INTERVAL: VTW_INTERVAL_MIN,
 } = require('../services/vtWatchService');
 const reminderService = require('../services/reminderService');
+const muteService = require('../services/muteService');
 
 const log = logger.child({ mod: 'worker' });
 
@@ -287,6 +288,16 @@ async function start(retry = 0) {
   sock.ev.on('creds.update', saveCreds);
 
   reminderService.start(sock);
+
+  // v1.15.0 — repopulate the in-memory mute LRU from persisted mutes.
+  // Fire-and-forget; never blocks boot. Logs at debug if anything's off.
+  muteService
+    .hydrateFromStore()
+    .then((n) => {
+      if (n > 0) log.info({ count: n }, 'mute: hydrated active mutes from store');
+    })
+    .catch((e) => log.debug({ err: e }, 'mute: hydration failed'));
+
   store.bind(sock.ev);
 
   await lifecycle.startLoginFlow(sock);

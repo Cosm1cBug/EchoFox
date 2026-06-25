@@ -14,17 +14,24 @@
  *   It simply makes the bot pretend they aren't there for command
  *   dispatch purposes.
  *
- * Storage:
- *   In-memory only — bounded LRU, keyed by `<chatJid>|<userJid>`.
- *   Restart clears all mutes. Persisting would create stuck-mute
- *   states across overnight restarts (same rationale as AFK in v1.6.0).
+ * Storage (v1.15.0):
+ *   • Primary: in-memory LRU for fast isMuted() lookups (~100ns).
+ *   • Persistent mirror: each mute action writes to the store's
+ *     `mutes` table via store.recordMute / store.markMuteUnmuted.
+ *   • Boot hydration: `hydrateFromStore()` repopulates the LRU from
+ *     the store's `getActiveMutes()` on startup — survives restarts.
+ *   • Backwards compat: if the store doesn't expose the new methods
+ *     (e.g. mid-upgrade), in-memory still works fine; persistence is
+ *     just skipped silently. No crashes.
  *
- * API:
- *   mute(chat, user, durationMs)  → records mute, returns ISO expiry
- *   unmute(chat, user)             → returns boolean (was-muted)
- *   isMuted(chat, user)            → returns boolean (auto-expires)
- *   list(chat)                     → array of { user, untilMs }
- *   timeLeftMs(chat, user)         → ms until expiry or 0
+ * API (unchanged signatures, opts now richer):
+ *   mute(chat, user, durationMs, opts)   → records mute, returns until-ms
+ *   unmute(chat, user)                    → returns boolean (was-muted)
+ *   isMuted(chat, user)                   → returns boolean (auto-expires)
+ *   get(chat, user)                       → entry | null
+ *   list(chat)                            → array of active mutes in chat
+ *   timeLeftMs(chat, user)                → ms until expiry or 0
+ *   hydrateFromStore()                    → async; called once on boot
  *
  * Hook:
  *   events/messages.upsert.js consults isMuted() right after the AFK
@@ -49,6 +56,16 @@ const UNIT_MS = {
   h: 3_600_000,
   d: 86_400_000,
 };
+
+// Lazy import of store singleton (avoids circular require + tolerates
+// pre-boot states where the singleton isn't set yet).
+function _store_inst() {
+  try {
+    return require('../store/instance').getStore();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Parse a duration like "30m", "2h", "1d". Plain integer = minutes.
@@ -77,17 +94,32 @@ function key(chat, user) {
 }
 
 function mute(chat, user, durationMs, opts = {}) {
-  const until = Date.now() + Math.max(MIN_DURATION_MS, Math.min(MAX_DURATION_MS, durationMs));
+  const clamped = Math.max(MIN_DURATION_MS, Math.min(MAX_DURATION_MS, durationMs));
+  const until = Date.now() + clamped;
   _store.set(key(chat, user), {
     until,
     by: opts.by || null,
     reason: String(opts.reason || '').slice(0, 200),
   });
+  // Persist asynchronously — never block the caller. Failures are debug-logged.
+  const s = _store_inst();
+  if (s && typeof s.recordMute === 'function') {
+    s.recordMute(chat, user, {
+      expiresAt: Math.floor(until / 1000),
+      byJid: opts.by || null,
+      reason: opts.reason || null,
+    }).catch(() => {});
+  }
   return until;
 }
 
 function unmute(chat, user) {
-  return _store.delete(key(chat, user));
+  const had = _store.delete(key(chat, user));
+  const s = _store_inst();
+  if (s && typeof s.markMuteUnmuted === 'function') {
+    s.markMuteUnmuted(chat, user).catch(() => {});
+  }
+  return had;
 }
 
 function get(chat, user) {
@@ -133,6 +165,35 @@ function fmtDuration(ms) {
   return `${d}d ${h % 24}h`;
 }
 
+/**
+ * Repopulate the in-memory LRU from the store's persisted mutes on boot.
+ * Called once during bot startup (from worker.js). Safe to call
+ * multiple times; just rewrites the same entries.
+ */
+async function hydrateFromStore() {
+  const s = _store_inst();
+  if (!s || typeof s.getActiveMutes !== 'function') return 0;
+  let count = 0;
+  try {
+    const rows = await s.getActiveMutes();
+    const now = Date.now();
+    for (const r of rows) {
+      if (!r || !r.chat_jid || !r.user_jid) continue;
+      const untilMs = (Number(r.expires_at) || 0) * 1000;
+      if (untilMs <= now) continue;
+      _store.set(key(r.chat_jid, r.user_jid), {
+        until: untilMs,
+        by: r.by_jid || null,
+        reason: r.reason || '',
+      });
+      count++;
+    }
+  } catch (_) {
+    /* fail-closed */
+  }
+  return count;
+}
+
 function _resetForTests() {
   _store.clear();
 }
@@ -148,5 +209,6 @@ module.exports = {
   isMuted,
   timeLeftMs,
   list,
+  hydrateFromStore,
   _resetForTests,
 };

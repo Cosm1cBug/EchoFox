@@ -1507,6 +1507,114 @@ function makePostgresStore(url, logger, groupCache) {
       }
     },
 
+    // v1.15.0 — persistent mutes
+    async recordMute(chatJid, userJid, opts = {}) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const expires = Math.floor(Number(opts.expiresAt) || 0);
+        const r = await pool.query(
+          `INSERT INTO mutes (chat_jid, user_jid, created_at, expires_at, by_jid, reason)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+          [
+            chatJid,
+            userJid,
+            now,
+            expires,
+            opts.byJid || null,
+            opts.reason ? String(opts.reason).slice(0, 200) : null,
+          ],
+        );
+        return r.rows[0] ? Number(r.rows[0].id) : null;
+      } catch (e) {
+        logger.debug({ err: e, chatJid, userJid }, 'recordMute failed');
+        return null;
+      }
+    },
+    async markMuteUnmuted(chatJid, userJid) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const r = await pool.query(
+          `UPDATE mutes SET unmuted_at = $1
+           WHERE chat_jid = $2 AND user_jid = $3 AND unmuted_at IS NULL AND expires_at > $4`,
+          [now, chatJid, userJid, now],
+        );
+        return (r.rowCount || 0) > 0;
+      } catch (e) {
+        logger.debug({ err: e, chatJid, userJid }, 'markMuteUnmuted failed');
+        return false;
+      }
+    },
+    async getActiveMutes() {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const r = await pool.query(
+          `SELECT id, chat_jid, user_jid, created_at, expires_at, by_jid, reason
+           FROM mutes WHERE unmuted_at IS NULL AND expires_at > $1`,
+          [now],
+        );
+        return r.rows.map((row) => ({
+          id: Number(row.id),
+          chat_jid: row.chat_jid,
+          user_jid: row.user_jid,
+          created_at: Number(row.created_at),
+          expires_at: Number(row.expires_at),
+          by_jid: row.by_jid,
+          reason: row.reason,
+        }));
+      } catch (e) {
+        logger.debug({ err: e }, 'getActiveMutes failed');
+        return [];
+      }
+    },
+    async getMuteHistoryByChat(chatJid, limit = 100) {
+      try {
+        const cap = Math.max(1, Math.min(1000, Number(limit) || 100));
+        const r = await pool.query(
+          `SELECT id, chat_jid, user_jid, created_at, expires_at, by_jid, reason, unmuted_at
+           FROM mutes WHERE chat_jid = $1
+           ORDER BY created_at DESC, id DESC LIMIT $2`,
+          [chatJid, cap],
+        );
+        return r.rows.map((row) => ({
+          id: Number(row.id),
+          chat_jid: row.chat_jid,
+          user_jid: row.user_jid,
+          created_at: Number(row.created_at),
+          expires_at: Number(row.expires_at),
+          by_jid: row.by_jid,
+          reason: row.reason,
+          unmuted_at: row.unmuted_at == null ? null : Number(row.unmuted_at),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, chatJid }, 'getMuteHistoryByChat failed');
+        return [];
+      }
+    },
+    async getMuteHistoryByUser(userJid, limit = 100) {
+      try {
+        const cap = Math.max(1, Math.min(1000, Number(limit) || 100));
+        const r = await pool.query(
+          `SELECT id, chat_jid, user_jid, created_at, expires_at, by_jid, reason, unmuted_at
+           FROM mutes WHERE user_jid = $1
+           ORDER BY created_at DESC, id DESC LIMIT $2`,
+          [userJid, cap],
+        );
+        return r.rows.map((row) => ({
+          id: Number(row.id),
+          chat_jid: row.chat_jid,
+          user_jid: row.user_jid,
+          created_at: Number(row.created_at),
+          expires_at: Number(row.expires_at),
+          by_jid: row.by_jid,
+          reason: row.reason,
+          unmuted_at: row.unmuted_at == null ? null : Number(row.unmuted_at),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, userJid }, 'getMuteHistoryByUser failed');
+        return [];
+      }
+    },
+
     pool,
     async close() {
       try {

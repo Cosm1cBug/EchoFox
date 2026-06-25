@@ -1520,6 +1520,111 @@ function makeMongoStore(uri, logger, groupCache) {
       }
     },
 
+    // v1.15.0 — persistent mutes
+    async recordMute(chatJid, userJid, opts = {}) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const expires = Math.floor(Number(opts.expiresAt) || 0);
+        const r = await conn.collection('mutes').insertOne({
+          chat_jid: chatJid,
+          user_jid: userJid,
+          created_at: now,
+          expires_at: expires,
+          by_jid: opts.byJid || null,
+          reason: opts.reason ? String(opts.reason).slice(0, 200) : null,
+          unmuted_at: null,
+        });
+        return r.insertedId ? String(r.insertedId) : null;
+      } catch (e) {
+        logger.debug({ err: e, chatJid, userJid }, 'recordMute failed');
+        return null;
+      }
+    },
+    async markMuteUnmuted(chatJid, userJid) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const r = await conn
+          .collection('mutes')
+          .updateMany(
+            { chat_jid: chatJid, user_jid: userJid, unmuted_at: null, expires_at: { $gt: now } },
+            { $set: { unmuted_at: now } },
+          );
+        return (r.modifiedCount || 0) > 0;
+      } catch (e) {
+        logger.debug({ err: e, chatJid, userJid }, 'markMuteUnmuted failed');
+        return false;
+      }
+    },
+    async getActiveMutes() {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const docs = await conn
+          .collection('mutes')
+          .find({ unmuted_at: null, expires_at: { $gt: now } })
+          .toArray();
+        return docs.map((d) => ({
+          id: String(d._id),
+          chat_jid: d.chat_jid,
+          user_jid: d.user_jid,
+          created_at: Number(d.created_at),
+          expires_at: Number(d.expires_at),
+          by_jid: d.by_jid,
+          reason: d.reason,
+        }));
+      } catch (e) {
+        logger.debug({ err: e }, 'getActiveMutes failed');
+        return [];
+      }
+    },
+    async getMuteHistoryByChat(chatJid, limit = 100) {
+      try {
+        const cap = Math.max(1, Math.min(1000, Number(limit) || 100));
+        const docs = await conn
+          .collection('mutes')
+          .find({ chat_jid: chatJid })
+          .sort({ created_at: -1, _id: -1 })
+          .limit(cap)
+          .toArray();
+        return docs.map((d) => ({
+          id: String(d._id),
+          chat_jid: d.chat_jid,
+          user_jid: d.user_jid,
+          created_at: Number(d.created_at),
+          expires_at: Number(d.expires_at),
+          by_jid: d.by_jid,
+          reason: d.reason,
+          unmuted_at: d.unmuted_at == null ? null : Number(d.unmuted_at),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, chatJid }, 'getMuteHistoryByChat failed');
+        return [];
+      }
+    },
+    async getMuteHistoryByUser(userJid, limit = 100) {
+      try {
+        const cap = Math.max(1, Math.min(1000, Number(limit) || 100));
+        const docs = await conn
+          .collection('mutes')
+          .find({ user_jid: userJid })
+          .sort({ created_at: -1, _id: -1 })
+          .limit(cap)
+          .toArray();
+        return docs.map((d) => ({
+          id: String(d._id),
+          chat_jid: d.chat_jid,
+          user_jid: d.user_jid,
+          created_at: Number(d.created_at),
+          expires_at: Number(d.expires_at),
+          by_jid: d.by_jid,
+          reason: d.reason,
+          unmuted_at: d.unmuted_at == null ? null : Number(d.unmuted_at),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, userJid }, 'getMuteHistoryByUser failed');
+        return [];
+      }
+    },
+
     conn,
     async close() {
       try {

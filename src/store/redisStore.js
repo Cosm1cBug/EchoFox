@@ -1427,6 +1427,118 @@ function makeRedisStore(url, logger, groupCache) {
       }
     },
 
+    // v1.15.0 — persistent mutes (HASH for active + LIST for history)
+    async recordMute(chatJid, userJid, opts = {}) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const expires = Math.floor(Number(opts.expiresAt) || 0);
+        const entry = {
+          chat_jid: chatJid,
+          user_jid: userJid,
+          created_at: now,
+          expires_at: expires,
+          by_jid: opts.byJid || null,
+          reason: opts.reason ? String(opts.reason).slice(0, 200) : null,
+          unmuted_at: null,
+        };
+        await client.hset(`mutes:${chatJid}`, userJid, String(expires));
+        await client.lpush(`mutes:log:${chatJid}`, JSON.stringify(entry));
+        await client.ltrim(`mutes:log:${chatJid}`, 0, 499);
+        return `r${now}-${userJid}`;
+      } catch (e) {
+        logger.debug({ err: e, chatJid, userJid }, 'recordMute failed');
+        return null;
+      }
+    },
+    async markMuteUnmuted(chatJid, userJid) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const existed = await client.hdel(`mutes:${chatJid}`, userJid);
+        const head = await client.lindex(`mutes:log:${chatJid}`, 0);
+        if (head) {
+          try {
+            const e = JSON.parse(head);
+            if (e.user_jid === userJid && e.unmuted_at == null) {
+              e.unmuted_at = now;
+              await client.lset(`mutes:log:${chatJid}`, 0, JSON.stringify(e));
+            }
+          } catch (_) {
+            /* skip malformed */
+          }
+        }
+        return (existed || 0) > 0;
+      } catch (e) {
+        logger.debug({ err: e, chatJid, userJid }, 'markMuteUnmuted failed');
+        return false;
+      }
+    },
+    async getActiveMutes() {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const out = [];
+        let cursor = '0';
+        do {
+          const [next, keys] = await client.scan(cursor, 'MATCH', 'mutes:*', 'COUNT', 100);
+          cursor = next;
+          for (const k of keys) {
+            if (k.startsWith('mutes:log:')) continue;
+            const chatJid = k.slice('mutes:'.length);
+            const map = await client.hgetall(k);
+            for (const [userJid, expStr] of Object.entries(map || {})) {
+              const expires = Number(expStr) || 0;
+              if (expires <= now) continue;
+              out.push({
+                id: `r-${chatJid}-${userJid}`,
+                chat_jid: chatJid,
+                user_jid: userJid,
+                created_at: 0,
+                expires_at: expires,
+                by_jid: null,
+                reason: null,
+              });
+            }
+          }
+        } while (cursor !== '0');
+        return out;
+      } catch (e) {
+        logger.debug({ err: e }, 'getActiveMutes failed');
+        return [];
+      }
+    },
+    async getMuteHistoryByChat(chatJid, limit = 100) {
+      try {
+        const cap = Math.max(1, Math.min(1000, Number(limit) || 100));
+        const raw = await client.lrange(`mutes:log:${chatJid}`, 0, cap - 1);
+        const out = [];
+        for (let i = 0; i < raw.length; i++) {
+          try {
+            const e = JSON.parse(raw[i]);
+            out.push({
+              id: `r${i}`,
+              chat_jid: e.chat_jid,
+              user_jid: e.user_jid,
+              created_at: Number(e.created_at) || 0,
+              expires_at: Number(e.expires_at) || 0,
+              by_jid: e.by_jid,
+              reason: e.reason,
+              unmuted_at: e.unmuted_at == null ? null : Number(e.unmuted_at),
+            });
+          } catch (_) {
+            /* skip malformed */
+          }
+        }
+        return out;
+      } catch (e) {
+        logger.debug({ err: e, chatJid }, 'getMuteHistoryByChat failed');
+        return [];
+      }
+    },
+    async getMuteHistoryByUser(_userJid, _limit) {
+      // Redis layout is chat-keyed; per-user history would require a full scan.
+      // Dashboard falls back gracefully on the empty array.
+      return [];
+    },
+
     client,
     close() {
       client.quit();

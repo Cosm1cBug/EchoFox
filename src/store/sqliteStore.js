@@ -255,6 +255,21 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     );
     CREATE INDEX IF NOT EXISTS idx_gse_jid_ts ON group_settings_events (jid, ts DESC);
     CREATE INDEX IF NOT EXISTS idx_gse_field ON group_settings_events (field);
+
+    -- v1.15.0 persistent mutes log ─────────────────────────────
+    CREATE TABLE IF NOT EXISTS mutes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_jid    TEXT    NOT NULL,
+      user_jid    TEXT    NOT NULL,
+      created_at  INTEGER NOT NULL,
+      expires_at  INTEGER NOT NULL,
+      by_jid      TEXT,
+      reason      TEXT,
+      unmuted_at  INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_mutes_chat ON mutes (chat_jid, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_mutes_user ON mutes (user_jid, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_mutes_active ON mutes (expires_at) WHERE unmuted_at IS NULL;
     
   `);
 
@@ -442,6 +457,31 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
        WHERE jid = ?
        ORDER BY ts DESC, id DESC
        LIMIT ?`,
+    ),
+
+    // v1.15.0 — persistent mutes
+    muteInsert: db.prepare(
+      `INSERT INTO mutes (chat_jid, user_jid, created_at, expires_at, by_jid, reason)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ),
+    muteMarkUnmuted: db.prepare(
+      `UPDATE mutes SET unmuted_at = ?
+       WHERE chat_jid = ? AND user_jid = ? AND unmuted_at IS NULL AND expires_at > ?`,
+    ),
+    muteActiveAll: db.prepare(
+      `SELECT id, chat_jid, user_jid, created_at, expires_at, by_jid, reason
+       FROM mutes
+       WHERE unmuted_at IS NULL AND expires_at > ?`,
+    ),
+    muteHistoryByChat: db.prepare(
+      `SELECT id, chat_jid, user_jid, created_at, expires_at, by_jid, reason, unmuted_at
+       FROM mutes WHERE chat_jid = ?
+       ORDER BY created_at DESC, id DESC LIMIT ?`,
+    ),
+    muteHistoryByUser: db.prepare(
+      `SELECT id, chat_jid, user_jid, created_at, expires_at, by_jid, reason, unmuted_at
+       FROM mutes WHERE user_jid = ?
+       ORDER BY created_at DESC, id DESC LIMIT ?`,
     ),
     deletedInGroup: db.prepare(
       `SELECT id, participant, deleted_at FROM messages WHERE jid = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT ?`,
@@ -1757,6 +1797,89 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         }));
       } catch (e) {
         logger.debug({ err: e, jid }, 'getGroupSettingsHistory failed');
+        return [];
+      }
+    },
+
+    // v1.15.0 — persistent mutes
+    async recordMute(chatJid, userJid, opts = {}) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const expires = Math.floor(Number(opts.expiresAt) || 0);
+        const r = stmts.muteInsert.run(
+          chatJid,
+          userJid,
+          now,
+          expires,
+          opts.byJid || null,
+          opts.reason ? String(opts.reason).slice(0, 200) : null,
+        );
+        return Number(r.lastInsertRowid);
+      } catch (e) {
+        logger.debug({ err: e, chatJid, userJid }, 'recordMute failed');
+        return null;
+      }
+    },
+    async markMuteUnmuted(chatJid, userJid) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const r = stmts.muteMarkUnmuted.run(now, chatJid, userJid, now);
+        return r.changes > 0;
+      } catch (e) {
+        logger.debug({ err: e, chatJid, userJid }, 'markMuteUnmuted failed');
+        return false;
+      }
+    },
+    async getActiveMutes() {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        return stmts.muteActiveAll.all(now).map((r) => ({
+          id: Number(r.id),
+          chat_jid: r.chat_jid,
+          user_jid: r.user_jid,
+          created_at: Number(r.created_at),
+          expires_at: Number(r.expires_at),
+          by_jid: r.by_jid,
+          reason: r.reason,
+        }));
+      } catch (e) {
+        logger.debug({ err: e }, 'getActiveMutes failed');
+        return [];
+      }
+    },
+    async getMuteHistoryByChat(chatJid, limit = 100) {
+      try {
+        const cap = Math.max(1, Math.min(1000, Number(limit) || 100));
+        return stmts.muteHistoryByChat.all(chatJid, cap).map((r) => ({
+          id: Number(r.id),
+          chat_jid: r.chat_jid,
+          user_jid: r.user_jid,
+          created_at: Number(r.created_at),
+          expires_at: Number(r.expires_at),
+          by_jid: r.by_jid,
+          reason: r.reason,
+          unmuted_at: r.unmuted_at == null ? null : Number(r.unmuted_at),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, chatJid }, 'getMuteHistoryByChat failed');
+        return [];
+      }
+    },
+    async getMuteHistoryByUser(userJid, limit = 100) {
+      try {
+        const cap = Math.max(1, Math.min(1000, Number(limit) || 100));
+        return stmts.muteHistoryByUser.all(userJid, cap).map((r) => ({
+          id: Number(r.id),
+          chat_jid: r.chat_jid,
+          user_jid: r.user_jid,
+          created_at: Number(r.created_at),
+          expires_at: Number(r.expires_at),
+          by_jid: r.by_jid,
+          reason: r.reason,
+          unmuted_at: r.unmuted_at == null ? null : Number(r.unmuted_at),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, userJid }, 'getMuteHistoryByUser failed');
         return [];
       }
     },

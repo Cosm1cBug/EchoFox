@@ -103,7 +103,7 @@
     "libphonenumber-js": "^1.13.3",
     "link-preview-js": "^3.0.5",
     "lru-cache": "^11.0.1",
-    "mime-types": "^2.1.35",
+    "mime-types": "^3.0.2",
     "moment-timezone": "^0.6.2",
     "mongoose": "^9.7.0",
     "msedge-tts": "^2.0.5",

@@ -128,7 +128,7 @@
     "spinnies": "^0.5.1",
     "wa-sticker-formatter": "^4.4.4",
     "yargs": "^18.0.0",
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   },
   "overrides": {
     "wa-sticker-formatter": {

@@ -5,6 +5,8 @@
  */
 
 // v1.14.0 — group settings change history panel.
+// v1.16.0 — adds field-scoped client-side filter dropdown.
+//
 // Reads from the new group_settings_events log: every detected change
 // to subject / desc / announce / restrict / ephemeralDuration /
 // memberAddMode / joinApprovalMode, with actor when Baileys reported it.
@@ -12,6 +14,14 @@
 // Empty state explains that history is captured forwards from the v1.14.0
 // upgrade — so freshly-upgraded deployments start with a snapshot row
 // per current setting (added by the boot-time seed in worker.js).
+//
+// The v1.16.0 dropdown is purely client-side: the bundled
+// /api/groups/:jid/full response already contains all events. The new
+// server-side endpoint /api/groups/:jid/settings/history?field=… is
+// available for callers that want to drill in without pulling the full
+// payload, but this component just filters what it already has.
+
+import { useMemo, useState } from "react";
 
 interface SettingsEvent {
   id: number | string;
@@ -45,6 +55,17 @@ const FIELD_EMOJIS: Record<string, string> = {
   memberAddMode: "➕",
   joinApprovalMode: "✅",
 };
+
+// Preferred order in the dropdown — keeps the most-used at the top.
+const FIELD_ORDER = [
+  "subject",
+  "desc",
+  "announce",
+  "restrict",
+  "ephemeralDuration",
+  "memberAddMode",
+  "joinApprovalMode",
+];
 
 function fmtDate(tsSec: number): string {
   return new Date(tsSec * 1000).toLocaleString(undefined, {
@@ -95,6 +116,24 @@ function fmtValue(field: string, value: string | null): string {
 }
 
 export function SettingsHistory({ events }: Props) {
+  const [fieldFilter, setFieldFilter] = useState<string>("all");
+
+  // Compute the available fields from the actual data, in preferred order +
+  // any extras alphabetically. Don't show fields that have zero events.
+  const availableFields = useMemo(() => {
+    const present = new Set(events.map((e) => e.field));
+    const ordered = FIELD_ORDER.filter((f) => present.has(f));
+    const extras = Array.from(present)
+      .filter((f) => !FIELD_ORDER.includes(f))
+      .sort();
+    return [...ordered, ...extras];
+  }, [events]);
+
+  const visible = useMemo(() => {
+    if (fieldFilter === "all") return events;
+    return events.filter((e) => e.field === fieldFilter);
+  }, [events, fieldFilter]);
+
   if (!events.length) {
     return (
       <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 text-sm text-slate-400">
@@ -112,60 +151,90 @@ export function SettingsHistory({ events }: Props) {
     <div className="overflow-hidden rounded-2xl border border-white/5 bg-slate-900/40">
       <div className="flex items-center justify-between border-b border-white/5 bg-slate-900/60 px-4 py-2.5">
         <h3 className="text-sm font-semibold text-slate-100">
-          Settings change history <span className="text-slate-400">({events.length})</span>
+          Settings change history{" "}
+          <span className="text-slate-400">
+            ({visible.length}
+            {fieldFilter !== "all" && ` / ${events.length}`})
+          </span>
         </h3>
-        <span className="text-xs text-slate-400">newest first</span>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-slate-400">
+            <span className="hidden sm:inline">Filter</span>
+            <select
+              value={fieldFilter}
+              onChange={(e) => setFieldFilter(e.target.value)}
+              className="rounded-md border border-white/10 bg-slate-950/60 px-2 py-1 text-xs text-slate-100"
+            >
+              <option value="all">All fields ({events.length})</option>
+              {availableFields.map((f) => {
+                const cnt = events.filter((e) => e.field === f).length;
+                return (
+                  <option key={f} value={f}>
+                    {FIELD_EMOJIS[f] || "•"} {FIELD_LABELS[f] || f} ({cnt})
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          <span className="hidden text-xs text-slate-400 sm:inline">newest first</span>
+        </div>
       </div>
 
-      <div className="max-h-96 overflow-y-auto">
-        <ul className="divide-y divide-white/5">
-          {events.map((e) => {
-            const label = FIELD_LABELS[e.field] || e.field;
-            const emoji = FIELD_EMOJIS[e.field] || "•";
-            const oldDisp = fmtValue(e.field, e.old_value);
-            const newDisp = fmtValue(e.field, e.new_value);
-            const byWho = e.actor ? `+${e.actor.split("@")[0]}` : null;
-            const isInitial = e.old_value === null;
-            return (
-              <li key={e.id} className="px-4 py-3 text-sm">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-base leading-none">{emoji}</span>
-                  <div className="flex-1">
-                    <div className="text-slate-200">
-                      <span className="font-medium">{label}</span>
-                      {isInitial ? (
-                        <span className="ml-2 text-xs text-slate-400">
-                          set to <span className="font-mono text-slate-200">{newDisp}</span>
-                        </span>
-                      ) : (
-                        <span className="ml-2 text-xs text-slate-400">
-                          <span className="font-mono text-slate-400 line-through">{oldDisp}</span>
-                          {" → "}
-                          <span className="font-mono text-slate-100">{newDisp}</span>
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 text-xs text-slate-500" title={fmtDate(e.ts)}>
-                      {fmtAge(e.ts)} · {fmtDate(e.ts)}
-                      {byWho && (
-                        <>
-                          {" · "}by <span className="font-mono">{byWho}</span>
-                        </>
-                      )}
-                      {!byWho && !isInitial && (
-                        <span className="ml-1 italic text-slate-600">(actor unknown)</span>
-                      )}
-                      {isInitial && (
-                        <span className="ml-1 italic text-slate-600">(initial snapshot)</span>
-                      )}
+      {visible.length === 0 ? (
+        <div className="px-4 py-6 text-center text-sm text-slate-400">
+          No entries match the selected filter.
+        </div>
+      ) : (
+        <div className="max-h-96 overflow-y-auto">
+          <ul className="divide-y divide-white/5">
+            {visible.map((e) => {
+              const label = FIELD_LABELS[e.field] || e.field;
+              const emoji = FIELD_EMOJIS[e.field] || "•";
+              const oldDisp = fmtValue(e.field, e.old_value);
+              const newDisp = fmtValue(e.field, e.new_value);
+              const byWho = e.actor ? `+${e.actor.split("@")[0]}` : null;
+              const isInitial = e.old_value === null;
+              return (
+                <li key={e.id} className="px-4 py-3 text-sm">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-base leading-none">{emoji}</span>
+                    <div className="flex-1">
+                      <div className="text-slate-200">
+                        <span className="font-medium">{label}</span>
+                        {isInitial ? (
+                          <span className="ml-2 text-xs text-slate-400">
+                            set to <span className="font-mono text-slate-200">{newDisp}</span>
+                          </span>
+                        ) : (
+                          <span className="ml-2 text-xs text-slate-400">
+                            <span className="font-mono text-slate-400 line-through">{oldDisp}</span>
+                            {" → "}
+                            <span className="font-mono text-slate-100">{newDisp}</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-xs text-slate-500" title={fmtDate(e.ts)}>
+                        {fmtAge(e.ts)} · {fmtDate(e.ts)}
+                        {byWho && (
+                          <>
+                            {" · "}by <span className="font-mono">{byWho}</span>
+                          </>
+                        )}
+                        {!byWho && !isInitial && (
+                          <span className="ml-1 italic text-slate-600">(actor unknown)</span>
+                        )}
+                        {isInitial && (
+                          <span className="ml-1 italic text-slate-600">(initial snapshot)</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

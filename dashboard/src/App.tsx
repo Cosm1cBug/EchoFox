@@ -20,10 +20,12 @@ import { Presence } from "./pages/Presence";
 import { Labels } from "./pages/Labels";
 import { Newsletters } from "./pages/Newsletters";
 import { Ai } from "./pages/Ai";
+import { Leaderboard } from "./pages/Leaderboard";
 
 const TABS = [
   "Overview",
   "Groups",
+  "Leaderboard",
   "Contacts",
   "Presence",
   "Newsletters",
@@ -79,6 +81,7 @@ export default function App() {
         <div className="mt-8">
           {activeTab === "Overview" && <Overview />}
           {activeTab === "Groups" && <Groups />}
+          {activeTab === "Leaderboard" && <Leaderboard />}
           {activeTab === "Contacts" && <Contacts />}
           {activeTab === "Presence" && <Presence />}
           {activeTab === "Newsletters" && <Newsletters />}

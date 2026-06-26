@@ -565,6 +565,49 @@ const schema = z
       })
       .passthrough()
       .default({}),
+
+    // v1.16.0 — leveling extensions (XP multiplier, decay, level-up DMs).
+    // The `leveling` section is fully optional; defaults preserve v1.12.0
+    // behaviour exactly (multiplier 1.0, decay off, notifications off-by-default).
+    leveling: z
+      .object({
+        // Global XP multiplier applied AFTER category lookup in
+        // levelingService.awardForCommand(). 1.0 = no change. Capped at
+        // 5.0 to prevent runaway inflation if mis-configured.
+        xpMultiplier: z.coerce.number().min(0.1).max(5.0).default(1.0),
+
+        // XP decay for inactive users. OFF by default.
+        //   afterDays         grace period of inactivity (since user_levels.last_at)
+        //                     before any decay applies
+        //   percentPerWeek    fraction of CURRENT total XP shed per 7d of inactivity
+        //                     beyond the grace period
+        //   sweepCronMinutes  how often the decay sweep runs (default once per day)
+        // Bot admin can toggle via $leveling decay on/off at runtime
+        // (process-local override, doesn't rewrite config.js).
+        decay: z
+          .object({
+            enabled: z.boolean().default(false),
+            afterDays: z.coerce.number().int().min(1).max(365).default(14),
+            percentPerWeek: z.coerce.number().min(0.001).max(0.5).default(0.05),
+            sweepIntervalMinutes: z.coerce.number().int().min(15).max(10080).default(1440),
+          })
+          .default({}),
+
+        // Level-up DM notifications.
+        //   defaultEnabled  user-level default for never-opted users.
+        //                   Per resolved design (v1.16.0): default OFF, but on
+        //                   first XP gain we send a one-time hint pointing at
+        //                   `.notify on`. Override here if you want everyone
+        //                   opted-in by default.
+        notifications: z
+          .object({
+            defaultEnabled: z.boolean().default(false),
+            hintOnFirstXp: z.boolean().default(true),
+          })
+          .default({}),
+      })
+      .passthrough()
+      .default({}),
   })
   .passthrough(); // tolerate any extras the user adds at the top level
 

@@ -443,6 +443,44 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     ),
     levelGetXp: db.prepare(`SELECT xp FROM user_levels WHERE jid = ?`),
 
+    // v1.16.0 — leveling extensions
+    levelTopByXp: db.prepare(
+      `SELECT jid, xp, last_at FROM user_levels
+       WHERE xp > 0
+       ORDER BY xp DESC, jid ASC
+       LIMIT ?`,
+    ),
+    levelActiveSince: db.prepare(
+      `SELECT jid, xp, last_at FROM user_levels
+       WHERE xp > 0 AND last_at >= ?
+       ORDER BY xp DESC, last_at DESC, jid ASC
+       LIMIT ?`,
+    ),
+    levelDecayCandidates: db.prepare(
+      `SELECT jid, xp, last_at FROM user_levels
+       WHERE xp > 0 AND last_at > 0 AND last_at < ?`,
+    ),
+    levelSetXp: db.prepare(`UPDATE user_levels SET xp = ? WHERE jid = ?`),
+
+    // v1.16.0 — most-changed-groups card
+    gseMostChangedSince: db.prepare(
+      `SELECT jid, COUNT(*) AS cnt
+       FROM group_settings_events
+       WHERE ts >= ?
+       GROUP BY jid
+       ORDER BY cnt DESC, jid ASC
+       LIMIT ?`,
+    ),
+
+    // v1.16.0 — field-scoped settings history filter
+    gseHistoryByField: db.prepare(
+      `SELECT id, field, old_value, new_value, actor, ts
+       FROM group_settings_events
+       WHERE jid = ? AND field = ?
+       ORDER BY ts DESC, id DESC
+       LIMIT ?`,
+    ),
+
     // v1.13.0 — last human (non-bot) message timestamp per group
     lastHumanMsgTs: db.prepare(`SELECT MAX(ts) AS ts FROM messages WHERE jid = ? AND from_me = 0`),
 
@@ -1755,6 +1793,109 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       } catch (e) {
         logger.debug({ err: e, jid, amount }, 'addUserXp failed');
         return 0;
+      }
+    },
+
+    // v1.16.0 — leaderboard: top N users by XP across all chats
+    async getTopUsersByXp(limit = 10) {
+      try {
+        const cap = Math.max(1, Math.min(100, Number(limit) || 10));
+        return stmts.levelTopByXp.all(cap).map((r) => ({
+          jid: r.jid,
+          xp: Number(r.xp) || 0,
+          last_at: Number(r.last_at) || 0,
+        }));
+      } catch (e) {
+        logger.debug({ err: e }, 'getTopUsersByXp failed');
+        return [];
+      }
+    },
+    async getActiveUsersSince(sinceSec, limit = 10) {
+      try {
+        const since = Math.floor(Number(sinceSec) || 0);
+        const cap = Math.max(1, Math.min(100, Number(limit) || 10));
+        return stmts.levelActiveSince.all(since, cap).map((r) => ({
+          jid: r.jid,
+          xp: Number(r.xp) || 0,
+          last_at: Number(r.last_at) || 0,
+        }));
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'getActiveUsersSince failed');
+        return [];
+      }
+    },
+    /**
+     * Decay XP for users whose last_at is older than (now - graceSec).
+     *
+     *   weeksOver = (now - last_at - graceSec) / WEEK_SEC
+     *   newXp    = floor(xp * (1 - ratePerWeek) ^ weeksOver)
+     *
+     * Returns number of rows actually changed.
+     * Does NOT touch last_at (user is still inactive — visiting them
+     * with a sweep doesn't make them active).
+     */
+    async applyXpDecay(graceSec, ratePerWeek) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const grace = Math.max(0, Math.floor(Number(graceSec) || 0));
+        const rate = Math.max(0, Math.min(0.999, Number(ratePerWeek) || 0));
+        const cutoff = now - grace;
+        if (rate === 0) return 0;
+        const candidates = stmts.levelDecayCandidates.all(cutoff);
+        let affected = 0;
+        const txn = db.transaction((rows) => {
+          for (const r of rows) {
+            const xp = Number(r.xp) || 0;
+            const lastAt = Number(r.last_at) || 0;
+            if (xp <= 0 || lastAt <= 0) continue;
+            const weeksOver = (now - lastAt - grace) / (7 * 86400);
+            if (weeksOver <= 0) continue;
+            const factor = Math.pow(1 - rate, weeksOver);
+            const newXp = Math.max(0, Math.floor(xp * factor));
+            if (newXp < xp) {
+              stmts.levelSetXp.run(newXp, r.jid);
+              affected += 1;
+            }
+          }
+        });
+        txn(candidates);
+        return affected;
+      } catch (e) {
+        logger.debug({ err: e, graceSec, ratePerWeek }, 'applyXpDecay failed');
+        return 0;
+      }
+    },
+
+    // v1.16.0 — most-changed-groups card on Overview
+    async getMostChangedGroupsSince(sinceSec, limit = 5) {
+      try {
+        const since = Math.floor(Number(sinceSec) || 0);
+        const cap = Math.max(1, Math.min(50, Number(limit) || 5));
+        return stmts.gseMostChangedSince.all(since, cap).map((r) => ({
+          jid: r.jid,
+          count: Number(r.cnt) || 0,
+        }));
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'getMostChangedGroupsSince failed');
+        return [];
+      }
+    },
+
+    // v1.16.0 — field-scoped settings history filter
+    async getGroupSettingsHistoryByField(jid, field, limit = 200) {
+      try {
+        const cap = Math.max(1, Math.min(2000, Number(limit) || 200));
+        return stmts.gseHistoryByField.all(jid, String(field), cap).map((r) => ({
+          id: Number(r.id),
+          field: r.field,
+          old_value: r.old_value,
+          new_value: r.new_value,
+          actor: r.actor,
+          ts: Number(r.ts),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, jid, field }, 'getGroupSettingsHistoryByField failed');
+        return [];
       }
     },
 

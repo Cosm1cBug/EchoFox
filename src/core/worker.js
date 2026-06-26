@@ -63,6 +63,7 @@ const {
   CHECK_INTERVAL: VTW_INTERVAL_MIN,
 } = require('../services/vtWatchService');
 const reminderService = require('../services/reminderService');
+const levelingDecayService = require('../services/levelingDecayService');
 const muteService = require('../services/muteService');
 
 const log = logger.child({ mod: 'worker' });
@@ -297,6 +298,13 @@ async function start(retry = 0) {
       if (n > 0) log.info({ count: n }, 'mute: hydrated active mutes from store');
     })
     .catch((e) => log.debug({ err: e }, 'mute: hydration failed'));
+
+  // v1.16.0 — periodic XP decay sweep (no-op until $leveling decay on)
+  try {
+    levelingDecayService.start();
+  } catch (e) {
+    log.debug({ err: e }, 'levelingDecayService start failed (non-fatal)');
+  }
 
   store.bind(sock.ev);
 

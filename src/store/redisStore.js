@@ -1376,6 +1376,144 @@ function makeRedisStore(url, logger, groupCache) {
       }
     },
 
+    // v1.16.0 — leaderboard / leveling extensions (SCAN-based for Redis)
+    async getTopUsersByXp(limit = 10) {
+      try {
+        const cap = Math.max(1, Math.min(100, Number(limit) || 10));
+        const rows = [];
+        let cursor = '0';
+        do {
+          const [next, keys] = await client.scan(cursor, 'MATCH', 'user_levels:*', 'COUNT', 200);
+          cursor = next;
+          for (const k of keys) {
+            const data = await client.hgetall(k);
+            if (!data || !data.xp) continue;
+            rows.push({
+              jid: k.slice('user_levels:'.length),
+              xp: Number(data.xp) || 0,
+              last_at: Number(data.last_at) || 0,
+            });
+          }
+        } while (cursor !== '0');
+        rows.sort((a, b) => b.xp - a.xp || a.jid.localeCompare(b.jid));
+        return rows.filter((r) => r.xp > 0).slice(0, cap);
+      } catch (e) {
+        logger.debug({ err: e }, 'getTopUsersByXp failed');
+        return [];
+      }
+    },
+    async getActiveUsersSince(sinceSec, limit = 10) {
+      try {
+        const since = Math.floor(Number(sinceSec) || 0);
+        const cap = Math.max(1, Math.min(100, Number(limit) || 10));
+        const all = await this.getTopUsersByXp(1000);
+        return all.filter((r) => r.last_at >= since).slice(0, cap);
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'getActiveUsersSince failed');
+        return [];
+      }
+    },
+    async applyXpDecay(graceSec, ratePerWeek) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const grace = Math.max(0, Math.floor(Number(graceSec) || 0));
+        const rate = Math.max(0, Math.min(0.999, Number(ratePerWeek) || 0));
+        const cutoff = now - grace;
+        if (rate === 0) return 0;
+        let affected = 0;
+        let cursor = '0';
+        do {
+          const [next, keys] = await client.scan(cursor, 'MATCH', 'user_levels:*', 'COUNT', 200);
+          cursor = next;
+          for (const k of keys) {
+            const data = await client.hgetall(k);
+            if (!data || !data.xp) continue;
+            const xp = Number(data.xp) || 0;
+            const lastAt = Number(data.last_at) || 0;
+            if (xp <= 0 || lastAt <= 0 || lastAt >= cutoff) continue;
+            const weeksOver = (now - lastAt - grace) / (7 * 86400);
+            if (weeksOver <= 0) continue;
+            const factor = Math.pow(1 - rate, weeksOver);
+            const newXp = Math.max(0, Math.floor(xp * factor));
+            if (newXp < xp) {
+              await client.hset(k, 'xp', String(newXp));
+              affected += 1;
+            }
+          }
+        } while (cursor !== '0');
+        return affected;
+      } catch (e) {
+        logger.debug({ err: e, graceSec, ratePerWeek }, 'applyXpDecay failed');
+        return 0;
+      }
+    },
+    async getMostChangedGroupsSince(sinceSec, limit = 5) {
+      try {
+        const since = Math.floor(Number(sinceSec) || 0);
+        const cap = Math.max(1, Math.min(50, Number(limit) || 5));
+        // Redis layout: group_settings_events stored as LIST per jid.
+        // Walk all gse:* keys and count entries with ts >= since.
+        const counts = new Map();
+        let cursor = '0';
+        do {
+          const [next, keys] = await client.scan(cursor, 'MATCH', 'gse:*', 'COUNT', 200);
+          cursor = next;
+          for (const k of keys) {
+            const jid = k.slice('gse:'.length);
+            const entries = await client.lrange(k, 0, -1);
+            let cnt = 0;
+            for (const e of entries) {
+              try {
+                const obj = JSON.parse(e);
+                if (Number(obj.ts) >= since) cnt += 1;
+              } catch (_) {
+                /* skip malformed */
+              }
+            }
+            if (cnt > 0) counts.set(jid, cnt);
+          }
+        } while (cursor !== '0');
+        const out = Array.from(counts.entries())
+          .map(([jid, count]) => ({ jid, count }))
+          .sort((a, b) => b.count - a.count || a.jid.localeCompare(b.jid))
+          .slice(0, cap);
+        return out;
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'getMostChangedGroupsSince failed');
+        return [];
+      }
+    },
+    async getGroupSettingsHistoryByField(jid, field, limit = 200) {
+      try {
+        const cap = Math.max(1, Math.min(2000, Number(limit) || 200));
+        const entries = await client.lrange(`gse:${jid}`, 0, -1);
+        const out = [];
+        for (let i = 0; i < entries.length; i++) {
+          try {
+            const obj = JSON.parse(entries[i]);
+            if (obj.field === field) {
+              out.push({
+                id: `r${i}`,
+                field: obj.field,
+                old_value: obj.old_value,
+                new_value: obj.new_value,
+                actor: obj.actor,
+                ts: Number(obj.ts) || 0,
+              });
+            }
+          } catch (_) {
+            /* skip */
+          }
+          if (out.length >= cap) break;
+        }
+        out.sort((a, b) => b.ts - a.ts);
+        return out.slice(0, cap);
+      } catch (e) {
+        logger.debug({ err: e, jid, field }, 'getGroupSettingsHistoryByField failed');
+        return [];
+      }
+    },
+
     // v1.13.0 — groups dashboard helper
     // Redis store doesn't have a queryable messages table — return null
     // so the server falls back to 'unknown' (active=null in API output).

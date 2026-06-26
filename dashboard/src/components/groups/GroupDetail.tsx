@@ -15,6 +15,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { SettingsHistory } from "./SettingsHistory";
 import { ParticipantsList } from "./ParticipantsList";
 import { HistoryTimeline } from "./HistoryTimeline";
+import { MuteHistory } from "./MuteHistory";
 
 interface Props {
   jid: string;
@@ -27,6 +28,7 @@ interface FullResponse {
   participants: any[];
   history: any[];
   settingsHistory: any[];
+  muteHistory?: any[];
   lastHumanMsgTs: number | null;
   active: boolean | null;
   inactiveAfterDays: number;
@@ -138,6 +140,7 @@ export function GroupDetail({ jid, onBack }: Props) {
         <div className="space-y-6">
           <SettingsPanel meta={data.meta} />
           <SettingsHistory events={data.settingsHistory || []} />
+          <MuteHistory events={data.muteHistory || []} />
         </div>
         <div className="space-y-6">
           <ParticipantsList

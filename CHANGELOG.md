@@ -12,6 +12,137 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.16.0] — 2026-06-25
+
+> **Leveling + Dashboard batch:** `.notify` opt-in DMs, global XP
+> multiplier, XP decay for inactive users (bot-admin toggle), new
+> dashboard leaderboard tab, Overview "most-changed groups" card,
+> field-scoped settings-history filter, persisted mute history panel.
+
+### Added — new commands
+
+- **`.notify on/off/status`** _(user)_ — per-user opt-in for level-up
+  DM notifications. Persisted via the existing `service_subscribers`
+  table (synthetic service `levelup-notify`) — no new migration.
+  Default OFF for new users; on first XP gain a one-time hint
+  is sent pointing at `.notify on`. _Aliases: `notifications`, `notif`._
+- **`$leveling status|decay|multiplier`** _(admin)_ — bot-admin control
+  surface for leveling:
+  - `$leveling status` — multiplier, decay state, last sweep, notifications
+  - `$leveling decay on|off|run` — toggle XP decay sweep + trigger now
+  - `$leveling multiplier <0.1-5.0>` — set global XP multiplier (capped 0.1–5.0)
+  - `$leveling multiplier reset` — back to 1.0x
+    Group admins cannot toggle these. `config.admins` is the only authority.
+
+### Added — leveling extensions
+
+- **Global XP multiplier** — `config.leveling.xpMultiplier` (default `1.0`,
+  range `0.1`–`5.0`). Applied in `levelingService.xpForCommand()` after
+  category lookup. Set to `2.0` for a "2x XP weekend"; set to `0.5` to
+  halve all earnings. Runtime override via `$leveling multiplier <n>`.
+- **XP decay** — new `src/services/levelingDecayService.js`:
+  - `config.leveling.decay.{enabled, afterDays, percentPerWeek,
+sweepIntervalMinutes}` (defaults: `false, 14, 0.05, 1440`).
+  - Algorithm: `newXp = floor(xp * (1 - rate) ^ weeksOver)`, compounding.
+  - Does NOT touch `last_at` (inactive users stay inactive after sweep).
+  - Runtime toggle via `$leveling decay on/off`. Sweep job started from
+    `worker.js` boot; runs every 24h by default. Run-now via
+    `$leveling decay run`.
+  - Group admins cannot toggle decay. Bot admin (config.admins) only.
+- **Level-up DM** — `levelingService.awardForCommand()` now accepts a
+  `sock` arg. When a user transitions to a higher level AND has opted
+  in via `.notify on`, they get a DM. Fire-and-forget; failures never
+  block the command runner.
+
+### Added — dashboard
+
+- **New "Leaderboard" tab** (`dashboard/src/pages/Leaderboard.tsx`):
+  global top-N users by XP across all chats. Window selector
+  (7d / 30d / 90d / all-time), limit selector (10 / 25 / 50).
+  Refreshes every 60s. Backed by new
+  `GET /api/leaderboard?days=&limit=` endpoint.
+- **Overview: "Most-changed groups" card**
+  (`dashboard/src/components/MostChangedGroups.tsx`):
+  top 5 groups by `group_settings_events` count over last 7 days.
+  Backed by new `GET /api/stats/most-changed-groups?days=&limit=` endpoint.
+- **SettingsHistory field-scoped filter**: client-side dropdown in
+  `dashboard/src/components/groups/SettingsHistory.tsx` lets you filter
+  by `subject` / `desc` / `announce` / `restrict` / `ephemeralDuration` /
+  `memberAddMode` / `joinApprovalMode`. Shows per-field counts. Also
+  exposes new server endpoint `GET /api/groups/:jid/settings/history?field=`
+  for non-bundled callers.
+- **MuteHistory panel** (`dashboard/src/components/groups/MuteHistory.tsx`):
+  persisted mute history view in the group drill-down page. Backed by
+  v1.15.0's `store.getMuteHistoryByChat()`. Shows active/expired/unmuted
+  status, duration, reason, who-by. Bundled into `/api/groups/:jid/full`.
+
+### Added — store
+
+- All 4 backends gain 5 new methods:
+  - `getTopUsersByXp(limit=10)` — global top-N for leaderboard
+  - `getActiveUsersSince(sinceSec, limit=10)` — top-N restricted to
+    users active in the window
+  - `applyXpDecay(graceSec, ratePerWeek)` — server-side decay sweep
+  - `getMostChangedGroupsSince(sinceSec, limit=5)` — for the Overview card
+  - `getGroupSettingsHistoryByField(jid, field, limit=200)` — server-side
+    field-scoped filter
+
+### Config — new `leveling` section
+
+```js
+leveling: {
+  xpMultiplier: 1.0,        // 0.1–5.0
+  decay: {
+    enabled: false,
+    afterDays: 14,
+    percentPerWeek: 0.05,
+    sweepIntervalMinutes: 1440,
+  },
+  notifications: {
+    defaultEnabled: false,  // user-level default for .notify
+    hintOnFirstXp: true,
+  },
+}
+```
+
+All keys are optional with safe defaults — existing configs need no changes.
+
+### Added — tests
+
+- **`src/__tests__/integration/commands-v1160.test.js`** — 12 new tests:
+  - Module shapes for `.notify` and `$leveling`
+  - `xpForCommand` multiplier 1.0 / 2.0 / 0.5 behaviour
+  - `store.getTopUsersByXp` excludes zero-XP rows
+  - `store.getActiveUsersSince` respects window
+  - `store.applyXpDecay` decays only inactive users
+  - `store.applyXpDecay` preserves `last_at` (inactive stays inactive)
+  - `store.getMostChangedGroupsSince` aggregation
+  - `store.getGroupSettingsHistoryByField` filter
+  - `levelingDecayService.runOnce` no-op when disabled
+  - `levelingDecayService.runOnce` actually decays when enabled
+  - `awardForCommand` level transition detection
+  - `isNotifyEnabled` opt-in / opt-out / default-off semantics
+
+### Notes
+
+- **No new dependencies.** Pure code additions.
+- **No new migrations.** `mutes` table already shipped in v1.15.0.
+  `user_levels` already exists from v1.12.0. Multiplier + decay
+  reuse the existing schema.
+- **Backwards compat:** default multiplier `1.0` + decay `enabled: false`
+  - notifications `defaultEnabled: false` keeps v1.12.0/v1.13.0/v1.14.0/
+    v1.15.0 behaviour identical for users who don't change config.
+- **Privacy:** the Leaderboard tab is dashboard-only (basic auth required).
+  No in-chat command exposes inter-user XP comparison.
+- **Redis caveat:** SCAN-based aggregation in `getTopUsersByXp` and
+  `getMostChangedGroupsSince` is O(N) over all `user_levels:*` / `gse:*`
+  keys — fine for small/medium deployments, will slow on tens-of-thousands
+  of keys. SQLite/Postgres/Mongo use indexed queries.
+- **Tests: 289/289** (was 277, +12).
+- **Gates:** lint 0/0, prettier clean, headers 175/175, dashboard tsc clean.
+
+---
+
 ## [1.15.0] — 2026-06-25
 
 > **Commands batch:** `.ocr` + `.hn` (new), `.toimg` flag enhancements,

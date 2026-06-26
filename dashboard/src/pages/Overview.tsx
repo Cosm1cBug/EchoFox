@@ -10,6 +10,7 @@ import { TopCommandsChart } from "../components/Chart/TopCommandsChart";
 import { MessageTrendChart } from "../components/Chart/MessageTrendChart";
 import { RecentActivity } from "../components/RecentActivity";
 import { SoakStatus } from "../components/SoakStatus";
+import { MostChangedGroups } from "../components/MostChangedGroups";
 import { Loading, ErrorMessage } from "../components/LoadingError";
 
 export function Overview() {
@@ -72,6 +73,7 @@ export function Overview() {
         <SoakStatus />
         <TopCommandsChart data={topCommands} />
         <MessageTrendChart data={messageTrend} />
+        <MostChangedGroups />
       </div>
 
       <RecentActivity activities={recentActivities} />

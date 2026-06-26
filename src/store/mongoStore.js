@@ -1466,6 +1466,119 @@ function makeMongoStore(uri, logger, groupCache) {
       }
     },
 
+    // v1.16.0 — leaderboard: top N users by XP across all chats
+    async getTopUsersByXp(limit = 10) {
+      try {
+        const cap = Math.max(1, Math.min(100, Number(limit) || 10));
+        const docs = await conn
+          .collection('user_levels')
+          .find({ xp: { $gt: 0 } })
+          .sort({ xp: -1, jid: 1 })
+          .limit(cap)
+          .toArray();
+        return docs.map((d) => ({
+          jid: d.jid,
+          xp: Number(d.xp) || 0,
+          last_at: Number(d.last_at) || 0,
+        }));
+      } catch (e) {
+        logger.debug({ err: e }, 'getTopUsersByXp failed');
+        return [];
+      }
+    },
+    async getActiveUsersSince(sinceSec, limit = 10) {
+      try {
+        const since = Math.floor(Number(sinceSec) || 0);
+        const cap = Math.max(1, Math.min(100, Number(limit) || 10));
+        const docs = await conn
+          .collection('user_levels')
+          .find({ xp: { $gt: 0 }, last_at: { $gte: since } })
+          .sort({ xp: -1, last_at: -1, jid: 1 })
+          .limit(cap)
+          .toArray();
+        return docs.map((d) => ({
+          jid: d.jid,
+          xp: Number(d.xp) || 0,
+          last_at: Number(d.last_at) || 0,
+        }));
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'getActiveUsersSince failed');
+        return [];
+      }
+    },
+    async applyXpDecay(graceSec, ratePerWeek) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const grace = Math.max(0, Math.floor(Number(graceSec) || 0));
+        const rate = Math.max(0, Math.min(0.999, Number(ratePerWeek) || 0));
+        const cutoff = now - grace;
+        if (rate === 0) return 0;
+        const candidates = await conn
+          .collection('user_levels')
+          .find({ xp: { $gt: 0 }, last_at: { $gt: 0, $lt: cutoff } })
+          .toArray();
+        let affected = 0;
+        for (const r of candidates) {
+          const xp = Number(r.xp) || 0;
+          const lastAt = Number(r.last_at) || 0;
+          if (xp <= 0 || lastAt <= 0) continue;
+          const weeksOver = (now - lastAt - grace) / (7 * 86400);
+          if (weeksOver <= 0) continue;
+          const factor = Math.pow(1 - rate, weeksOver);
+          const newXp = Math.max(0, Math.floor(xp * factor));
+          if (newXp < xp) {
+            await conn.collection('user_levels').updateOne({ jid: r.jid }, { $set: { xp: newXp } });
+            affected += 1;
+          }
+        }
+        return affected;
+      } catch (e) {
+        logger.debug({ err: e, graceSec, ratePerWeek }, 'applyXpDecay failed');
+        return 0;
+      }
+    },
+    async getMostChangedGroupsSince(sinceSec, limit = 5) {
+      try {
+        const since = Math.floor(Number(sinceSec) || 0);
+        const cap = Math.max(1, Math.min(50, Number(limit) || 5));
+        const agg = await conn
+          .collection('group_settings_events')
+          .aggregate([
+            { $match: { ts: { $gte: since } } },
+            { $group: { _id: '$jid', count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: cap },
+          ])
+          .toArray();
+        return agg.map((r) => ({ jid: r._id, count: Number(r.count) || 0 }));
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'getMostChangedGroupsSince failed');
+        return [];
+      }
+    },
+    async getGroupSettingsHistoryByField(jid, field, limit = 200) {
+      try {
+        const cap = Math.max(1, Math.min(2000, Number(limit) || 200));
+        const docs = await conn
+          .collection('group_settings_events')
+          .find({ jid, field: String(field) })
+          .sort({ ts: -1, _id: -1 })
+          .limit(cap)
+          .toArray();
+        return docs.map((d) => ({
+          id: String(d._id),
+          field: d.field,
+          old_value: d.old_value,
+          new_value: d.new_value,
+          actor: d.actor,
+          ts: Number(d.ts),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, jid, field }, 'getGroupSettingsHistoryByField failed');
+        return [];
+      }
+    },
+
     // v1.13.0 — groups dashboard helper
     async getLastHumanMessageTs(jid) {
       try {

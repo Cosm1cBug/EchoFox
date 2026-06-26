@@ -89,3 +89,43 @@ export const getAiStats = (days = 30) =>
 export const getAiChats = () => fetchJson("/api/ai/chats");
 
 export const getAiConfig = () => fetchJson("/api/ai/config");
+
+// v1.16.0 — leaderboard tab
+export const getLeaderboard = (days = 7, limit = 10) =>
+  fetchJson<{
+    days: number;
+    limit: number;
+    generatedAt: number;
+    users: Array<{ jid: string; xp: number; last_at: number }>;
+  }>(`/api/leaderboard?days=${days}&limit=${limit}`);
+
+// v1.16.0 — Overview most-changed-groups card
+export const getMostChangedGroups = (days = 7, limit = 5) =>
+  fetchJson<{
+    days: number;
+    limit: number;
+    generatedAt: number;
+    groups: Array<{ jid: string; count: number; subject: string | null }>;
+  }>(`/api/stats/most-changed-groups?days=${days}&limit=${limit}`);
+
+// v1.16.0 — field-scoped settings history filter (when `field` is omitted, returns ALL)
+export const getGroupSettingsHistoryFiltered = (
+  jid: string,
+  opts: { field?: string | null; limit?: number } = {},
+) => {
+  const qs = new URLSearchParams();
+  if (opts.field) qs.set("field", opts.field);
+  qs.set("limit", String(opts.limit ?? 200));
+  return fetchJson<{
+    jid: string;
+    field: string | null;
+    events: Array<{
+      id: number | string;
+      field: string;
+      old_value: string | null;
+      new_value: string | null;
+      actor: string | null;
+      ts: number;
+    }>;
+  }>(`/api/groups/${encodeURIComponent(jid)}/settings/history?${qs.toString()}`);
+};

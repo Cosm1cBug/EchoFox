@@ -140,8 +140,9 @@ async function run({ sock, cmd, m, ctx, handlerArgs }) {
     alertEngine.record(cmd.name, 'success');
     // v1.12.0 — award per-user XP for successful commands.
     // Fire-and-forget; failure inside leveling never blocks the runner.
+    // v1.16.0 — pass sock so leveling can DM on level-up (per .notify on)
     leveling
-      .awardForCommand(ctx.sender, cmd)
+      .awardForCommand(ctx.sender, cmd, sock)
       .catch((e) =>
         logger.debug({ err: e, cmd: cmd.name, sender: ctx.sender }, 'awardForCommand failed'),
       );

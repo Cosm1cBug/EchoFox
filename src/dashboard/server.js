@@ -213,18 +213,23 @@ function startDashboard(port, store, config) {
       const jid = req.params.jid;
       const historyLimit = Math.min(Number(req.query.historyLimit) || 200, 2000);
 
-      const [meta, participants, history, lastHumanMsgTs, settingsHistory] = await Promise.all([
-        store.getGroupMetadata(jid).catch(() => null),
-        store.getCurrentParticipants(jid).catch(() => []),
-        store.getParticipantHistory(jid, historyLimit).catch(() => []),
-        typeof store.getLastHumanMessageTs === 'function'
-          ? store.getLastHumanMessageTs(jid).catch(() => null)
-          : Promise.resolve(null),
-        // v1.14.0 — settings change log
-        typeof store.getGroupSettingsHistory === 'function'
-          ? store.getGroupSettingsHistory(jid, historyLimit).catch(() => [])
-          : Promise.resolve([]),
-      ]);
+      const [meta, participants, history, lastHumanMsgTs, settingsHistory, muteHistory] =
+        await Promise.all([
+          store.getGroupMetadata(jid).catch(() => null),
+          store.getCurrentParticipants(jid).catch(() => []),
+          store.getParticipantHistory(jid, historyLimit).catch(() => []),
+          typeof store.getLastHumanMessageTs === 'function'
+            ? store.getLastHumanMessageTs(jid).catch(() => null)
+            : Promise.resolve(null),
+          // v1.14.0 — settings change log
+          typeof store.getGroupSettingsHistory === 'function'
+            ? store.getGroupSettingsHistory(jid, historyLimit).catch(() => [])
+            : Promise.resolve([]),
+          // v1.16.0 — persisted mute history
+          typeof store.getMuteHistoryByChat === 'function'
+            ? store.getMuteHistoryByChat(jid, 100).catch(() => [])
+            : Promise.resolve([]),
+        ]);
 
       if (!meta) return res.status(404).json({ error: 'not_found' });
 
@@ -238,6 +243,7 @@ function startDashboard(port, store, config) {
         participants,
         history,
         settingsHistory,
+        muteHistory,
         lastHumanMsgTs,
         active,
         inactiveAfterDays: inactiveDays,
@@ -584,6 +590,71 @@ function startDashboard(port, store, config) {
         return res.status(404).json({ error: 'not_implemented' });
       const rows = await store.listAiOptedInChats(200);
       res.json({ count: rows.length, chats: rows });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // v1.16.0 — leaderboard (top users by XP earned, active since)
+  app.get('/api/leaderboard', async (req, res, next) => {
+    try {
+      const days = Math.max(1, Math.min(365, Number(req.query.days) || 7));
+      const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 10));
+      const sinceSec = Math.floor(Date.now() / 1000) - days * 86400;
+      let rows = [];
+      if (typeof store.getActiveUsersSince === 'function') {
+        rows = await store.getActiveUsersSince(sinceSec, limit);
+      } else if (typeof store.getTopUsersByXp === 'function') {
+        rows = await store.getTopUsersByXp(limit);
+      }
+      res.json({ days, limit, generatedAt: Math.floor(Date.now() / 1000), users: rows });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // v1.16.0 — most-changed-groups card on Overview
+  app.get('/api/stats/most-changed-groups', async (req, res, next) => {
+    try {
+      const days = Math.max(1, Math.min(365, Number(req.query.days) || 7));
+      const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 5));
+      const sinceSec = Math.floor(Date.now() / 1000) - days * 86400;
+      let groups = [];
+      if (typeof store.getMostChangedGroupsSince === 'function') {
+        groups = await store.getMostChangedGroupsSince(sinceSec, limit);
+      }
+      // Enrich with subject for nicer display
+      const enriched = await Promise.all(
+        groups.map(async (g) => {
+          let subject = null;
+          try {
+            const meta = await store.getGroupMetadata(g.jid);
+            subject = meta?.subject || null;
+          } catch {
+            /* ignore */
+          }
+          return { ...g, subject };
+        }),
+      );
+      res.json({ days, limit, generatedAt: Math.floor(Date.now() / 1000), groups: enriched });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // v1.16.0 — field-scoped settings history (filter dropdown)
+  app.get('/api/groups/:jid/settings/history', async (req, res, next) => {
+    try {
+      const jid = req.params.jid;
+      const field = req.query.field ? String(req.query.field) : null;
+      const limit = Math.max(1, Math.min(2000, Number(req.query.limit) || 200));
+      let events = [];
+      if (field && typeof store.getGroupSettingsHistoryByField === 'function') {
+        events = await store.getGroupSettingsHistoryByField(jid, field, limit);
+      } else if (typeof store.getGroupSettingsHistory === 'function') {
+        events = await store.getGroupSettingsHistory(jid, limit);
+      }
+      res.json({ jid, field, events });
     } catch (e) {
       next(e);
     }

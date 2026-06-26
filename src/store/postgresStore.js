@@ -1449,6 +1449,137 @@ function makePostgresStore(url, logger, groupCache) {
       }
     },
 
+    // v1.16.0 — leaderboard: top N users by XP across all chats
+    async getTopUsersByXp(limit = 10) {
+      try {
+        const cap = Math.max(1, Math.min(100, Number(limit) || 10));
+        const r = await pool.query(
+          `SELECT jid, xp, last_at FROM user_levels
+           WHERE xp > 0
+           ORDER BY xp DESC, jid ASC
+           LIMIT $1`,
+          [cap],
+        );
+        return r.rows.map((row) => ({
+          jid: row.jid,
+          xp: Number(row.xp) || 0,
+          last_at: Number(row.last_at) || 0,
+        }));
+      } catch (e) {
+        logger.debug({ err: e }, 'getTopUsersByXp failed');
+        return [];
+      }
+    },
+    async getActiveUsersSince(sinceSec, limit = 10) {
+      try {
+        const since = Math.floor(Number(sinceSec) || 0);
+        const cap = Math.max(1, Math.min(100, Number(limit) || 10));
+        const r = await pool.query(
+          `SELECT jid, xp, last_at FROM user_levels
+           WHERE xp > 0 AND last_at >= $1
+           ORDER BY xp DESC, last_at DESC, jid ASC
+           LIMIT $2`,
+          [since, cap],
+        );
+        return r.rows.map((row) => ({
+          jid: row.jid,
+          xp: Number(row.xp) || 0,
+          last_at: Number(row.last_at) || 0,
+        }));
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'getActiveUsersSince failed');
+        return [];
+      }
+    },
+    async applyXpDecay(graceSec, ratePerWeek) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const grace = Math.max(0, Math.floor(Number(graceSec) || 0));
+        const rate = Math.max(0, Math.min(0.999, Number(ratePerWeek) || 0));
+        const cutoff = now - grace;
+        if (rate === 0) return 0;
+        const cand = await pool.query(
+          `SELECT jid, xp, last_at FROM user_levels
+           WHERE xp > 0 AND last_at > 0 AND last_at < $1`,
+          [cutoff],
+        );
+        let affected = 0;
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          for (const r of cand.rows) {
+            const xp = Number(r.xp) || 0;
+            const lastAt = Number(r.last_at) || 0;
+            if (xp <= 0 || lastAt <= 0) continue;
+            const weeksOver = (now - lastAt - grace) / (7 * 86400);
+            if (weeksOver <= 0) continue;
+            const factor = Math.pow(1 - rate, weeksOver);
+            const newXp = Math.max(0, Math.floor(xp * factor));
+            if (newXp < xp) {
+              await client.query('UPDATE user_levels SET xp = $1 WHERE jid = $2', [newXp, r.jid]);
+              affected += 1;
+            }
+          }
+          await client.query('COMMIT');
+        } catch (txErr) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw txErr;
+        } finally {
+          client.release();
+        }
+        return affected;
+      } catch (e) {
+        logger.debug({ err: e, graceSec, ratePerWeek }, 'applyXpDecay failed');
+        return 0;
+      }
+    },
+    async getMostChangedGroupsSince(sinceSec, limit = 5) {
+      try {
+        const since = Math.floor(Number(sinceSec) || 0);
+        const cap = Math.max(1, Math.min(50, Number(limit) || 5));
+        const r = await pool.query(
+          `SELECT jid, COUNT(*) AS cnt
+           FROM group_settings_events
+           WHERE ts >= $1
+           GROUP BY jid
+           ORDER BY cnt DESC, jid ASC
+           LIMIT $2`,
+          [since, cap],
+        );
+        return r.rows.map((row) => ({
+          jid: row.jid,
+          count: Number(row.cnt) || 0,
+        }));
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'getMostChangedGroupsSince failed');
+        return [];
+      }
+    },
+    async getGroupSettingsHistoryByField(jid, field, limit = 200) {
+      try {
+        const cap = Math.max(1, Math.min(2000, Number(limit) || 200));
+        const r = await pool.query(
+          `SELECT id, field, old_value, new_value, actor, ts
+           FROM group_settings_events
+           WHERE jid = $1 AND field = $2
+           ORDER BY ts DESC, id DESC
+           LIMIT $3`,
+          [jid, String(field), cap],
+        );
+        return r.rows.map((row) => ({
+          id: Number(row.id),
+          field: row.field,
+          old_value: row.old_value,
+          new_value: row.new_value,
+          actor: row.actor,
+          ts: Number(row.ts),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, jid, field }, 'getGroupSettingsHistoryByField failed');
+        return [];
+      }
+    },
+
     // v1.13.0 — groups dashboard helper
     async getLastHumanMessageTs(jid) {
       try {

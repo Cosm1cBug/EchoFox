@@ -114,7 +114,7 @@ module.exports = {
     try {
       buffer = await ctx.downloadMsg();
     } catch (err) {
-      return ctx.reply(`❌ Couldn't download the quoted image: ${err.message}`);
+      return ctx.reply('❌ Failed to download the image.');
     }
     if (!buffer || !buffer.length) {
       return ctx.reply('❌ Quoted image is empty.');
@@ -127,7 +127,7 @@ module.exports = {
     try {
       image = await Jimp.read(buffer);
     } catch (err) {
-      return ctx.reply(`❌ Couldn't decode the image: ${err.message}`);
+      return ctx.reply('❌ Failed to read text from the image.');
     }
 
     // Downscale wide images for OCR speed (similar accuracy <=2048px)

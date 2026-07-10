@@ -132,7 +132,7 @@ module.exports = {
         durationMs,
       });
     } catch (err) {
-      return ctx.reply(`❌ ${err.message}`);
+      return ctx.reply('❌ Could not process the request.');
     }
 
     await ctx.react('⏰');

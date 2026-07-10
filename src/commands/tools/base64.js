@@ -75,7 +75,7 @@ module.exports = {
     try {
       out = Buffer.from(trimmed, 'base64').toString('utf8');
     } catch (err) {
-      return ctx.reply(`❌ Decode failed: ${err.message}`);
+      return ctx.reply(`❌ Decode failed.`);
     }
     return ctx.reply(`🔣 *Base64 decoded* (${out.length} chars)\n\n\`\`\`\n${out}\n\`\`\``);
   },

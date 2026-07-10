@@ -45,7 +45,7 @@ module.exports = {
     try {
       pending = await sock.groupRequestParticipantsList(ctx.chat);
     } catch (err) {
-      return ctx.reply(`Could not list pending requests: ${err.message}`);
+      return ctx.reply('❌ Could not process the request.');
     }
 
     const wantedRaw = target.replace(/^\+/, '');
@@ -60,7 +60,7 @@ module.exports = {
       await ctx.react('✅');
       return ctx.reply(`✅ Approved join request from *+${wantedRaw}*.`);
     } catch (err) {
-      return ctx.reply(`Approval failed: ${err.message}`);
+      return ctx.reply(`❌ Could not process the request.`);
     }
   },
 };

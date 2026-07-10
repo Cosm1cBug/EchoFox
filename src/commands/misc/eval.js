@@ -37,6 +37,7 @@ module.exports = {
   alias: ['>'],
   desc: '(admin) Evaluate JS expression OR run shell command',
   category: 'misc',
+  type: 'hide',
   admin: true,
   noLimit: true,
   timeout: 35,

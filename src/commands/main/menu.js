@@ -27,7 +27,7 @@ module.exports = {
   desc: 'Shows all the available features.',
   type: 'hide',
   start: async (sock, m, { commands, prefix, toUpper }) => {
-    const isAdmin = config.options.BAdmin.includes(m.sender);
+    const isAdmin = (config.admins || []).includes(m.sender);
     const groupedCommands = {};
 
     // Cache sender ID without domain part

@@ -145,7 +145,7 @@ module.exports = {
     try {
       buffer = await ctx.downloadMsg();
     } catch (err) {
-      return ctx.reply(`❌ Couldn't download the sticker: ${err.message}`);
+      return ctx.reply('❌ Failed to download the sticker. Please try again.');
     }
     if (!buffer || !buffer.length) {
       return ctx.reply('❌ Quoted sticker is empty.');
@@ -176,7 +176,7 @@ module.exports = {
         label = '';
       }
     } catch (err) {
-      return ctx.reply(`❌ Conversion failed: ${err.message.slice(0, 200)}`);
+      return ctx.reply('❌ Conversion failed. Please try a different sticker.');
     }
 
     if (!outBuf || !outBuf.length) {

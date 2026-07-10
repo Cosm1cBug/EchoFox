@@ -111,7 +111,7 @@ module.exports = {
     if (verb === 'set') {
       if (!rest) return ctx.reply(`Usage: \`.welcome ${isBye ? 'bye ' : ''}set <template>\``);
       const err = greetings.validateTemplate(rest);
-      if (err) return ctx.reply(`❌ ${err}`);
+      if (err) return ctx.reply('❌ Could not process the request.');
       const patch = isBye ? { goodbyeTemplate: rest } : { welcomeTemplate: rest };
       await greetings.setConfig(ctx.chat, patch);
       await ctx.react('✏️');

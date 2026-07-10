@@ -361,7 +361,7 @@ module.exports = {
       info = await ytdl.getInfo(url);
     } catch (err) {
       const friendly = classifyError(err);
-      return ctx.reply(friendly || `❌ Couldn't fetch video info: ${err.message.slice(0, 200)}`);
+      return ctx.reply(friendly || '❌ Failed to fetch video information. Please try again later.');
     }
 
     const details = info.videoDetails || {};
@@ -430,7 +430,7 @@ module.exports = {
         });
       }
     } catch (err) {
-      return ctx.reply(`❌ No suitable format found: ${err.message}`);
+      return ctx.reply(friendly || '❌ Failed to fetch video information. Please try again later.');
     }
     if (!chosen) {
       return ctx.reply('❌ No suitable format found.');
@@ -450,7 +450,7 @@ module.exports = {
         fs.unlinkSync(fullOut);
       } catch {}
       const friendly = classifyError(err);
-      return ctx.reply(friendly || `❌ Download failed: ${err.message.slice(0, 200)}`);
+      return ctx.reply(friendly || '❌ Failed to fetch video information. Please try again later.');
     }
 
     // v1.15.0 — optional clipping pass
@@ -467,7 +467,7 @@ module.exports = {
         try {
           fs.unlinkSync(clipOut);
         } catch {}
-        return ctx.reply(`❌ Clipping failed: ${err.message.slice(0, 200)}`);
+        return ctx.reply(friendly || '❌ Failed to fetch video information. Please try again later.');
       }
     }
 
@@ -516,7 +516,7 @@ module.exports = {
             );
           }
         } catch (e) {
-          await ctx.reply(`ℹ️ Subtitle fetch failed: ${e.message.slice(0, 200)}`);
+          await ctx.reply(`ℹ️ Subtitle fetch failed.`);
         }
       }
 

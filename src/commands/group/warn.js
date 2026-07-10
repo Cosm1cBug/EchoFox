@@ -252,7 +252,7 @@ async function handleConfig(ctx, args) {
       const newT = await warnSvc.setThreshold(ctx.chat, n);
       return ctx.reply(`✅ Threshold set to *${newT}*.`);
     } catch (err) {
-      return ctx.reply(`❌ ${err.message}`);
+      return ctx.reply('❌ Could not process the request.');
     }
   }
   return ctx.reply(`Unknown config sub-verb *${sub}*. Try \`.warn config\` for help.`);

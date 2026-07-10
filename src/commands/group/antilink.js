@@ -116,7 +116,7 @@ module.exports = {
             `✅ Added *${host}* to whitelist (${next.length}/${antilink.MAX_WHITELIST}).`,
           );
         } catch (err) {
-          return ctx.reply(`❌ ${err.message}`);
+          return ctx.reply(`❌ Failed to check the link.`);
         }
       }
       if (sub === 'remove' || sub === 'rm') {

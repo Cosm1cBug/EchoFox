@@ -102,7 +102,7 @@ module.exports = {
         );
       }
     } catch (err) {
-      return ctx.reply(`❌ Could not load chat history: ${err.message}`);
+      return ctx.reply(`❌ Could not load chat history!`);
     }
 
     if (!rows || !rows.length) {

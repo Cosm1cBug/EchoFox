@@ -430,7 +430,7 @@ module.exports = {
         });
       }
     } catch (err) {
-      return ctx.reply(friendly || '❌ Failed to fetch video information. Please try again later.');
+      return ctx.reply('❌ Failed to fetch video information. Please try again later.');
     }
     if (!chosen) {
       return ctx.reply('❌ No suitable format found.');
@@ -467,7 +467,7 @@ module.exports = {
         try {
           fs.unlinkSync(clipOut);
         } catch {}
-        return ctx.reply(friendly || '❌ Failed to fetch video information. Please try again later.');
+        return ctx.reply('❌ Failed to fetch video information. Please try again later.');
       }
     }
 

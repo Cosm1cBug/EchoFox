@@ -64,6 +64,8 @@ const {
 } = require('../services/vtWatchService');
 const reminderService = require('../services/reminderService');
 const levelingDecayService = require('../services/levelingDecayService');
+const adminAuditService = require('../services/adminAuditService');
+const connectionState = require('../services/connectionState');
 const muteService = require('../services/muteService');
 
 const log = logger.child({ mod: 'worker' });
@@ -306,6 +308,13 @@ async function start(retry = 0) {
     log.debug({ err: e }, 'levelingDecayService start failed (non-fatal)');
   }
 
+  // v1.17.0 — periodic admin audit prune (90-day default retention)
+  try {
+    adminAuditService.startPrune();
+  } catch (e) {
+    log.debug({ err: e }, 'adminAuditService.startPrune failed (non-fatal)');
+  }
+
   store.bind(sock.ev);
 
   await lifecycle.startLoginFlow(sock);
@@ -325,6 +334,11 @@ async function start(retry = 0) {
       log.info({ phase: 'ready', status: 'ok', user: sock.user?.id }, 'EchoFox Ready');
       process.send?.('ready');
       reconnectAttempts = 0;
+      try {
+        connectionState.set({ connection: 'open', reconnectAttempts: 0 });
+      } catch (_) {
+        /* never block */
+      }
 
       if (!sock._sendWrapped) {
         wrapSocketSend(sock, { concurrency: config.processing.sendConcurrency || 4 });
@@ -418,6 +432,16 @@ async function start(retry = 0) {
         lastDisconnect?.error instanceof Boom
           ? lastDisconnect.error.output.statusCode
           : lastDisconnect?.error?.output?.statusCode;
+      try {
+        connectionState.set({
+          connection: 'close',
+          code: code || null,
+          reason: lastDisconnect?.error?.message || null,
+          reconnectAttempts,
+        });
+      } catch (_) {
+        /* never block */
+      }
 
       const reason = Object.entries(DisconnectReason).find(([, v]) => v === code)?.[0] || 'unknown';
       log.warn({ phase: 'connection', status: 'closed', code, reason }, 'connection closed');

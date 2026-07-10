@@ -12,6 +12,180 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.17.0] — 2026-06-26
+
+> **Observability batch:** Prometheus metrics for leveling/decay/mute/OCR
+> (~20 new keys), structured admin audit log (4 backend migrations + retention
+> sweep), dashboard "Audit log" tab with actor/command filters, new
+> alertEngine rule for XP decay-sweep failures, richer `/api/health` with
+> 503-on-degraded for readiness probes, connection-state tracking.
+
+### Added — observability metrics
+
+20 new typed wrappers in `src/services/metrics.js`, with backing keys in
+`src/store/schema/stats.js`:
+
+**Counters (15):**
+
+- `level_xp_awarded_total`, `level_levelups_total`
+- `level_decay_sweeps_total`, `level_decay_sweep_failures_total`, `level_decay_users_decayed_total`
+- `level_notify_dm_sent_total`, `level_notify_dm_failed_total`
+- `mutes_set_total`, `mutes_unmuted_total`, `mutes_filtered_total`
+- `ocr_calls_total`, `ocr_calls_failed_total`, `ocr_chars_recognised_total`
+- `admin_audit_events_total`, `admin_audit_prune_total`
+
+**Gauges (6):**
+
+- `level_active_mutes`, `level_xp_multiplier`
+- `level_decay_enabled`, `level_decay_last_run_at`, `level_decay_last_run_affected`
+- `admin_audit_rows`
+
+All exposed at `GET /metrics` in Prometheus text format (prefix `echofox_`).
+Scrape config snippet:
+
+```yaml
+- job_name: echofox
+  static_configs:
+    - targets: ['bot-host:3001']
+```
+
+### Added — `admin_audit` table + retention sweep
+
+**4 new backend migrations** (sqlite/postgres/mongo/redis) for the
+`admin_audit` table. Inline schema added to `sqliteStore.js` for test-time DBs.
+
+**5 new store methods** on all 4 backends:
+
+- `recordAdminAudit(entry)` — append-only insert
+- `listAdminAudit({ sinceSec, limit, offset })` — paginated newest-first
+- `listAdminAuditByActor(jid, { sinceSec, limit })` — per-user drill-down
+- `listAdminAuditByCmd(name, { sinceSec, limit })` — per-command drill-down
+- `pruneAdminAuditOlderThan(sinceSec)` — retention sweep (returns # deleted)
+- `countAdminAudit()` — row count for the dashboard
+
+**New `src/services/adminAuditService.js`** — fire-and-forget writer + cron-style
+prune loop. `startPrune()` runs once per day (called from `worker.js`).
+Config: `config.audit.retentionDays` (default 90, range 1–3650).
+
+**What's logged (decided in v1.17.0 design pass):**
+
+- Every `$`-prefix admin invocation (e.g. `$leveling decay on`, `$ai stats`)
+- Every command exported with `admin: true`
+- Every command exported with `groupAdminOnly: true` invoked by a group admin
+- `outcome: 'denied'` rows for failed admin-gate attempts (e.g. non-admin
+  tries `$leveling` → logged with `denied` outcome, even though the command
+  didn't execute)
+
+Row shape: `id, ts, actor_jid, chat_jid, cmd_name, prefix, args (≤500 char),
+kind (admin|group_admin), outcome (success|failure|timeout|denied), latency_ms`.
+
+### Added — dashboard "Audit" tab
+
+New `dashboard/src/pages/AuditLog.tsx`. Mounted between `Alerts` and `AI` tabs.
+
+- Window selector: 1d / 7d / 30d / 90d
+- Filter by actor JID + command name (server-side)
+- Day-grouped event list, newest first
+- Outcome badges (success/failure/timeout/denied)
+- Kind badges (bot admin / group admin)
+- Auto-refreshes every 30s
+- Shows retention status (`retentionDays`, last-prune-at) in the header
+
+Backed by:
+
+- `GET /api/audit?days=&limit=&offset=&actor=&cmd=`
+- `GET /api/audit/status`
+
+### Added — alertEngine rule: `levelDecayFailures`
+
+Fires when `level_decay_sweep_failures_total` strictly increments between
+evaluation ticks (i.e. the latest sweep failed). Standard cooldown semantics
+(default 60 minutes, configurable via `config.alerts.rules.levelDecayFailures.cooldownMinutes`).
+
+Mirrors to the bot's existing `errLogs` channel + Telegram bridge — same
+notification path as the v1.4.0 `aiCostPct` and `telegramFailureRate` rules.
+
+### Added — `/api/health` enrichment
+
+```json
+{
+  "ok": true,
+  "degraded": false,
+  "uptime": 1234.5,
+  "version": "1.17.0",
+  "backends": { "store": "sqlite", "auth": "MULTIFILE", "login": "QR" },
+  "checks": {
+    "store": true,
+    "loginConnected": true,
+    "connectionPhase": "open",
+    "lastOpenAt": 1750000000,
+    "lastCloseAt": 1749998000,
+    "lastMsgAgoSec": null
+  }
+}
+```
+
+Returns **HTTP 503** when degraded (store ping failed OR connection is `close`).
+K8s/readiness probes will pull the pod out of rotation until the bot reconnects.
+
+New `src/services/connectionState.js` is the source of truth, updated by
+`worker.js` on every `connection.update` event.
+
+### Config — new sections
+
+```js
+audit: {
+  retentionDays: 90,          // 1–3650, default 90
+},
+
+alerts: {
+  rules: {
+    levelDecayFailures: {     // new in v1.17.0
+      enabled: true,
+      cooldownMinutes: 60,
+    },
+  },
+},
+```
+
+All keys optional with safe defaults — existing configs work unchanged.
+
+### Added — tests
+
+- **`src/__tests__/integration/observability-v1170.test.js`** — 13 new tests:
+  - `connectionState` initial / open / close transitions
+  - `adminAuditService.shouldAudit` decision predicate (5 cases)
+  - store `recordAdminAudit` + `listAdminAudit` round-trip
+  - store `listAdminAuditByActor` + `listAdminAuditByCmd` filtering
+  - store `pruneAdminAuditOlderThan` cutoff behaviour
+  - store `countAdminAudit` row counting
+  - `adminAuditService.pruneOnce` honouring `config.audit.retentionDays`
+  - `adminAuditService.record` fire-and-forget round-trip
+  - `metrics` new wrappers callable + schema includes all v1.17.0 keys
+
+### Notes
+
+- **No new npm dependencies.**
+- **1 new migration** (`010_admin_audit`). Inline schema added to sqliteStore.js
+  for test-time DBs (same pattern as v1.12.0 user_levels, v1.14.0
+  group_settings_events, v1.15.0 mutes).
+- **Backwards compatible.** Existing configs work unchanged. Default
+  `audit.retentionDays: 90` + new alertEngine rule `enabled: true` are safe;
+  the rule only fires if decay sweeps actually fail (which means there's
+  something to investigate anyway).
+- **Privacy:** the Audit tab is dashboard-only (basic-auth gated). No in-chat
+  command exposes the audit log. The actor JID is shown in the dashboard
+  (because that's the operational signal you need); raw phone numbers are
+  truncated at `@` in the UI.
+- **Redis caveat:** `pruneAdminAuditOlderThan` walks the entire
+  `admin_audit:log` LIST then `LTRIM`s. Fine for ~10k entries (the LIST cap).
+  SQLite/Postgres/Mongo use indexed deletes.
+- **Tests: 305/305** (was 292, +13 new).
+- **Gates:** lint 0/0, prettier clean, headers expected to grow by 4 (new
+  source files), dashboard tsc clean.
+
+---
+
 ## [1.16.0] — 2026-06-25
 
 > **Leveling + Dashboard batch:** `.notify` opt-in DMs, global XP

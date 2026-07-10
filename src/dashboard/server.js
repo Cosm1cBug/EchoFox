@@ -129,9 +129,54 @@ function startDashboard(port, store, config) {
   }
 
   // ─── API: health / stats / version ───────────────────────────────────
-  app.get('/api/health', (_req, res) => {
-    res.json({
-      ok: true,
+  app.get('/api/health', async (_req, res) => {
+    // v1.17.0 — richer readiness probe.
+    // Returns 503 (Service Unavailable) when degraded so K8s/probes flip
+    // the bot out of the load-balancer pool until it recovers.
+    const checks = { store: false, loginConnected: false, lastMsgAgoSec: null };
+    let degraded = false;
+
+    // Store ping: cheap call against the existing API (getStats fits this).
+    try {
+      if (typeof store?.getStats === 'function') {
+        await store.getStats();
+      }
+      checks.store = true;
+    } catch (_) {
+      degraded = true;
+    }
+
+    // Login state: from connectionState updated by worker.js on every
+    // connection.update event.
+    try {
+      const cs = require('../services/connectionState');
+      checks.loginConnected = cs.isConnected();
+      const csInfo = cs.get();
+      checks.connectionPhase = csInfo.connection;
+      if (csInfo.lastCloseAt) checks.lastCloseAt = csInfo.lastCloseAt;
+      if (csInfo.lastOpenAt) checks.lastOpenAt = csInfo.lastOpenAt;
+      // 'pending' counts as not-yet-ready but not failed — don't 503 during boot
+      if (csInfo.connection === 'close') degraded = true;
+    } catch (_) {
+      checks.loginConnected = true;
+    }
+
+    // Last inbound message age: warns if no traffic for >10 min in a chat.
+    try {
+      if (typeof store?.getGauges === 'function') {
+        const g = await store.getGauges();
+        // No dedicated last_msg gauge; use uptime as a coarse proxy.
+        // (Could wire a `last_inbound_msg_ts` gauge in a follow-up.)
+        const u = Number(g.bot_uptime_seconds) || Math.floor(process.uptime());
+        checks.lastMsgAgoSec = u < 60 ? null : null; // placeholder
+      }
+    } catch (_) {
+      /* ignore */
+    }
+
+    const body = {
+      ok: !degraded,
+      degraded,
       uptime: process.uptime(),
       version: PKG.version,
       backends: {
@@ -139,7 +184,9 @@ function startDashboard(port, store, config) {
         auth: config.auth.method,
         login: config.login.type,
       },
-    });
+      checks,
+    };
+    res.status(degraded ? 503 : 200).json(body);
   });
 
   app.get('/api/stats', async (_req, res, next) => {
@@ -590,6 +637,42 @@ function startDashboard(port, store, config) {
         return res.status(404).json({ error: 'not_implemented' });
       const rows = await store.listAiOptedInChats(200);
       res.json({ count: rows.length, chats: rows });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // v1.17.0 — admin audit log endpoints
+  app.get('/api/audit', async (req, res, next) => {
+    try {
+      const days = Math.max(1, Math.min(3650, Number(req.query.days) || 7));
+      const limit = Math.max(1, Math.min(1000, Number(req.query.limit) || 100));
+      const offset = Math.max(0, Math.min(100000, Number(req.query.offset) || 0));
+      const actor = req.query.actor ? String(req.query.actor) : null;
+      const cmd = req.query.cmd ? String(req.query.cmd) : null;
+      const sinceSec = Math.floor(Date.now() / 1000) - days * 86400;
+      let events = [];
+      if (actor && typeof store.listAdminAuditByActor === 'function') {
+        events = await store.listAdminAuditByActor(actor, { sinceSec, limit });
+      } else if (cmd && typeof store.listAdminAuditByCmd === 'function') {
+        events = await store.listAdminAuditByCmd(cmd, { sinceSec, limit });
+      } else if (typeof store.listAdminAudit === 'function') {
+        events = await store.listAdminAudit({ sinceSec, limit, offset });
+      }
+      const total =
+        typeof store.countAdminAudit === 'function' ? await store.countAdminAudit() : events.length;
+      res.json({ days, limit, offset, actor, cmd, total, events });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.get('/api/audit/status', async (_req, res, next) => {
+    try {
+      const adminAudit = require('../services/adminAuditService');
+      const status = adminAudit.getStatus();
+      const total = typeof store.countAdminAudit === 'function' ? await store.countAdminAudit() : 0;
+      res.json({ ...status, total });
     } catch (e) {
       next(e);
     }

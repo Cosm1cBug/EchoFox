@@ -28,6 +28,7 @@ const metrics = require('../services/metrics');
 const alertEngine = require('../services/alertEngine');
 const telegram = require('../services/telegram');
 const leveling = require('../services/levelingService');
+const adminAudit = require('../services/adminAuditService');
 const { isUserFacingError, shouldCountAsFailure } = require('../lib/errors');
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -116,7 +117,7 @@ async function postCrashToChannel(sock, cmd, ctx, err) {
   }
 }
 
-async function run({ sock, cmd, m, ctx, handlerArgs }) {
+async function run({ sock, cmd, m, ctx, handlerArgs, isAdminCall, isGroupAdmin, argsText }) {
   // Global limiter (bot-wide flood protection)
   if (!cmd.noLimit && !globalLimiter.tryConsume('__global__', warmupMultiplier())) {
     metrics.incRateLimit();
@@ -146,6 +147,19 @@ async function run({ sock, cmd, m, ctx, handlerArgs }) {
       .catch((e) =>
         logger.debug({ err: e, cmd: cmd.name, sender: ctx.sender }, 'awardForCommand failed'),
       );
+    // v1.17.0 — admin audit on successful privileged invocations
+    if (adminAudit.shouldAudit(cmd, isAdminCall, isGroupAdmin)) {
+      adminAudit.record({
+        actor_jid: ctx.sender,
+        chat_jid: ctx.chat,
+        cmd_name: cmd.name,
+        prefix: handlerArgs?.prefix || null,
+        args: argsText,
+        kind: isGroupAdmin && !isAdminCall && !cmd.admin ? 'group_admin' : 'admin',
+        outcome: 'success',
+        latency_ms: Date.now() - t0,
+      });
+    }
     logger.debug({ cmd: cmd.name, ms: Date.now() - t0, sender: ctx.sender }, 'command ok');
   } catch (err) {
     const isTimeout = err.code === 'ETIMEDOUT';
@@ -157,6 +171,20 @@ async function run({ sock, cmd, m, ctx, handlerArgs }) {
 
     metrics.incCommand(cmd.name, outcome === 'handled' ? 'success' : outcome);
     alertEngine.record(cmd.name, outcome === 'handled' ? 'success' : outcome);
+
+    // v1.17.0 — admin audit on failed privileged invocations
+    if (adminAudit.shouldAudit(cmd, isAdminCall, isGroupAdmin)) {
+      adminAudit.record({
+        actor_jid: ctx.sender,
+        chat_jid: ctx.chat,
+        cmd_name: cmd.name,
+        prefix: handlerArgs?.prefix || null,
+        args: argsText,
+        kind: isGroupAdmin && !isAdminCall && !cmd.admin ? 'group_admin' : 'admin',
+        outcome: outcome === 'handled' ? 'success' : outcome,
+        latency_ms: Date.now() - t0,
+      });
+    }
 
     // User-facing errors get a clean reply, no stack log, no ❌
     if (userFacing) {

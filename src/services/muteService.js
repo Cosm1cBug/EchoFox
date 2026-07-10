@@ -39,6 +39,7 @@
  */
 
 const { LRUCache } = require('lru-cache');
+const metrics = require('./metrics');
 
 const MAX_ENTRIES = 50_000;
 const MIN_DURATION_MS = 60 * 1000; // 1 minute
@@ -101,6 +102,12 @@ function mute(chat, user, durationMs, opts = {}) {
     by: opts.by || null,
     reason: String(opts.reason || '').slice(0, 200),
   });
+  try {
+    metrics.incMuteSet();
+    metrics.setActiveMutes(_store.size);
+  } catch (_) {
+    /* never block */
+  }
   // Persist asynchronously — never block the caller. Failures are debug-logged.
   const s = _store_inst();
   if (s && typeof s.recordMute === 'function') {
@@ -115,6 +122,14 @@ function mute(chat, user, durationMs, opts = {}) {
 
 function unmute(chat, user) {
   const had = _store.delete(key(chat, user));
+  if (had) {
+    try {
+      metrics.incMuteUnmuted();
+      metrics.setActiveMutes(_store.size);
+    } catch (_) {
+      /* never block */
+    }
+  }
   const s = _store_inst();
   if (s && typeof s.markMuteUnmuted === 'function') {
     s.markMuteUnmuted(chat, user).catch(() => {});
@@ -190,6 +205,11 @@ async function hydrateFromStore() {
     }
   } catch (_) {
     /* fail-closed */
+  }
+  try {
+    metrics.setActiveMutes(_store.size);
+  } catch (_) {
+    /* never block */
   }
   return count;
 }

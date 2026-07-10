@@ -1579,6 +1579,133 @@ function makeMongoStore(uri, logger, groupCache) {
       }
     },
 
+    // v1.17.0 — admin audit log
+    async recordAdminAudit(entry) {
+      try {
+        const ts = Math.floor(Number(entry?.ts) || Date.now() / 1000);
+        const args = entry?.args == null ? null : String(entry.args).slice(0, 500);
+        const r = await conn.collection('admin_audit').insertOne({
+          ts,
+          actor_jid: String(entry?.actor_jid || ''),
+          chat_jid: entry?.chat_jid ? String(entry.chat_jid) : null,
+          cmd_name: String(entry?.cmd_name || ''),
+          prefix: entry?.prefix ? String(entry.prefix).slice(0, 8) : null,
+          args,
+          kind: String(entry?.kind || 'admin'),
+          outcome: String(entry?.outcome || 'success'),
+          latency_ms:
+            entry?.latency_ms == null
+              ? null
+              : Math.max(0, Math.floor(Number(entry.latency_ms) || 0)),
+        });
+        return r.insertedId ? String(r.insertedId) : null;
+      } catch (e) {
+        logger.debug({ err: e, entry }, 'recordAdminAudit failed');
+        return null;
+      }
+    },
+    async listAdminAudit(opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        const offset = Math.max(0, Math.min(100000, Number(opts.offset) || 0));
+        const docs = await conn
+          .collection('admin_audit')
+          .find({ ts: { $gte: sinceSec } })
+          .sort({ ts: -1, _id: -1 })
+          .skip(offset)
+          .limit(limit)
+          .toArray();
+        return docs.map((d) => ({
+          id: String(d._id),
+          ts: Number(d.ts),
+          actor_jid: d.actor_jid,
+          chat_jid: d.chat_jid,
+          cmd_name: d.cmd_name,
+          prefix: d.prefix,
+          args: d.args,
+          kind: d.kind,
+          outcome: d.outcome,
+          latency_ms: d.latency_ms == null ? null : Number(d.latency_ms),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, opts }, 'listAdminAudit failed');
+        return [];
+      }
+    },
+    async listAdminAuditByActor(actorJid, opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        const docs = await conn
+          .collection('admin_audit')
+          .find({ actor_jid: actorJid, ts: { $gte: sinceSec } })
+          .sort({ ts: -1, _id: -1 })
+          .limit(limit)
+          .toArray();
+        return docs.map((d) => ({
+          id: String(d._id),
+          ts: Number(d.ts),
+          actor_jid: d.actor_jid,
+          chat_jid: d.chat_jid,
+          cmd_name: d.cmd_name,
+          prefix: d.prefix,
+          args: d.args,
+          kind: d.kind,
+          outcome: d.outcome,
+          latency_ms: d.latency_ms == null ? null : Number(d.latency_ms),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, actorJid }, 'listAdminAuditByActor failed');
+        return [];
+      }
+    },
+    async listAdminAuditByCmd(cmdName, opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        const docs = await conn
+          .collection('admin_audit')
+          .find({ cmd_name: cmdName, ts: { $gte: sinceSec } })
+          .sort({ ts: -1, _id: -1 })
+          .limit(limit)
+          .toArray();
+        return docs.map((d) => ({
+          id: String(d._id),
+          ts: Number(d.ts),
+          actor_jid: d.actor_jid,
+          chat_jid: d.chat_jid,
+          cmd_name: d.cmd_name,
+          prefix: d.prefix,
+          args: d.args,
+          kind: d.kind,
+          outcome: d.outcome,
+          latency_ms: d.latency_ms == null ? null : Number(d.latency_ms),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, cmdName }, 'listAdminAuditByCmd failed');
+        return [];
+      }
+    },
+    async pruneAdminAuditOlderThan(sinceSec) {
+      try {
+        const cutoff = Math.max(0, Math.floor(Number(sinceSec) || 0));
+        const r = await conn.collection('admin_audit').deleteMany({ ts: { $lt: cutoff } });
+        return Number(r.deletedCount) || 0;
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'pruneAdminAuditOlderThan failed');
+        return 0;
+      }
+    },
+    async countAdminAudit() {
+      try {
+        return await conn.collection('admin_audit').countDocuments();
+      } catch (e) {
+        logger.debug({ err: e }, 'countAdminAudit failed');
+        return 0;
+      }
+    },
+
     // v1.13.0 — groups dashboard helper
     async getLastHumanMessageTs(jid) {
       try {

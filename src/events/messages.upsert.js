@@ -39,6 +39,7 @@ const metrics = require('../services/metrics');
 const afkState = require('../services/afkState');
 const antilink = require('../services/antilinkService');
 const muteService = require('../services/muteService');
+const adminAudit = require('../services/adminAuditService');
 
 // ─── Inbound rate limiter (token bucket per sender) ──────────────────────
 const senderLimiter = makeRateLimiter({
@@ -351,8 +352,33 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
   }
 
   // Gating
-  if (cmd.admin && !isAdminUser) return ctx.reply('🔒 Admin-only command.');
-  if (isAdminCall && !isAdminUser) return ctx.reply('🔒 The `$` prefix is reserved for admins.');
+  if (cmd.admin && !isAdminUser) {
+    // v1.17.0 — audit denied admin attempt
+    if (adminAudit.shouldAudit(cmd, isAdminCall, false)) {
+      adminAudit.record({
+        actor_jid: ctx.sender,
+        chat_jid: ctx.chat,
+        cmd_name: cmd.name,
+        prefix: matched,
+        args: args.join(' '),
+        kind: 'admin',
+        outcome: 'denied',
+      });
+    }
+    return ctx.reply('🔒 Admin-only command.');
+  }
+  if (isAdminCall && !isAdminUser) {
+    adminAudit.record({
+      actor_jid: ctx.sender,
+      chat_jid: ctx.chat,
+      cmd_name: cmd.name,
+      prefix: matched,
+      args: args.join(' '),
+      kind: 'admin',
+      outcome: 'denied',
+    });
+    return ctx.reply('🔒 The `$` prefix is reserved for admins.');
+  }
   if (!config.bot.public && !isAdminUser) return;
   if (cmd.group && !ctx.isGroup) return ctx.reply('👥 Group-only command.');
 
@@ -364,11 +390,31 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
       (await sock.groupMetadata(ctx.chat).catch(() => null));
   }
 
+  // v1.17.0 — compute isGroupAdmin for audit logging (only when needed).
+  // We avoid an extra group-metadata round trip: if we already have it
+  // (cmd.needsMetadata true), use it; otherwise look in the cached store only.
+  let isGroupAdmin = false;
+  if (ctx.isGroup && (cmd.groupAdminOnly === true || cmd.admin === true || isAdminCall)) {
+    let meta = metadata;
+    if (!meta) {
+      meta = await store.getGroupMetadata(ctx.chat).catch(() => null);
+    }
+    if (meta?.participants) {
+      const p = meta.participants.find((x) => x.id === ctx.sender);
+      isGroupAdmin = !!p?.admin;
+    }
+  }
+
   // ─── v1.12.0 mute check ─────────────────────────────────────────
   // Silently drop the command for muted users in this group. Their
   // non-command messages still flow normally (mute is soft).
   if (ctx.isGroup && muteService.isMuted(ctx.chat, ctx.sender)) {
     logger.debug?.({ chat: ctx.chat, sender: ctx.sender }, 'mute: command dropped');
+    try {
+      require('../services/metrics').incMuteFiltered();
+    } catch (_) {
+      /* never block */
+    }
     return;
   }
 
@@ -378,6 +424,10 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
     cmd,
     m,
     ctx,
+    // v1.17.0 — audit context (runner records the outcome after exec)
+    isAdminCall,
+    isGroupAdmin,
+    argsText: args.join(' '),
     handlerArgs: {
       name: config.bot.name,
       ctx,

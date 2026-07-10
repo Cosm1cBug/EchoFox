@@ -59,6 +59,7 @@
 const { getStore } = require('../store/instance');
 const logger = require('../core/logger').child({ mod: 'leveling' });
 const { config } = require('../lib/configLoader');
+const metrics = require('./metrics');
 
 const BASE_THRESHOLD = 100;
 const GROWTH_FACTOR = 1.5;
@@ -272,6 +273,13 @@ async function awardForCommand(userJid, cmd, sock = null) {
     newTotal = await store.addUserXp(userJid, xp);
     newLevel = describe(newTotal).level;
     leveledUp = newLevel > oldLevel;
+    // v1.17.0 — observability
+    try {
+      metrics.incXpAwarded(xp);
+      if (leveledUp) metrics.incLevelUp();
+    } catch (_) {
+      /* never block */
+    }
   } catch (err) {
     logger.debug({ err, userJid, xp, cmd: cmd.name }, 'addUserXp failed (fail-closed)');
     return null;
@@ -291,7 +299,17 @@ async function awardForCommand(userJid, cmd, sock = null) {
                 `You reached *level ${newLevel}* (${newTotal.toLocaleString()} XP total).\n\n` +
                 `_Run \`.profile\` to see your full progress, or \`.notify off\` to silence these DMs._`,
             })
-            .catch((e) => logger.debug({ err: e, userJid }, 'levelup DM failed'));
+            .then(() => {
+              try {
+                metrics.incNotifyDmSent();
+              } catch (_) {}
+            })
+            .catch((e) => {
+              try {
+                metrics.incNotifyDmFailed();
+              } catch (_) {}
+              logger.debug({ err: e, userJid }, 'levelup DM failed');
+            });
         }
       } catch (_) {
         /* swallow */

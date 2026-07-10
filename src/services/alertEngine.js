@@ -211,6 +211,11 @@ function _sweep() {
 
 const RULE_KEY_AI_COST = '__ai_cost_pct';
 const RULE_KEY_TG_FAIL = '__telegram_failure_rate';
+const RULE_KEY_DECAY_FAIL = '__level_decay_failures';
+
+// Tracks the last-seen value of level_decay_sweep_failures_total so we can
+// detect a strict increment between evaluator ticks (i.e. a fresh failure).
+let _decayFailLastSeen = 0;
 
 function _ruleOnCooldown(st, ruleKey, cooldownMinutes) {
   st.cooldowns = st.cooldowns || new Map();
@@ -315,6 +320,50 @@ async function _evaluateBuiltinRules() {
       }
     } catch (e) {
       logger.warn({ err: e }, 'telegramFailureRate evaluator failed');
+    }
+  }
+
+  // ── levelDecayFailures (v1.17.0) ──────────────────────────────────
+  const rDecay = rules.levelDecayFailures;
+  if (rDecay?.enabled) {
+    try {
+      const store = getStore();
+      const snap = await (typeof store?.getStats === 'function'
+        ? store.getStats()
+        : Promise.resolve({}));
+      const cur = Number(snap?.level_decay_sweep_failures_total || 0);
+      const fresh = cur > _decayFailLastSeen;
+      const wasActive = st.active.has(RULE_KEY_DECAY_FAIL);
+
+      if (
+        fresh &&
+        !wasActive &&
+        !_ruleOnCooldown(st, RULE_KEY_DECAY_FAIL, rDecay.cooldownMinutes)
+      ) {
+        const info = {
+          since: Math.floor(Date.now() / 1000),
+          totalFailures: cur,
+          newFailuresSinceLast: cur - _decayFailLastSeen,
+        };
+        st.active.set(RULE_KEY_DECAY_FAIL, info);
+        _ruleMarkFired(st, RULE_KEY_DECAY_FAIL);
+        try {
+          metrics.inc?.('command_alerts_triggered_total');
+        } catch {}
+        logger.warn({ totalFailures: cur }, '🚨 XP decay-sweep failures rule TRIGGERED');
+        _notify('triggered', RULE_KEY_DECAY_FAIL, info);
+      } else if (!fresh && wasActive) {
+        const info = st.active.get(RULE_KEY_DECAY_FAIL);
+        st.active.delete(RULE_KEY_DECAY_FAIL);
+        try {
+          metrics.inc?.('command_alerts_cleared_total');
+        } catch {}
+        logger.info({ totalFailures: cur }, '✅ XP decay-sweep failures rule CLEARED');
+        _notify('cleared', RULE_KEY_DECAY_FAIL, info);
+      }
+      _decayFailLastSeen = cur;
+    } catch (e) {
+      logger.warn({ err: e }, 'levelDecayFailures evaluator failed');
     }
   }
 }

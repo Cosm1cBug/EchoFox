@@ -256,6 +256,24 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     CREATE INDEX IF NOT EXISTS idx_gse_jid_ts ON group_settings_events (jid, ts DESC);
     CREATE INDEX IF NOT EXISTS idx_gse_field ON group_settings_events (field);
 
+    -- v1.17.0 admin audit log ─────────────────────────────────
+    CREATE TABLE IF NOT EXISTS admin_audit (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts          INTEGER NOT NULL,
+      actor_jid   TEXT    NOT NULL,
+      chat_jid    TEXT,
+      cmd_name    TEXT    NOT NULL,
+      prefix      TEXT,
+      args        TEXT,
+      kind        TEXT    NOT NULL,
+      outcome     TEXT    NOT NULL,
+      latency_ms  INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_ts ON admin_audit (ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_actor ON admin_audit (actor_jid, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_cmd ON admin_audit (cmd_name, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_kind ON admin_audit (kind, ts DESC);
+
     -- v1.15.0 persistent mutes log ─────────────────────────────
     CREATE TABLE IF NOT EXISTS mutes (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -480,6 +498,33 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
        ORDER BY ts DESC, id DESC
        LIMIT ?`,
     ),
+
+    // v1.17.0 — admin audit log
+    auditInsert: db.prepare(
+      `INSERT INTO admin_audit (ts, actor_jid, chat_jid, cmd_name, prefix, args, kind, outcome, latency_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    auditList: db.prepare(
+      `SELECT id, ts, actor_jid, chat_jid, cmd_name, prefix, args, kind, outcome, latency_ms
+       FROM admin_audit
+       WHERE ts >= ?
+       ORDER BY ts DESC, id DESC
+       LIMIT ? OFFSET ?`,
+    ),
+    auditListByActor: db.prepare(
+      `SELECT id, ts, actor_jid, chat_jid, cmd_name, prefix, args, kind, outcome, latency_ms
+       FROM admin_audit
+       WHERE actor_jid = ? AND ts >= ?
+       ORDER BY ts DESC, id DESC LIMIT ?`,
+    ),
+    auditListByCmd: db.prepare(
+      `SELECT id, ts, actor_jid, chat_jid, cmd_name, prefix, args, kind, outcome, latency_ms
+       FROM admin_audit
+       WHERE cmd_name = ? AND ts >= ?
+       ORDER BY ts DESC, id DESC LIMIT ?`,
+    ),
+    auditPrune: db.prepare(`DELETE FROM admin_audit WHERE ts < ?`),
+    auditRowCount: db.prepare(`SELECT COUNT(*) AS n FROM admin_audit`),
 
     // v1.13.0 — last human (non-bot) message timestamp per group
     lastHumanMsgTs: db.prepare(`SELECT MAX(ts) AS ts FROM messages WHERE jid = ? AND from_me = 0`),
@@ -1896,6 +1941,113 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       } catch (e) {
         logger.debug({ err: e, jid, field }, 'getGroupSettingsHistoryByField failed');
         return [];
+      }
+    },
+
+    // v1.17.0 — admin audit log
+    async recordAdminAudit(entry) {
+      try {
+        const ts = Math.floor(Number(entry?.ts) || Date.now() / 1000);
+        const args = entry?.args == null ? null : String(entry.args).slice(0, 500);
+        const result = stmts.auditInsert.run(
+          ts,
+          String(entry?.actor_jid || ''),
+          entry?.chat_jid ? String(entry.chat_jid) : null,
+          String(entry?.cmd_name || ''),
+          entry?.prefix ? String(entry.prefix).slice(0, 8) : null,
+          args,
+          String(entry?.kind || 'admin'),
+          String(entry?.outcome || 'success'),
+          entry?.latency_ms == null ? null : Math.max(0, Math.floor(Number(entry.latency_ms) || 0)),
+        );
+        return Number(result.lastInsertRowid);
+      } catch (e) {
+        logger.debug({ err: e, entry }, 'recordAdminAudit failed');
+        return null;
+      }
+    },
+    async listAdminAudit(opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        const offset = Math.max(0, Math.min(100000, Number(opts.offset) || 0));
+        const rows = stmts.auditList.all(sinceSec, limit, offset);
+        return rows.map((r) => ({
+          id: Number(r.id),
+          ts: Number(r.ts),
+          actor_jid: r.actor_jid,
+          chat_jid: r.chat_jid,
+          cmd_name: r.cmd_name,
+          prefix: r.prefix,
+          args: r.args,
+          kind: r.kind,
+          outcome: r.outcome,
+          latency_ms: r.latency_ms == null ? null : Number(r.latency_ms),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, opts }, 'listAdminAudit failed');
+        return [];
+      }
+    },
+    async listAdminAuditByActor(actorJid, opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        return stmts.auditListByActor.all(actorJid, sinceSec, limit).map((r) => ({
+          id: Number(r.id),
+          ts: Number(r.ts),
+          actor_jid: r.actor_jid,
+          chat_jid: r.chat_jid,
+          cmd_name: r.cmd_name,
+          prefix: r.prefix,
+          args: r.args,
+          kind: r.kind,
+          outcome: r.outcome,
+          latency_ms: r.latency_ms == null ? null : Number(r.latency_ms),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, actorJid }, 'listAdminAuditByActor failed');
+        return [];
+      }
+    },
+    async listAdminAuditByCmd(cmdName, opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        return stmts.auditListByCmd.all(cmdName, sinceSec, limit).map((r) => ({
+          id: Number(r.id),
+          ts: Number(r.ts),
+          actor_jid: r.actor_jid,
+          chat_jid: r.chat_jid,
+          cmd_name: r.cmd_name,
+          prefix: r.prefix,
+          args: r.args,
+          kind: r.kind,
+          outcome: r.outcome,
+          latency_ms: r.latency_ms == null ? null : Number(r.latency_ms),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, cmdName }, 'listAdminAuditByCmd failed');
+        return [];
+      }
+    },
+    async pruneAdminAuditOlderThan(sinceSec) {
+      try {
+        const cutoff = Math.max(0, Math.floor(Number(sinceSec) || 0));
+        const r = stmts.auditPrune.run(cutoff);
+        return Number(r.changes) || 0;
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'pruneAdminAuditOlderThan failed');
+        return 0;
+      }
+    },
+    async countAdminAudit() {
+      try {
+        const r = stmts.auditRowCount.get();
+        return r ? Number(r.n) || 0 : 0;
+      } catch (e) {
+        logger.debug({ err: e }, 'countAdminAudit failed');
+        return 0;
       }
     },
 

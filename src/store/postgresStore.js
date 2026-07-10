@@ -1580,6 +1580,140 @@ function makePostgresStore(url, logger, groupCache) {
       }
     },
 
+    // v1.17.0 — admin audit log
+    async recordAdminAudit(entry) {
+      try {
+        const ts = Math.floor(Number(entry?.ts) || Date.now() / 1000);
+        const args = entry?.args == null ? null : String(entry.args).slice(0, 500);
+        const r = await pool.query(
+          `INSERT INTO admin_audit (ts, actor_jid, chat_jid, cmd_name, prefix, args, kind, outcome, latency_ms)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+          [
+            ts,
+            String(entry?.actor_jid || ''),
+            entry?.chat_jid ? String(entry.chat_jid) : null,
+            String(entry?.cmd_name || ''),
+            entry?.prefix ? String(entry.prefix).slice(0, 8) : null,
+            args,
+            String(entry?.kind || 'admin'),
+            String(entry?.outcome || 'success'),
+            entry?.latency_ms == null
+              ? null
+              : Math.max(0, Math.floor(Number(entry.latency_ms) || 0)),
+          ],
+        );
+        return r.rows[0] ? Number(r.rows[0].id) : null;
+      } catch (e) {
+        logger.debug({ err: e, entry }, 'recordAdminAudit failed');
+        return null;
+      }
+    },
+    async listAdminAudit(opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        const offset = Math.max(0, Math.min(100000, Number(opts.offset) || 0));
+        const r = await pool.query(
+          `SELECT id, ts, actor_jid, chat_jid, cmd_name, prefix, args, kind, outcome, latency_ms
+           FROM admin_audit
+           WHERE ts >= $1
+           ORDER BY ts DESC, id DESC
+           LIMIT $2 OFFSET $3`,
+          [sinceSec, limit, offset],
+        );
+        return r.rows.map((row) => ({
+          id: Number(row.id),
+          ts: Number(row.ts),
+          actor_jid: row.actor_jid,
+          chat_jid: row.chat_jid,
+          cmd_name: row.cmd_name,
+          prefix: row.prefix,
+          args: row.args,
+          kind: row.kind,
+          outcome: row.outcome,
+          latency_ms: row.latency_ms == null ? null : Number(row.latency_ms),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, opts }, 'listAdminAudit failed');
+        return [];
+      }
+    },
+    async listAdminAuditByActor(actorJid, opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        const r = await pool.query(
+          `SELECT id, ts, actor_jid, chat_jid, cmd_name, prefix, args, kind, outcome, latency_ms
+           FROM admin_audit
+           WHERE actor_jid = $1 AND ts >= $2
+           ORDER BY ts DESC, id DESC LIMIT $3`,
+          [actorJid, sinceSec, limit],
+        );
+        return r.rows.map((row) => ({
+          id: Number(row.id),
+          ts: Number(row.ts),
+          actor_jid: row.actor_jid,
+          chat_jid: row.chat_jid,
+          cmd_name: row.cmd_name,
+          prefix: row.prefix,
+          args: row.args,
+          kind: row.kind,
+          outcome: row.outcome,
+          latency_ms: row.latency_ms == null ? null : Number(row.latency_ms),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, actorJid }, 'listAdminAuditByActor failed');
+        return [];
+      }
+    },
+    async listAdminAuditByCmd(cmdName, opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        const r = await pool.query(
+          `SELECT id, ts, actor_jid, chat_jid, cmd_name, prefix, args, kind, outcome, latency_ms
+           FROM admin_audit
+           WHERE cmd_name = $1 AND ts >= $2
+           ORDER BY ts DESC, id DESC LIMIT $3`,
+          [cmdName, sinceSec, limit],
+        );
+        return r.rows.map((row) => ({
+          id: Number(row.id),
+          ts: Number(row.ts),
+          actor_jid: row.actor_jid,
+          chat_jid: row.chat_jid,
+          cmd_name: row.cmd_name,
+          prefix: row.prefix,
+          args: row.args,
+          kind: row.kind,
+          outcome: row.outcome,
+          latency_ms: row.latency_ms == null ? null : Number(row.latency_ms),
+        }));
+      } catch (e) {
+        logger.debug({ err: e, cmdName }, 'listAdminAuditByCmd failed');
+        return [];
+      }
+    },
+    async pruneAdminAuditOlderThan(sinceSec) {
+      try {
+        const cutoff = Math.max(0, Math.floor(Number(sinceSec) || 0));
+        const r = await pool.query(`DELETE FROM admin_audit WHERE ts < $1`, [cutoff]);
+        return Number(r.rowCount) || 0;
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'pruneAdminAuditOlderThan failed');
+        return 0;
+      }
+    },
+    async countAdminAudit() {
+      try {
+        const r = await pool.query(`SELECT COUNT(*)::bigint AS n FROM admin_audit`);
+        return r.rows[0] ? Number(r.rows[0].n) || 0 : 0;
+      } catch (e) {
+        logger.debug({ err: e }, 'countAdminAudit failed');
+        return 0;
+      }
+    },
+
     // v1.13.0 — groups dashboard helper
     async getLastHumanMessageTs(jid) {
       try {

@@ -560,6 +560,15 @@ const schema = z
                 cooldownMinutes: z.coerce.number().int().min(1).default(30),
               })
               .default({}),
+            // v1.17.0 — fire when level_decay_sweep_failures_total
+            // increments since the last evaluation tick (i.e. the most
+            // recent sweep failed). cooldownMinutes throttles repeats.
+            levelDecayFailures: z
+              .object({
+                enabled: z.boolean().default(true),
+                cooldownMinutes: z.coerce.number().int().min(1).default(60),
+              })
+              .default({}),
           })
           .default({}),
       })
@@ -569,6 +578,13 @@ const schema = z
     // v1.16.0 — leveling extensions (XP multiplier, decay, level-up DMs).
     // The `leveling` section is fully optional; defaults preserve v1.12.0
     // behaviour exactly (multiplier 1.0, decay off, notifications off-by-default).
+    // v1.17.0 — admin audit log retention
+    audit: z
+      .object({
+        retentionDays: z.coerce.number().int().min(1).max(3650).default(90),
+      })
+      .default({}),
+
     leveling: z
       .object({
         // Global XP multiplier applied AFTER category lookup in

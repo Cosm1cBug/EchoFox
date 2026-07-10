@@ -129,3 +129,44 @@ export const getGroupSettingsHistoryFiltered = (
     }>;
   }>(`/api/groups/${encodeURIComponent(jid)}/settings/history?${qs.toString()}`);
 };
+
+// v1.17.0 — admin audit log
+export interface AuditEvent {
+  id: number | string;
+  ts: number;
+  actor_jid: string;
+  chat_jid: string | null;
+  cmd_name: string;
+  prefix: string | null;
+  args: string | null;
+  kind: "admin" | "group_admin";
+  outcome: "success" | "failure" | "timeout" | "denied";
+  latency_ms: number | null;
+}
+
+export const getAudit = (opts: { days?: number; limit?: number; offset?: number; actor?: string; cmd?: string } = {}) => {
+  const qs = new URLSearchParams();
+  qs.set("days", String(opts.days ?? 7));
+  qs.set("limit", String(opts.limit ?? 100));
+  qs.set("offset", String(opts.offset ?? 0));
+  if (opts.actor) qs.set("actor", opts.actor);
+  if (opts.cmd) qs.set("cmd", opts.cmd);
+  return fetchJson<{
+    days: number;
+    limit: number;
+    offset: number;
+    actor: string | null;
+    cmd: string | null;
+    total: number;
+    events: AuditEvent[];
+  }>(`/api/audit?${qs.toString()}`);
+};
+
+export const getAuditStatus = () =>
+  fetchJson<{
+    retentionDays: number;
+    timerActive: boolean;
+    lastPruneAt: number | null;
+    lastPruneDeleted: number;
+    total: number;
+  }>("/api/audit/status");

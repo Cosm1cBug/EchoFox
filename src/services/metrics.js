@@ -141,6 +141,71 @@ function incDecryptionRecovery() {
   inc('signal_session_recoveries_total');
 }
 
+// ─── v1.17.0: leveling observability ────────────────────────────────────
+function incXpAwarded(n = 1) {
+  inc('level_xp_awarded_total', Number(n) || 0);
+}
+function incLevelUp() {
+  inc('level_levelups_total');
+}
+function incDecaySweep(outcome) {
+  inc('level_decay_sweeps_total');
+  if (outcome === 'failure') inc('level_decay_sweep_failures_total');
+}
+function incDecayUsersDecayed(n = 1) {
+  inc('level_decay_users_decayed_total', Number(n) || 0);
+}
+function incNotifyDmSent() {
+  inc('level_notify_dm_sent_total');
+}
+function incNotifyDmFailed() {
+  inc('level_notify_dm_failed_total');
+}
+function setLevelXpMultiplier(n) {
+  setGauge('level_xp_multiplier', Number(n) || 0);
+}
+function setLevelDecayEnabled(b) {
+  setGauge('level_decay_enabled', b ? 1 : 0);
+}
+function setLevelDecayLastRun(tsSec, affected) {
+  if (tsSec) setGauge('level_decay_last_run_at', Number(tsSec) || 0);
+  setGauge('level_decay_last_run_affected', Number(affected) || 0);
+}
+
+// ─── v1.17.0: mute observability ────────────────────────────────────────
+function incMuteSet() {
+  inc('mutes_set_total');
+}
+function incMuteUnmuted() {
+  inc('mutes_unmuted_total');
+}
+function incMuteFiltered() {
+  inc('mutes_filtered_total');
+}
+function setActiveMutes(n) {
+  setGauge('level_active_mutes', Number(n) || 0);
+}
+
+// ─── v1.17.0: OCR observability ─────────────────────────────────────────
+function incOcrCall(outcome) {
+  inc('ocr_calls_total');
+  if (outcome === 'failure') inc('ocr_calls_failed_total');
+}
+function incOcrChars(n = 0) {
+  if (n > 0) inc('ocr_chars_recognised_total', Number(n) || 0);
+}
+
+// ─── v1.17.0: admin audit observability ─────────────────────────────────
+function incAdminAudit() {
+  inc('admin_audit_events_total');
+}
+function incAdminAuditPrune(n = 0) {
+  inc('admin_audit_prune_total', Number(n) || 0);
+}
+function setAdminAuditRows(n) {
+  setGauge('admin_audit_rows', Number(n) || 0);
+}
+
 // ─── v1.4.0: Telegram metrics ───────────────────────────────────────────
 function incTelegramForward(outcome) {
   inc('telegram_forwards_total');
@@ -197,4 +262,26 @@ module.exports = {
   // v1.4.2
   incDecryptionFailure,
   incDecryptionRecovery,
+  // v1.17.0: leveling observability
+  incXpAwarded,
+  incLevelUp,
+  incDecaySweep,
+  incDecayUsersDecayed,
+  incNotifyDmSent,
+  incNotifyDmFailed,
+  setLevelXpMultiplier,
+  setLevelDecayEnabled,
+  setLevelDecayLastRun,
+  // v1.17.0: mute observability
+  incMuteSet,
+  incMuteUnmuted,
+  incMuteFiltered,
+  setActiveMutes,
+  // v1.17.0: OCR observability
+  incOcrCall,
+  incOcrChars,
+  // v1.17.0: admin audit
+  incAdminAudit,
+  incAdminAuditPrune,
+  setAdminAuditRows,
 };

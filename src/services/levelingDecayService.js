@@ -47,6 +47,7 @@
 const { getStore } = require('../store/instance');
 const { config } = require('../lib/configLoader');
 const logger = require('../core/logger').child({ mod: 'level-decay' });
+const metrics = require('./metrics');
 
 let _timer = null;
 let _lastRunAt = 0;
@@ -76,6 +77,14 @@ async function runOnce() {
     const affected = await store.applyXpDecay(graceSec, percentPerWeek);
     _lastRunAt = Date.now();
     _lastRunAffected = Number(affected) || 0;
+    // v1.17.0 — observability
+    try {
+      metrics.incDecaySweep('success');
+      metrics.incDecayUsersDecayed(_lastRunAffected);
+      metrics.setLevelDecayLastRun(Math.floor(_lastRunAt / 1000), _lastRunAffected);
+    } catch (_) {
+      /* never block */
+    }
     if (_lastRunAffected > 0) {
       logger.info(
         { affected: _lastRunAffected, afterDays, percentPerWeek },
@@ -86,6 +95,12 @@ async function runOnce() {
     }
     return { ran: true, affected: _lastRunAffected };
   } catch (err) {
+    // v1.17.0 — observability + alertEngine signal
+    try {
+      metrics.incDecaySweep('failure');
+    } catch (_) {
+      /* never block */
+    }
     logger.warn({ err, afterDays, percentPerWeek }, 'xp decay sweep failed');
     return { ran: false, reason: 'error', error: err.message, affected: 0 };
   }
@@ -113,6 +128,12 @@ function start() {
     { sweepIntervalMinutes: sweepIntervalMin, enabled: !!decayCfg.enabled },
     '🍂 levelingDecayService started',
   );
+  try {
+    metrics.setLevelDecayEnabled(!!decayCfg.enabled);
+    metrics.setLevelXpMultiplier(Number(config?.leveling?.xpMultiplier) || 1.0);
+  } catch (_) {
+    /* never block */
+  }
 }
 
 function stop() {

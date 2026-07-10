@@ -61,6 +61,26 @@ const COUNTERS = Object.freeze([
   // ── v1.4.2: Signal protocol health ─────────────────────────────────
   'signal_decryption_failures_total',
   'signal_session_recoveries_total',
+  // ── v1.17.0: observability ─────────────────────────────────────────
+  // Leveling
+  'level_xp_awarded_total',
+  'level_levelups_total',
+  'level_decay_sweeps_total',
+  'level_decay_sweep_failures_total',
+  'level_decay_users_decayed_total',
+  'level_notify_dm_sent_total',
+  'level_notify_dm_failed_total',
+  // Mutes
+  'mutes_set_total',
+  'mutes_unmuted_total',
+  'mutes_filtered_total',
+  // OCR
+  'ocr_calls_total',
+  'ocr_calls_failed_total',
+  'ocr_chars_recognised_total',
+  // Audit log
+  'admin_audit_events_total',
+  'admin_audit_prune_total',
 ]);
 
 const GAUGES = Object.freeze([
@@ -75,6 +95,13 @@ const GAUGES = Object.freeze([
   'ai_cost_usd_today',
   'ai_active_opt_in_chats',
   'telegram_routed_channels',
+  // ── v1.17.0: observability ─────────────────────────────────────────
+  'level_active_mutes', // size of muteService LRU
+  'level_xp_multiplier', // current value of config.leveling.xpMultiplier
+  'level_decay_enabled', // 1 / 0
+  'level_decay_last_run_at', // unix seconds
+  'level_decay_last_run_affected', // last sweep's affected count
+  'admin_audit_rows', // current row count in admin_audit
 ]);
 
 /**

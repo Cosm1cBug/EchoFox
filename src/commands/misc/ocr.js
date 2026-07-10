@@ -150,6 +150,9 @@ module.exports = {
       try {
         await worker?.terminate();
       } catch (_) {}
+      try {
+        require('../../services/metrics').incOcrCall('failure');
+      } catch (_) {}
       return ctx.reply(
         `❌ OCR failed: ${err.message.slice(0, 200)}\n\n` +
           "Most often this means the language pack couldn't be downloaded " +
@@ -162,6 +165,9 @@ module.exports = {
     } catch (_) {}
 
     if (!recognised) {
+      try {
+        require('../../services/metrics').incOcrCall('failure');
+      } catch (_) {}
       return ctx.reply(
         '❓ No text recognised in this image. Tips:\n' +
           '• Crop tightly around the text\n' +
@@ -175,6 +181,13 @@ module.exports = {
     const body = truncated ? recognised.slice(0, MAX_OUTPUT_CHARS) + '\n…(truncated)' : recognised;
     const isMultiline = body.includes('\n');
 
+    try {
+      const m = require('../../services/metrics');
+      m.incOcrCall('success');
+      m.incOcrChars(recognised.length);
+    } catch (_) {
+      /* never block */
+    }
     await ctx.react('✅');
     return ctx.reply(
       `📝 *OCR result* (${langArg}, ${recognised.length} chars)\n\n` +

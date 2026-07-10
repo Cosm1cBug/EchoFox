@@ -1514,6 +1514,177 @@ function makeRedisStore(url, logger, groupCache) {
       }
     },
 
+    // v1.17.0 — admin audit log (LIST head=newest, capped)
+    async recordAdminAudit(entry) {
+      try {
+        const ts = Math.floor(Number(entry?.ts) || Date.now() / 1000);
+        const args = entry?.args == null ? null : String(entry.args).slice(0, 500);
+        const obj = {
+          ts,
+          actor_jid: String(entry?.actor_jid || ''),
+          chat_jid: entry?.chat_jid ? String(entry.chat_jid) : null,
+          cmd_name: String(entry?.cmd_name || ''),
+          prefix: entry?.prefix ? String(entry.prefix).slice(0, 8) : null,
+          args,
+          kind: String(entry?.kind || 'admin'),
+          outcome: String(entry?.outcome || 'success'),
+          latency_ms:
+            entry?.latency_ms == null
+              ? null
+              : Math.max(0, Math.floor(Number(entry.latency_ms) || 0)),
+        };
+        const json = JSON.stringify(obj);
+        await client.lpush('admin_audit:log', json);
+        await client.ltrim('admin_audit:log', 0, 9999);
+        if (obj.actor_jid) {
+          await client.lpush(`admin_audit:by:${obj.actor_jid}`, json);
+          await client.ltrim(`admin_audit:by:${obj.actor_jid}`, 0, 999);
+        }
+        if (obj.cmd_name) {
+          await client.lpush(`admin_audit:cmd:${obj.cmd_name}`, json);
+          await client.ltrim(`admin_audit:cmd:${obj.cmd_name}`, 0, 999);
+        }
+        return `r${ts}-${obj.actor_jid}-${obj.cmd_name}`;
+      } catch (e) {
+        logger.debug({ err: e, entry }, 'recordAdminAudit failed');
+        return null;
+      }
+    },
+    async listAdminAudit(opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        const offset = Math.max(0, Math.min(100000, Number(opts.offset) || 0));
+        const raw = await client.lrange('admin_audit:log', offset, offset + limit - 1);
+        const out = [];
+        for (let i = 0; i < raw.length; i++) {
+          try {
+            const o = JSON.parse(raw[i]);
+            if (sinceSec > 0 && Number(o.ts) < sinceSec) continue;
+            out.push({
+              id: `r${offset + i}`,
+              ts: Number(o.ts) || 0,
+              actor_jid: o.actor_jid,
+              chat_jid: o.chat_jid,
+              cmd_name: o.cmd_name,
+              prefix: o.prefix,
+              args: o.args,
+              kind: o.kind,
+              outcome: o.outcome,
+              latency_ms: o.latency_ms == null ? null : Number(o.latency_ms),
+            });
+          } catch (_) {
+            /* skip malformed */
+          }
+        }
+        return out;
+      } catch (e) {
+        logger.debug({ err: e, opts }, 'listAdminAudit failed');
+        return [];
+      }
+    },
+    async listAdminAuditByActor(actorJid, opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        const raw = await client.lrange(`admin_audit:by:${actorJid}`, 0, limit - 1);
+        const out = [];
+        for (let i = 0; i < raw.length; i++) {
+          try {
+            const o = JSON.parse(raw[i]);
+            if (sinceSec > 0 && Number(o.ts) < sinceSec) continue;
+            out.push({
+              id: `r${i}`,
+              ts: Number(o.ts) || 0,
+              actor_jid: o.actor_jid,
+              chat_jid: o.chat_jid,
+              cmd_name: o.cmd_name,
+              prefix: o.prefix,
+              args: o.args,
+              kind: o.kind,
+              outcome: o.outcome,
+              latency_ms: o.latency_ms == null ? null : Number(o.latency_ms),
+            });
+          } catch (_) {
+            /* skip */
+          }
+        }
+        return out;
+      } catch (e) {
+        logger.debug({ err: e, actorJid }, 'listAdminAuditByActor failed');
+        return [];
+      }
+    },
+    async listAdminAuditByCmd(cmdName, opts = {}) {
+      try {
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.max(1, Math.min(1000, Number(opts.limit) || 100));
+        const raw = await client.lrange(`admin_audit:cmd:${cmdName}`, 0, limit - 1);
+        const out = [];
+        for (let i = 0; i < raw.length; i++) {
+          try {
+            const o = JSON.parse(raw[i]);
+            if (sinceSec > 0 && Number(o.ts) < sinceSec) continue;
+            out.push({
+              id: `r${i}`,
+              ts: Number(o.ts) || 0,
+              actor_jid: o.actor_jid,
+              chat_jid: o.chat_jid,
+              cmd_name: o.cmd_name,
+              prefix: o.prefix,
+              args: o.args,
+              kind: o.kind,
+              outcome: o.outcome,
+              latency_ms: o.latency_ms == null ? null : Number(o.latency_ms),
+            });
+          } catch (_) {
+            /* skip */
+          }
+        }
+        return out;
+      } catch (e) {
+        logger.debug({ err: e, cmdName }, 'listAdminAuditByCmd failed');
+        return [];
+      }
+    },
+    async pruneAdminAuditOlderThan(sinceSec) {
+      // Best-effort: scan the head LIST, count how many beyond cutoff,
+      // then LTRIM to keep only the newer ones. Per-actor / per-cmd lists
+      // self-prune via the LTRIM cap on each write; we don't sweep them.
+      try {
+        const cutoff = Math.max(0, Math.floor(Number(sinceSec) || 0));
+        const all = await client.lrange('admin_audit:log', 0, -1);
+        let keep = 0;
+        for (const raw of all) {
+          try {
+            const o = JSON.parse(raw);
+            if (Number(o.ts) >= cutoff) keep += 1;
+            else break;
+          } catch (_) {
+            break;
+          }
+        }
+        const pruned = all.length - keep;
+        if (pruned > 0 && keep > 0) {
+          await client.ltrim('admin_audit:log', 0, keep - 1);
+        } else if (pruned > 0 && keep === 0) {
+          await client.del('admin_audit:log');
+        }
+        return pruned;
+      } catch (e) {
+        logger.debug({ err: e, sinceSec }, 'pruneAdminAuditOlderThan failed');
+        return 0;
+      }
+    },
+    async countAdminAudit() {
+      try {
+        return Number(await client.llen('admin_audit:log')) || 0;
+      } catch (e) {
+        logger.debug({ err: e }, 'countAdminAudit failed');
+        return 0;
+      }
+    },
+
     // v1.13.0 — groups dashboard helper
     // Redis store doesn't have a queryable messages table — return null
     // so the server falls back to 'unknown' (active=null in API output).

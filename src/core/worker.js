@@ -254,12 +254,12 @@ async function start(retry = 0) {
     agent: getWsAgent(),
     fetchAgent: getWsAgent(),
     logger: _baileysLogger,
-    browser: Browsers.macOS('EchoFox'),
+    browser: Browsers.macOS('Chrome'),
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger.child({ mod: 'signal' })),
     },
-    markOnlineOnConnect: false,
+    markOnlineOnConnect: true,
     syncFullHistory: !!config.features.syncHistory,
     generateHighQualityLinkPreview: true,
     fireInitQueries: true,
@@ -449,14 +449,18 @@ async function start(retry = 0) {
       if (code === DisconnectReason.loggedOut || code === 401 || code === 403) {
         log.error(
           { phase: 'connection', status: 'logged_out' },
-          'logged out / forbidden – exiting for re-pair',
+          'logged out / forbidden – clearing credentials and exiting for re-pair',
         );
         try {
           if (clear) await clear();
-        } catch {}
-        process.exit(2);
+        } catch (e) {
+          log.error({ err: e }, 'Failed to clear auth credentials');
+        }
+      // Controlled exit with slight delay for logging
+      setTimeout(() => process.exit(2), 800);
+      return;
       }
-
+      // Normal reconnection for other errors
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++;
 

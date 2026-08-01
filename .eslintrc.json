@@ -30,6 +30,12 @@
   },
   "overrides": [
     {
+      "files": ["dashboard/**/*.js"],
+      "parserOptions": {
+        "sourceType": "module"
+      }
+    },
+    {
       "files": ["scripts/**/*.js"],
       "rules": { "no-process-exit": "off" }
     },

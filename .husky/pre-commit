@@ -1,2 +1,3 @@
 #!/usr/bin/env sh
-npm run precommit
+npx --no-install lint-staged
+node scripts/add-license-headers.js --check

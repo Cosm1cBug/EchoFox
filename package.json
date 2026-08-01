@@ -81,7 +81,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",
     "@google/generative-ai": "^0.24.1",
-    "@whiskeysockets/baileys": "7.0.0-rc13",
+    "@whiskeysockets/baileys": "6.7.24",
     "@hapi/boom": "^10.0.1",
     "@distube/ytdl-core": "^4.16.5",
     "axios": "^1.18.0",

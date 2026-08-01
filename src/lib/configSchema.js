@@ -142,17 +142,16 @@ const schema = z
         enabled: z.boolean().default(false),
         port: z.coerce.number().int().min(1).max(65535).default(3001),
         username: z.string().default('admin'),
-        password: z
-          .string()
-          .min(16, 'Dashboard password must be at least 16 characters long')
-          .refine((pwd) => pwd !== 'change-me-please', {
-            message: 'You must change the default dashboard password',
-          }),
+        password: z.string().default('change-me-please'),
         inactiveAfterDays: z.coerce.number().int().min(1).max(365).default(14),
       })
       .default({})
       .refine((d) => !d.enabled || d.password.length >= 16, {
         message: 'Dashboard password must be at least 16 characters when enabled.',
+        path: ['password'],
+      })
+      .refine((d) => !d.enabled || d.password !== 'change-me-please', {
+        message: 'You must change the default dashboard password when dashboard is enabled.',
         path: ['password'],
       }),
 

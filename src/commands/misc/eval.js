@@ -35,9 +35,9 @@ function truncate(s) {
 module.exports = {
   name: 'exec',
   alias: ['>'],
-  desc: '(admin) Evaluate JS expression OR run shell command',
+  desc: '(bot admin only) Evaluate JS expression OR run shell command',
   category: 'misc',
-  type: 'hide',
+  type: 'hide',                    // ← Hidden from menus
   admin: true,
   noLimit: true,
   timeout: 35,
@@ -45,12 +45,9 @@ module.exports = {
   async start(sock, m, { ctx, text, command }) {
     if (!text) return ctx.reply('Usage: `$> <js>` or `$exec <shell>`');
 
-    // The router stripped the prefix and gave us the resolved command name
-    // ('exec' or '>') — pick the mode accordingly.
     const isShell = command === 'exec';
 
     if (!isShell) {
-      // ── JS eval branch ───────────────────────────────────────────────
       try {
         const wrap = text.includes('return')
           ? `(async () => { ${text} })()`
@@ -59,12 +56,11 @@ module.exports = {
         const result = await eval(wrap);
         await ctx.reply('```\n' + truncate(result) + '\n```');
       } catch (err) {
-        await ctx.reply('💥 *eval threw*\n```\n' + truncate(err.stack || err.message) + '\n```');
+        await ctx.reply('💥 *eval threw*\n```\n' + truncate(err.message) + '\n```');
       }
       return;
     }
 
-    // ── Shell exec branch ────────────────────────────────────────────
     await ctx.react('⌛');
     try {
       const { stdout, stderr } = await execAsync(text, { timeout: SHELL_TIMEOUT, shell: true });

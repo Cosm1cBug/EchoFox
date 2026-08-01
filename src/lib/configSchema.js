@@ -142,23 +142,16 @@ const schema = z
         enabled: z.boolean().default(false),
         port: z.coerce.number().int().min(1).max(65535).default(3001),
         username: z.string().default('admin'),
-        password: z.string().default('change-me-please'),
-        // v1.13.0 — groups dashboard: how many days of human-message
-        // silence before a group is marked inactive (red dot).
+        password: z.string()
+          .min(16, 'Dashboard password must be at least 16 characters long')
+          .refine((pwd) => pwd !== 'change-me-please', {
+            message: 'You must change the default dashboard password',
+          }),
         inactiveAfterDays: z.coerce.number().int().min(1).max(365).default(14),
       })
       .default({})
-      .refine((d) => !d.enabled || d.password !== 'change-me-please', {
-        message:
-          'v1.5.0 security: dashboard.password must be changed from the default ' +
-          '"change-me-please" when dashboard.enabled is true. Set a strong password ' +
-          'in config.js or via the ECHOFOX_DASHBOARD_PASSWORD env var.',
-        path: ['password'],
-      })
-      .refine((d) => !d.enabled || d.password.length >= 12, {
-        message:
-          'v1.5.0 security: dashboard.password must be at least 12 characters ' +
-          'when dashboard.enabled is true.',
+      .refine((d) => !d.enabled || d.password.length >= 16, {
+        message: 'Dashboard password must be at least 16 characters when enabled.',
         path: ['password'],
       }),
 

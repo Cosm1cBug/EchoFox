@@ -257,7 +257,9 @@ async function start(retry = 0) {
     browser: Browsers.macOS('Chrome'),
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger.child({ mod: 'signal' })),
+      keys: makeCacheableSignalKeyStore(state.keys, logger.child({ mod: 'signal' }), {
+        cache: caches.signalCache,
+      }),
     },
     markOnlineOnConnect: true,
     syncFullHistory: !!config.features.syncHistory,

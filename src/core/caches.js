@@ -28,6 +28,11 @@ const { LRUCache } = require('lru-cache');
 const NodeCache = require('node-cache');
 const { LruCacheShim } = require('../lib/lruCacheShim');
 
+// Create LRU cache for Signal keys
+const signalCache = new LRUCache({
+  max: 50000, // Max number of keys to store
+  ttl: 1000 * 60 * 60 * 24, // Optional: 24 hours TTL
+});
 // ─── Group metadata (the *single biggest* perf win for group sends) ──────
 //    Baileys consults `cachedGroupMetadata` before every group message.
 const groupMetadataCache = new LRUCache({
@@ -67,6 +72,7 @@ module.exports = {
   mediaCache,
   profilePicCache,
   parseCache,
+  signalCache,
   clearAll() {
     groupMetadataCache.clear();
     msgRetryCounterCache.flushAll();
@@ -76,5 +82,6 @@ module.exports = {
     mediaCache.flushAll();
     profilePicCache.flushAll();
     parseCache.flushAll();
+    signalCache.clear();
   },
 };

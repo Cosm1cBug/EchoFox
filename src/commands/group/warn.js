@@ -182,7 +182,7 @@ module.exports = {
         );
       } catch (err) {
         return ctx.reply(
-          `⚠️ Tried to kick @${asShort(target)} (at ${count}/${threshold}) but failed: ${err.message}`,
+          `⚠️ Tried to kick @${asShort(target)} (at ${count}/${threshold}) but failed. Please try again shortly.`,
           { mentions: [target] },
         );
       }

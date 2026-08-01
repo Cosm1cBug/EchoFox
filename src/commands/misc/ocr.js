@@ -154,10 +154,7 @@ module.exports = {
         require('../../services/metrics').incOcrCall('failure');
       } catch (_) {}
       return ctx.reply(
-        `❌ OCR failed: ${err.message.slice(0, 200)}\n\n` +
-          "Most often this means the language pack couldn't be downloaded " +
-          '(check your bot host has internet on first use) or the image is ' +
-          'too noisy for recognition. Try cropping to just the text region.',
+        '❌ OCR failed. The image could not be processed. Please try again shortly or use a clearer image.',
       );
     }
     try {

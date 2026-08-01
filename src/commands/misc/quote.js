@@ -38,7 +38,7 @@ module.exports = {
       if (isOpenBreakerError(err)) {
         throw new Error('⏱️ Quote service is currently overloaded. Try again in ~1 minute.');
       }
-      throw new Error(`Could not fetch quote: ${err.message}`);
+      throw new Error('Could not fetch quote. Please try again shortly.');
     }
   },
 };

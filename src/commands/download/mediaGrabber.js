@@ -46,7 +46,7 @@ module.exports = {
     try {
       buf = await ctx.downloadMsg();
     } catch (err) {
-      throw new Error(`Could not download media: ${err.message}`);
+      throw new Error('Could not download media. Please try again shortly.');
     }
 
     // Pick the right send-shape per media type

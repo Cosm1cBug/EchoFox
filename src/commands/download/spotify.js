@@ -115,7 +115,7 @@ module.exports = {
       if (isOpenBreakerError(e)) {
         return ctx.reply('⏱️ Spotify oEmbed is currently overloaded. Try again in ~1 minute.');
       }
-      throw new Error(`Spotify resolve failed: ${e.message}`);
+      throw new Error('Spotify resolve failed. Please try again shortly.');
     }
     if (!meta?.title) throw new Error('Could not parse Spotify metadata');
 

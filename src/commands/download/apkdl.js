@@ -51,7 +51,7 @@ module.exports = {
       if (isOpenBreakerError(err)) {
         throw new Error('⏱️ Aptoide is currently overloaded. Try again in ~1 minute.');
       }
-      throw new Error(`Aptoide search failed: ${err.message}`);
+      throw new Error('Aptoide search failed. Please try again shortly.');
     }
 
     if (!hits.length) {

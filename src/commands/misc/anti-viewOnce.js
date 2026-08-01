@@ -75,7 +75,7 @@ module.exports = {
     try {
       buf = await ctx.downloadMsg(); // works because ctx wires up the quoted/current detection
     } catch (err) {
-      throw new Error(`Could not download media: ${err.message}`);
+      throw new Error('Could not download media. Please try again shortly.');
     }
 
     const kind = mediaType.replace('Message', ''); // image / video / audio

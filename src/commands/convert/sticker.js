@@ -41,7 +41,7 @@ module.exports = {
     try {
       buf = await ctx.downloadMsg();
     } catch (err) {
-      throw new Error(`Could not download source media: ${err.message}`);
+      throw new Error('Could not download source media. Please try again shortly.');
     }
 
     // v0.4.5: cap source media size to protect from OOM on hostile inputs
@@ -64,11 +64,10 @@ module.exports = {
     let webp;
     try {
       webp = await sticker.toBuffer();
+      await sock.sendMessage(ctx.from, { sticker: webp }, { quoted: m });
+      await ctx.react('✅');
     } catch (err) {
-      throw new Error(`Sticker conversion failed (ffmpeg installed?): ${err.message}`);
+      throw new Error('Sticker conversion failed. Please try again shortly.');
     }
-
-    await sock.sendMessage(ctx.from, { sticker: webp }, { quoted: m });
-    await ctx.react('✅');
   },
 };

@@ -152,8 +152,7 @@ module.exports = {
     } catch (err) {
       ctx.logger?.error?.({ err, provider: config.tts?.provider }, 'tts: synthesis failed');
       await ctx.react('❌');
-      const provider = config.tts?.provider || 'edge';
-      throw new Error(`TTS (${provider}) failed: ${err.message}`);
+      throw new Error('Text-to-speech failed. Please try again shortly.');
     }
   },
 };

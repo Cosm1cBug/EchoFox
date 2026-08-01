@@ -218,7 +218,7 @@ async function run({ sock, cmd, m, ctx, handlerArgs, isAdminCall, isGroupAdmin, 
     } else if (err.kind === 'config') {
       userMsg = `⚙️ *${cmd.name}* is misconfigured (\`${err.configPath || '?'}\`). Bot operator must fix.`;
     } else {
-      userMsg = `💥 *${cmd.name}* crashed: ${(err.message || String(err)).slice(0, 200)}`;
+      userMsg = `💥 *${cmd.name}* crashed. Please try again shortly.`;
     }
 
     try {

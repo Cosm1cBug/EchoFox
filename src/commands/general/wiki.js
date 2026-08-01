@@ -70,7 +70,7 @@ module.exports = {
       if (isOpenBreakerError(err)) {
         return ctx.reply('⏱️ Wikipedia is currently overloaded. Try again in ~1 minute.');
       }
-      throw new Error(`Wikipedia lookup failed: ${err.message}`);
+      throw new Error('Wikipedia lookup failed. Please try again shortly.');
     }
   },
 };

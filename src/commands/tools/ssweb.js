@@ -47,7 +47,7 @@ module.exports = {
       if (isOpenBreakerError(err)) {
         throw new Error('⏱️ Screenshot service is currently overloaded. Try again in ~1 minute.');
       }
-      throw new Error(`Screenshot service failed: ${err.message}`);
+      throw new Error('Screenshot service failed. Please try again shortly.');
     }
 
     await sock.sendMessage(

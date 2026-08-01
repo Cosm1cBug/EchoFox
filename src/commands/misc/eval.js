@@ -56,7 +56,11 @@ module.exports = {
         const result = await eval(wrap);
         await ctx.reply('```\n' + truncate(result) + '\n```');
       } catch (err) {
-        await ctx.reply('💥 *eval threw*\n```\n' + truncate(err.message) + '\n```');
+        await ctx.reply(
+          '💥 *eval threw*\n```\n' +
+            truncate('The evaluation failed. Please try again shortly.') +
+            '\n```',
+        );
       }
       return;
     }
@@ -69,7 +73,11 @@ module.exports = {
           (stderr ? `*stderr*\n\`\`\`\n${truncate(stderr)}\n\`\`\`\n` : '') || '_(no output)_';
       await ctx.reply(out);
     } catch (err) {
-      await ctx.reply('💥 *exec failed*\n```\n' + truncate(err.message) + '\n```');
+      await ctx.reply(
+        '💥 *exec failed*\n```\n' +
+          truncate('The shell command failed. Please try again shortly.') +
+          '\n```',
+      );
     }
   },
 };

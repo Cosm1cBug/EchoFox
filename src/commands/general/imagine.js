@@ -202,8 +202,7 @@ module.exports = {
       );
     } catch (err) {
       logger.warn({ err, prompt }, 'image generation failed');
-      const msg = err?.response?.data?.error?.message || err.message || String(err);
-      return ctx.reply(`❌ Image generation failed: ${msg.slice(0, 300)}`);
+      return ctx.reply('❌ Image generation failed. Please try again shortly.');
     } finally {
       cost.release(reservationId);
     }

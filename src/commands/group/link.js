@@ -36,7 +36,7 @@ module.exports = {
       const code = await sock.groupInviteCode(ctx.chat);
       await ctx.reply(`🔗 https://chat.whatsapp.com/${code}`);
     } catch (err) {
-      throw new Error(`Could not fetch invite link: ${err.message}`);
+      throw new Error('Could not fetch invite link. Please try again shortly.');
     }
   },
 };

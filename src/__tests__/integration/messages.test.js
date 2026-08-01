@@ -130,7 +130,7 @@ test('UpstreamError → user-friendly upstream message', async () => {
   assert.match(sock.lastSent.content.text, /piped.*issues/i);
 });
 
-test('plain Error → ❌ reaction + crash reply', async () => {
+test('plain Error → ❌ reaction + generic crash reply', async () => {
   const sock = makeMockSock();
   const store = makeMockStore();
   const commands = makeRegistry([
@@ -146,7 +146,8 @@ test('plain Error → ❌ reaction + crash reply', async () => {
   const reactions = sock.sent.filter((s) => s.content?.react);
   assert.ok(reactions.length >= 1, 'plain Error should trigger ❌ reaction');
   const last = sock.sent[sock.sent.length - 1];
-  assert.match(last.content.text || '', /crashed.*inner detail/i);
+  assert.match(last.content.text || '', /crashed\. please try again shortly\./i);
+  assert.doesNotMatch(last.content.text || '', /inner detail/i);
 });
 
 test('no prefix → no reply (just exits)', async () => {

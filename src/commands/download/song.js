@@ -92,7 +92,7 @@ module.exports = {
       if (isOpenBreakerError(e)) {
         return ctx.reply('⏱️ YouTube search is currently overloaded. Try again in ~1 minute.');
       }
-      throw new Error(`Search failed: ${e.message}`);
+      throw new Error('Search failed. Please try again shortly.');
     }
     if (!result) return ctx.reply(`Couldn't find anything for *${text}*.`);
 

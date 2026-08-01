@@ -84,7 +84,7 @@ module.exports = {
       if (isOpenBreakerError(err)) {
         throw new Error('⏱️ VirusTotal is currently overloaded. Try again in ~1 minute.');
       }
-      throw new Error(`VirusTotal request failed: ${err.message}`);
+      throw new Error('VirusTotal request failed. Please try again shortly.');
     }
 
     const a = data?.data?.attributes || {};

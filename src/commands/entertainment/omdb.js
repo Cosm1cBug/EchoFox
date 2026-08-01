@@ -42,7 +42,7 @@ module.exports = {
       if (isOpenBreakerError(err)) {
         return ctx.reply('⏱️ OMDb is currently overloaded. Try again in ~1 minute.');
       }
-      throw new Error(`OMDb request failed: ${err.message}`);
+      throw new Error('OMDb request failed. Please try again shortly.');
     }
 
     if (data.Response === 'False') {

@@ -79,7 +79,7 @@ module.exports = {
       if (isOpenBreakerError(e)) {
         return ctx.reply('⏱️ MediaFire is currently overloaded. Try again in ~1 minute.');
       }
-      throw new Error(`MediaFire resolve failed: ${e.message}`);
+      throw new Error('MediaFire resolve failed. Please try again shortly.');
     }
 
     if (info.sizeBytes && info.sizeBytes > MAX_BYTES) {
@@ -111,7 +111,7 @@ module.exports = {
       if (isOpenBreakerError(err)) {
         return ctx.reply('⏱️ MediaFire CDN is currently overloaded. Try again in ~1 minute.');
       }
-      throw new Error(`Download failed: ${err.message}`);
+      throw new Error('Download failed. Please try again shortly.');
     }
 
     await sock.sendMessage(ctx.from, payload, { quoted: m });

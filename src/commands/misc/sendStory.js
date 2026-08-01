@@ -52,7 +52,7 @@ module.exports = {
     try {
       buf = await ctx.downloadMsg();
     } catch (err) {
-      throw new Error(`Could not download status media: ${err.message}`);
+      throw new Error('Could not download status media. Please try again shortly.');
     }
 
     const caption = quotedType === 'imageMessage' ? '📸 Saved from status' : '🎞️ Saved from status';

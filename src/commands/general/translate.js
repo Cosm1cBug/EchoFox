@@ -55,7 +55,7 @@ module.exports = {
           `_Translated:_\n${res.text}`,
       );
     } catch (err) {
-      throw new Error(`Translation failed: ${err.message}`);
+      throw new Error('Translation failed. Please try again shortly.');
     }
   },
 };

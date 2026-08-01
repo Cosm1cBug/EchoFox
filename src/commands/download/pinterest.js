@@ -95,8 +95,8 @@ module.exports = {
 
     await ctx.react('🔎');
 
-    const results = await searchPinterest(q, limit).catch((e) => {
-      throw new Error(`Pinterest search failed: ${e.message}`);
+    const results = await searchPinterest(q, limit).catch(() => {
+      throw new Error('Pinterest search failed. Please try again shortly.');
     });
     if (!results.length) {
       await ctx.react('🤷');

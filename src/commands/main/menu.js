@@ -16,7 +16,6 @@ const {
 const thumbImg = './src/Utils/assets/buggy.jpg';
 let thumbImgBuffer = null;
 
-// Preload the image once to reduce file read operations
 fs.readFile(thumbImg)
   .then((buffer) => (thumbImgBuffer = buffer))
   .catch((err) => console.error('Error reading thumbnail image:', err));
@@ -26,17 +25,19 @@ module.exports = {
   alias: ['listmenu'],
   desc: 'Shows all the available features.',
   type: 'hide',
-  start: async (sock, m, { commands, prefix, toUpper }) => {
-    const isAdmin = (config.admins || []).includes(m.sender);
+  start: async (sock, m, { commands, prefix, toUpper, ctx }) => {
+    // === FIX: Safe sender ID extraction ===
+    const senderJid = ctx?.sender || m?.sender || '';
+    const isAdmin = (config.admins || []).includes(senderJid);
     const groupedCommands = {};
 
-    // Cache sender ID without domain part
-    const senderID = m.sender.replace(/@.+/g, '');
+    // Safe sender ID without domain part
+    const senderID = senderJid ? senderJid.replace(/@.+/g, '') : 'user';
 
     // Filter & Group Commands
     for (const command of commands.values()) {
-      if (!command.type || command.type === 'hide') continue; // Exclude hidden & no-type commands
-      if (!isAdmin && command.type === 'admin') continue; // Exclude admin commands for normal users
+      if (!command.type || command.type === 'hide') continue;
+      if (!isAdmin && command.type === 'admin') continue;
 
       (groupedCommands[command.type] ||= []).push(command);
     }
@@ -84,7 +85,7 @@ module.exports = {
               messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
               interactiveMessage: proto.Message.InteractiveMessage.fromObject({
                 contextInfo: {
-                  mentionedJid: [m.sender],
+                  mentionedJid: [senderJid],
                   externalAdReply: { showAdAttribution: false },
                 },
                 body: proto.Message.InteractiveMessage.Body.fromObject({
@@ -122,11 +123,11 @@ module.exports = {
       return await sock.sendMessage(m.from, {
         text: txt,
         contextInfo: {
-          mentionedJid: [m.sender],
+          mentionedJid: [senderJid],
           externalAdReply: {
             showAdAttribution: false,
             renderLargerThumbnail: true,
-            title: `🔰ＢＵＧＧＹ ｖ5.0.1`,
+            title: `🔰EchoFox ｖ1.17.0`,
             body: `Made with 💖 by COSMICBUG`,
             previewType: 0,
             mediaType: 1,

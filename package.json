@@ -22,7 +22,8 @@
     "test:contract": "node --test src/commands/__tests__/contract.test.js",
     "prepare": "husky || true",
     "build:dashboard": "node scripts/build-dashboard.js",
-    "typecheck:dashboard": "cd dashboard && npx tsc -b --noEmit"
+    "typecheck:dashboard": "cd dashboard && npx tsc -b --noEmit",
+    "precommit": "npm run format && npm run lint && npm run headers:check"
   },
   "engines": {
     "node": ">=20.0.0"

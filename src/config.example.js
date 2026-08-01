@@ -69,7 +69,7 @@ module.exports = {
     enabled: false, // basic-auth React dashboard at /dashboard/
     port: 3001,
     username: 'admin',
-    password: 'change-me-please',
+    password: 'testPass@1235#&!',
   },
 
   processing: {

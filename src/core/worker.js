@@ -456,9 +456,9 @@ async function start(retry = 0) {
         } catch (e) {
           log.error({ err: e }, 'Failed to clear auth credentials');
         }
-      // Controlled exit with slight delay for logging
-      setTimeout(() => process.exit(2), 800);
-      return;
+        // Controlled exit with slight delay for logging
+        setTimeout(() => process.exit(2), 800);
+        return;
       }
       // Normal reconnection for other errors
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {

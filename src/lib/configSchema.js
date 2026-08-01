@@ -142,7 +142,8 @@ const schema = z
         enabled: z.boolean().default(false),
         port: z.coerce.number().int().min(1).max(65535).default(3001),
         username: z.string().default('admin'),
-        password: z.string()
+        password: z
+          .string()
           .min(16, 'Dashboard password must be at least 16 characters long')
           .refine((pwd) => pwd !== 'change-me-please', {
             message: 'You must change the default dashboard password',

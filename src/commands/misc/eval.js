@@ -37,7 +37,7 @@ module.exports = {
   alias: ['>'],
   desc: '(bot admin only) Evaluate JS expression OR run shell command',
   category: 'misc',
-  type: 'hide',                    // ← Hidden from menus
+  type: 'hide', // ← Hidden from menus
   admin: true,
   noLimit: true,
   timeout: 35,

@@ -127,67 +127,108 @@ function startGaugeRefresh() {
   }, 30_000).unref();
 }
 
-setInterval(
-  async () => {
-    try {
-      await checkTheHackerNews(sock);
-    } catch (err) {
-      log.error({ err }, '[thehackersnews] Cron job failed');
-    }
-  },
-  60 * 60 * 1000,
-).unref();
+// Simple in-memory lock system for schedulers
+const schedulerLocks = {
+  thehackersnews: false,
+  alienvault: false,
+  rss: false,
+  github: false,
+  vtwatch: false,
+  gaugeRefresh: false,
+};
 
-setInterval(
-  async () => {
-    try {
-      await checkAlienVault(sock);
-    } catch (err) {
-      log.error({ err }, '[alienvault] Cron job failed');
-    }
-  },
-  (AV_INTERVAL_MIN || 60) * 60 * 1000,
-).unref();
+// Helper function to add jitter
+function getJitteredDelay(baseMs) {
+  const jitter = Math.floor(Math.random() * 5000); // 0-5 seconds jitter
+  return baseMs + jitter;
+}
 
-setInterval(
-  async () => {
-    try {
-      await checkRss(sock);
-    } catch (err) {
-      log.error({ err }, '[rss] Cron job failed');
-    }
-  },
-  (RSS_INTERVAL_MIN || 30) * 60 * 1000,
-).unref();
+setInterval(async () => {
+  if (schedulerLocks.thehackersnews) {
+    logger.debug('thehackersnews scheduler still running, skipping this tick');
+    return;
+  }
 
-setInterval(
-  async () => {
-    try {
-      await checkGitHub(sock);
-    } catch (err) {
-      log.error({ err }, '[github] Cron job failed');
-    }
-  },
-  (GH_INTERVAL_MIN || 60) * 60 * 1000,
-).unref();
+  schedulerLocks.thehackersnews = true;
+  try {
+    await checkTheHackerNews(sock);
+  } catch (err) {
+    logger.error({ err }, '[thehackersnews] Cron job failed');
+  } finally {
+    schedulerLocks.thehackersnews = false;
+  }
+}, getJitteredDelay(60 * 60 * 1000)).unref();
 
-setInterval(
-  async () => {
-    try {
-      await checkVtWatch(sock);
-    } catch (err) {
-      log.error({ err }, '[vtwatch] Cron job failed');
-    }
-  },
-  (VTW_INTERVAL_MIN || 360) * 60 * 1000,
-).unref();
+setInterval(async () => {
+  if (schedulerLocks.alienvault) {
+    logger.debug('alienvault scheduler still running, skipping this tick');
+    return;
+  }
+
+  schedulerLocks.alienvault = true;
+  try {
+    await checkAlienVault(sock);
+  } catch (err) {
+    logger.error({ err }, '[alienvault] Cron job failed');
+  } finally {
+    schedulerLocks.alienvault = false;
+  }
+}, getJitteredDelay((AV_INTERVAL_MIN || 60) * 60 * 1000)).unref();
+
+setInterval(async () => {
+  if (schedulerLocks.rss) {
+    logger.debug('rss scheduler still running, skipping this tick');
+    return;
+  }
+
+  schedulerLocks.rss = true;
+  try {
+    await checkRss(sock);
+  } catch (err) {
+    logger.error({ err }, '[rss] Cron job failed');
+  } finally {
+    schedulerLocks.rss = false;
+  }
+}, getJitteredDelay((RSS_INTERVAL_MIN || 30) * 60 * 1000)).unref();
+
+setInterval(async () => {
+  if (schedulerLocks.github) {
+    logger.debug('github scheduler still running, skipping this tick');
+    return;
+  }
+
+  schedulerLocks.github = true;
+  try {
+    await checkGitHub(sock);
+  } catch (err) {
+    logger.error({ err }, '[github] Cron job failed');
+  } finally {
+    schedulerLocks.github = false;
+  }
+}, getJitteredDelay((GH_INTERVAL_MIN || 60) * 60 * 1000)).unref();
+
+setInterval(async () => {
+  if (schedulerLocks.vtwatch) {
+    logger.debug('vtwatch scheduler still running, skipping this tick');
+    return;
+  }
+
+  schedulerLocks.vtwatch = true;
+  try {
+    await checkVtWatch(sock);
+  } catch (err) {
+    logger.error({ err }, '[vtwatch] Cron job failed');
+  } finally {
+    schedulerLocks.vtwatch = false;
+  }
+}, getJitteredDelay((VTW_INTERVAL_MIN || 360) * 60 * 1000)).unref();
 
 async function start(retry = 0) {
   if (shuttingDown) return;
 
   if (retry === 0) {
     lifecycle.logBoot();
-    lifecycle.checkBaileysVersion(); // v1.5.0
+    lifecycle.checkBaileysVersion(); 
   }
 
   auth = await lifecycle.selectAuth();
@@ -398,9 +439,6 @@ async function start(retry = 0) {
             }
           }
 
-          // v1.14.0 — seed an initial settings snapshot per group, ONCE.
-          // Subsequent boots skip (guarded by getGroupSettingsHistory length).
-          // Diff-capture (in groups.update.js) takes over from there.
           if (typeof store.getGroupSettingsHistory === 'function') {
             try {
               const existingSettings = await store.getGroupSettingsHistory(jid, 1).catch(() => []);

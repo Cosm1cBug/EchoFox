@@ -129,3 +129,54 @@ async function dispatchGreetings({ sock, groupJid, classified }) {
       .catch((err) => logger.debug({ err, groupJid, participant, action }, 'greeting send failed'));
   }
 }
+
+
+/*
+const logger = require('../core/logger').child({ mod: 'group-participants' });
+const { getStore } = require('../store/instance');
+
+// Simple concurrency limiter
+async function runWithConcurrency(items, limit, fn) {
+  const results = [];
+  let index = 0;
+
+  async function worker() {
+    while (index < items.length) {
+      const currentIndex = index++;
+      try {
+        const result = await fn(items[currentIndex]);
+        results[currentIndex] = result;
+      } catch (err) {
+        results[currentIndex] = err;
+      }
+    }
+  }
+
+  const workers = Array(Math.min(limit, items.length)).fill(null).map(worker);
+  await Promise.all(workers);
+  return results;
+}
+
+module.exports = async ({ sock, store, u }) => {
+  if (!u) return;
+  const currentStore = store || getStore();
+  if (!currentStore?.recordParticipantEvent) return;
+
+  const events = Array.isArray(u) ? u : [u];
+
+  // Process with max 10 concurrent writes
+  await runWithConcurrency(events, 10, async (update) => {
+    try {
+      await currentStore.recordParticipantEvent(
+        update.id,
+        update.participant,
+        update.action,
+        update.actor || null,
+        update.timestamp || Math.floor(Date.now() / 1000)
+      );
+    } catch (err) {
+      logger.warn({ err, group: update.id }, 'Failed to record participant event');
+    }
+  });
+};
+*/

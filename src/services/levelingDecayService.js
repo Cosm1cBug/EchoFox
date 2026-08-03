@@ -77,7 +77,7 @@ async function runOnce() {
     const affected = await store.applyXpDecay(graceSec, percentPerWeek);
     _lastRunAt = Date.now();
     _lastRunAffected = Number(affected) || 0;
-    // v1.17.0 — observability
+
     try {
       metrics.incDecaySweep('success');
       metrics.incDecayUsersDecayed(_lastRunAffected);
@@ -95,7 +95,7 @@ async function runOnce() {
     }
     return { ran: true, affected: _lastRunAffected };
   } catch (err) {
-    // v1.17.0 — observability + alertEngine signal
+
     try {
       metrics.incDecaySweep('failure');
     } catch (_) {

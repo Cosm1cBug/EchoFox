@@ -162,8 +162,12 @@ function enrich(m, sock) {
 
 module.exports = async function handleMessage({ sock, m, commands, store, logger }) {
   if (!m?.message) return;
-  if (m.key?.fromMe) return;
+  if (m?.key?.fromMe) return;
   if (m.message.protocolMessage) return;
+  // Early return for excluded chats (performance improvement)
+  if (config.privacy?.excludeFromStore?.includes(m.key.remoteJid)) {
+    return;
+  }
   if (m.key.remoteJid === 'status@broadcast' && !config.features.readStatus) return;
 
   // ─── Privacy: skip excluded chats entirely (no persistence, no handling) ──

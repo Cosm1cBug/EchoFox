@@ -46,31 +46,29 @@ function ensureReactBuilt() {
 
   logger.warn(
     { path: REACT_DIR },
-    'React dashboard build missing — attempting build-on-boot. ' +
-      'Run `npm run build:dashboard` ahead of time to skip this step.',
+    'React dashboard build missing — attempting build-on-boot in background.'
   );
-  try {
-    const script = path.join(__dirname, '..', '..', 'scripts', 'build-dashboard.js');
-    const result = spawnSync(process.execPath, [script], {
-      stdio: 'inherit',
-      shell: false,
-    });
-    if (result.status === 0 && fs.existsSync(indexHtml)) {
-      logger.info('React dashboard built successfully');
-      return true;
+
+  // Run build in background (non-blocking)
+  setImmediate(() => {
+    try {
+      const script = path.join(__dirname, '..', '..', 'scripts', 'build-dashboard.js');
+      const result = require('child_process').spawnSync(process.execPath, [script], {
+        stdio: 'inherit',
+        shell: false,
+      });
+
+      if (result.status === 0 && fs.existsSync(indexHtml)) {
+        logger.info('React dashboard built successfully in background');
+      } else {
+        logger.error('Background dashboard build failed');
+      }
+    } catch (err) {
+      logger.error({ err: err.message }, 'Background build-on-boot threw an error');
     }
-    logger.error(
-      { status: result.status },
-      'build-on-boot failed — dashboard will return a maintenance page',
-    );
-    return false;
-  } catch (err) {
-    logger.error(
-      { err: err.message },
-      'build-on-boot threw — dashboard will return a maintenance page',
-    );
-    return false;
-  }
+  });
+
+  return false; // Return false so the maintenance page is shown until build completes
 }
 
 function maintenancePage(reason) {
@@ -300,6 +298,90 @@ function startDashboard(port, store, config) {
     }
   });
 
+    // GET /api/chats - List individual contacts with presence
+  app.get('/api/chats', async (req, res, next) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const offset = Number(req.query.offset) || 0;
+
+      if (typeof store.listContactsWithPresence !== 'function') {
+        return res.json({ items: [], total: 0 });
+      }
+
+      const [items, total] = await Promise.all([
+        store.listContactsWithPresence({ limit, offset }),
+        store.countContacts(),
+      ]);
+
+      res.json({ items, total, limit, offset });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // GET /api/chats/:jid/full - Full details of a contact
+  app.get('/api/chats/:jid/full', async (req, res, next) => {
+    try {
+      const jid = req.params.jid;
+
+      if (typeof store.getContact !== 'function') {
+        return res.status(404).json({ error: 'not_implemented' });
+      }
+
+      const contact = await store.getContact(jid);
+      if (!contact) return res.status(404).json({ error: 'not_found' });
+
+      // Get presence
+      const presence = typeof store.getPresence === 'function' 
+        ? await store.getPresence(jid) 
+        : null;
+
+      // Get message stats
+      const stats = typeof store.getChatStats === 'function' 
+        ? await store.getChatStats(jid) 
+        : null;
+
+      // Get first/last seen
+      const seen = typeof store.getFirstLastSeen === 'function' 
+        ? await store.getFirstLastSeen(jid) 
+        : null;
+
+      // Get command usage
+      const commands = typeof store.getCommandUsageByChat === 'function' 
+        ? await store.getCommandUsageByChat(jid) 
+        : [];
+
+      // Phone enrichment (basic)
+      const phone = jid.split('@')[0];
+      let enrichment = null;
+      try {
+        const phoneUtil = require('libphonenumber-js');
+        const parsed = phoneUtil.parsePhoneNumber('+' + phone);
+        if (parsed) {
+          enrichment = {
+            country: parsed.country || null,
+            countryCode: parsed.countryCallingCode || null,
+            nationalNumber: parsed.nationalNumber || null,
+          };
+        }
+      } catch (_) {
+        // ignore enrichment errors
+      }
+
+      res.json({
+        jid,
+        contact,
+        presence,
+        stats,
+        seen,
+        commands,
+        enrichment,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+  
   // ── Per-message timeline endpoints ─────────────────────
   app.get('/api/messages/:jid/:id/edits', async (req, res, next) => {
     try {

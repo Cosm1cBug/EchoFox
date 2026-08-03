@@ -34,6 +34,11 @@ const { isUserFacingError, shouldCountAsFailure } = require('../lib/errors');
 const DEFAULT_TIMEOUT_MS = 60_000;
 const cooldowns = new LRUCache({ max: 100_000, ttl: 1000 * 60 * 10 });
 
+// Rate limit: max 3 notifications per command every 10 minutes
+const notificationRateLimit = new LRUCache({
+  max: 500,
+  ttl: 1000 * 60 * 10, // 10 minutes
+});
 // Compute the effective rate-limit multiplier during the warmup window.
 //   Returns 1 if warmupMode is off OR we're past warmupDays since first boot.
 //   Returns config.antiBan.warmupMultiplier otherwise (default 3 → 3× stricter).
@@ -89,8 +94,20 @@ function withTimeout(promise, ms, cmdName) {
 }
 
 async function postCrashToChannel(sock, cmd, ctx, err) {
+  const key = `crash:${cmd.name}`;
+  const count = notificationRateLimit.get(key) || 0;
+
+  if (count >= 3) {
+    // Skip notification to avoid spam
+    return;
+  }
+
+  notificationRateLimit.set(key, count + 1);
+
   const ch = config.channels.errLogs;
+
   if (!ch) return;
+
   const txt =
     `🔥 *Command crashed*\n` +
     `*Cmd:* \`${cmd.name}\`  *Cat:* \`${cmd.category || '?'}\`\n` +
@@ -105,7 +122,6 @@ async function postCrashToChannel(sock, cmd, ctx, err) {
     /* don't crash the runner because the log channel is down */
   }
 
-  // v1.3.0 — also mirror to Telegram errLogs (no-op if telegram disabled)
   try {
     telegram.forward('errLogs', {
       level: 'error',
@@ -139,15 +155,12 @@ async function run({ sock, cmd, m, ctx, handlerArgs, isAdminCall, isGroupAdmin, 
     await withTimeout(cmd.start(sock, m, handlerArgs), timeoutMs, cmd.name);
     metrics.incCommand(cmd.name, 'success');
     alertEngine.record(cmd.name, 'success');
-    // v1.12.0 — award per-user XP for successful commands.
-    // Fire-and-forget; failure inside leveling never blocks the runner.
-    // v1.16.0 — pass sock so leveling can DM on level-up (per .notify on)
     leveling
       .awardForCommand(ctx.sender, cmd, sock)
       .catch((e) =>
         logger.debug({ err: e, cmd: cmd.name, sender: ctx.sender }, 'awardForCommand failed'),
       );
-    // v1.17.0 — admin audit on successful privileged invocations
+
     if (adminAudit.shouldAudit(cmd, isAdminCall, isGroupAdmin)) {
       adminAudit.record({
         actor_jid: ctx.sender,

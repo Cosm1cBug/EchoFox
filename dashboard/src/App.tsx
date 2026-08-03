@@ -10,6 +10,7 @@ import { Login } from "./components/Login";
 import { setAuth, clearAuth } from "./lib/api";
 import { Overview } from "./pages/Overview";
 import { Groups } from "./pages/Groups";
+import { Chats } from "./pages/Chats";
 import { Metrics } from "./pages/Metrics";
 import { Diagnostics } from "./pages/Diagnostics";
 import { Alerts } from "./pages/Alerts";
@@ -26,6 +27,7 @@ import { AuditLog } from "./pages/AuditLog";
 const TABS = [
   "Overview",
   "Groups",
+  "Chats",
   "Leaderboard",
   "Contacts",
   "Presence",
@@ -83,6 +85,7 @@ export default function App() {
         <div className="mt-8">
           {activeTab === "Overview" && <Overview />}
           {activeTab === "Groups" && <Groups />}
+          {activeTab === "Chats" && <Chats />}
           {activeTab === "Leaderboard" && <Leaderboard />}
           {activeTab === "Contacts" && <Contacts />}
           {activeTab === "Presence" && <Presence />}

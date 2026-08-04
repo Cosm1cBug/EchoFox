@@ -29,7 +29,7 @@ const NodeCache = require('node-cache');
 const { LruCacheShim } = require('../lib/lruCacheShim');
 
 // Create LRU cache for Signal keys
-const signalCache = new LRUCacheShim({
+const signalCache = new LruCacheShim({
   max: 50000, // Max number of keys to store
   ttl: 1000 * 60 * 60 * 24, // Optional: 24 hours TTL
 });

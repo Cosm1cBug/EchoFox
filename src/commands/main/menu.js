@@ -34,8 +34,17 @@ module.exports = {
     // Safe sender ID without domain part
     const senderID = senderJid ? senderJid.replace(/@.+/g, '') : 'user';
 
+    const cmdList =
+      typeof commands.all === 'function'
+        ? commands.all()
+        : typeof commands.values === 'function'
+          ? commands.values()
+          : commands.commands
+            ? commands.commands.values()
+            : [];
+
     // Filter & Group Commands
-    for (const command of commands.values()) {
+    for (const command of cmdList) {
       if (!command.type || command.type === 'hide') continue;
       if (!isAdmin && command.type === 'admin') continue;
 

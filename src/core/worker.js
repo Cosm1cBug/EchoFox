@@ -127,15 +127,29 @@ function startGaugeRefresh() {
   }, 30_000).unref();
 }
 
-// Simple in-memory lock system for schedulers
+const SCHEDULER_LOCK_TTL_MS = 30 * 60 * 1000;
+
 const schedulerLocks = {
-  thehackersnews: false,
-  alienvault: false,
-  rss: false,
-  github: false,
-  vtwatch: false,
-  gaugeRefresh: false,
+  thehackersnews: 0,
+  alienvault: 0,
+  rss: 0,
+  github: 0,
+  vtwatch: 0,
+  gaugeRefresh: 0,
 };
+
+function acquireLock(key) {
+  const now = Date.now();
+  if (schedulerLocks[key] && now - schedulerLocks[key] < SCHEDULER_LOCK_TTL_MS) {
+    return false; // Still running and lock has not expired
+  }
+  schedulerLocks[key] = now;
+  return true;
+}
+
+function releaseLock(key) {
+  schedulerLocks[key] = 0;
+}
 
 // Helper function to add jitter
 function getJitteredDelay(baseMs) {
@@ -144,82 +158,72 @@ function getJitteredDelay(baseMs) {
 }
 
 setInterval(async () => {
-  if (schedulerLocks.thehackersnews) {
+  if (!acquireLock('thehackersnews')) {
     logger.debug('thehackersnews scheduler still running, skipping this tick');
     return;
   }
-
-  schedulerLocks.thehackersnews = true;
   try {
     await checkTheHackerNews(sock);
   } catch (err) {
     logger.error({ err }, '[thehackersnews] Cron job failed');
   } finally {
-    schedulerLocks.thehackersnews = false;
+    releaseLock('thehackersnews');
   }
 }, getJitteredDelay(60 * 60 * 1000)).unref();
 
 setInterval(async () => {
-  if (schedulerLocks.alienvault) {
+  if (!acquireLock('alienvault')) {
     logger.debug('alienvault scheduler still running, skipping this tick');
     return;
   }
-
-  schedulerLocks.alienvault = true;
   try {
     await checkAlienVault(sock);
   } catch (err) {
     logger.error({ err }, '[alienvault] Cron job failed');
   } finally {
-    schedulerLocks.alienvault = false;
+    releaseLock('alienvault');
   }
 }, getJitteredDelay((AV_INTERVAL_MIN || 60) * 60 * 1000)).unref();
 
 setInterval(async () => {
-  if (schedulerLocks.rss) {
+  if (!acquireLock('rss')) {
     logger.debug('rss scheduler still running, skipping this tick');
     return;
   }
-
-  schedulerLocks.rss = true;
   try {
     await checkRss(sock);
   } catch (err) {
     logger.error({ err }, '[rss] Cron job failed');
   } finally {
-    schedulerLocks.rss = false;
+    releaseLock('rss');
   }
 }, getJitteredDelay((RSS_INTERVAL_MIN || 30) * 60 * 1000)).unref();
 
 setInterval(async () => {
-  if (schedulerLocks.github) {
+  if (!acquireLock('github')) {
     logger.debug('github scheduler still running, skipping this tick');
     return;
   }
-
-  schedulerLocks.github = true;
   try {
     await checkGitHub(sock);
   } catch (err) {
     logger.error({ err }, '[github] Cron job failed');
   } finally {
-    schedulerLocks.github = false;
+    releaseLock('github');
   }
 }, getJitteredDelay((GH_INTERVAL_MIN || 60) * 60 * 1000)).unref();
 
 setInterval(async () => {
-  if (schedulerLocks.vtwatch) {
+  if (!acquireLock('vtwatch')) {
     logger.debug('vtwatch scheduler still running, skipping this tick');
     return;
   }
-
-  schedulerLocks.vtwatch = true;
   try {
     await checkVtWatch(sock);
   } catch (err) {
     logger.error({ err }, '[vtwatch] Cron job failed');
   } finally {
-    schedulerLocks.vtwatch = false;
+    releaseLock('vtwatch');
   }
 }, getJitteredDelay((VTW_INTERVAL_MIN || 360) * 60 * 1000)).unref();
 

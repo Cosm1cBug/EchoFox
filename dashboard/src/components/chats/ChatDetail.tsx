@@ -15,7 +15,6 @@ export function ChatDetail({ detail }: ChatDetailProps) {
     contact,
     presence,
     stats,
-    seen,
     commands,
     enrichment,
   } = detail;
@@ -65,11 +64,11 @@ export function ChatDetail({ detail }: ChatDetailProps) {
             <div className="mt-2">
               <p className="text-slate-400 mb-1">By Message Type:</p>
               <ul className="pl-4 list-disc">
-                {Object.entries(stats.byType).map(([type, count]) => (
-                  <li key={type}>
-                    {type}: <span className="font-mono">{count}</span>
-                  </li>
-                ))}
+              {Object.entries(stats.byType as Record<string, number>).map(([type, count]) => (
+                <li key={type}>
+                  {type}: <span className="font-mono">{count}</span>
+                </li>
+              ))}
               </ul>
             </div>
           )}

@@ -84,7 +84,7 @@ jobs:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push (GHCR)
         if: steps.decide.outputs.build == 'true'
         uses: docker/build-push-action@v7
         with:
@@ -96,8 +96,19 @@ jobs:
             ghcr.io/cosm1cbug/echofox:${{ steps.version.outputs.major_minor }}
             ghcr.io/cosm1cbug/echofox:sha-${{ steps.version.outputs.short_sha }}
             ghcr.io/cosm1cbug/echofox:latest
-            ${{ env.DOCKERHUB_USERNAME != '' && format('cosm1cbug/echofox:{0}', steps.version.outputs.version) || '' }}
-            ${{ env.DOCKERHUB_USERNAME != '' && format('cosm1cbug/echofox:{0}', steps.version.outputs.major_minor) || '' }}
-            ${{ env.DOCKERHUB_USERNAME != '' && 'cosm1cbug/echofox:latest' || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push (Docker Hub)
+        if: ${{ steps.decide.outputs.build == 'true' && env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            cosm1cbug/echofox:${{ steps.version.outputs.version }}
+            cosm1cbug/echofox:${{ steps.version.outputs.major_minor }}
+            cosm1cbug/echofox:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

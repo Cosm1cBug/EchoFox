@@ -47,7 +47,14 @@ export const getContacts = (limit = 100, offset = 0) =>
 export const getContact = (jid: string) =>
   fetchJson(`/api/contacts/${encodeURIComponent(jid)}`);
 
-export const getChats = () => fetchJson("/api/chats");
+export const getChats = (params?: { limit?: number; offset?: number }) => {
+  const query = params
+    ? "?" + new URLSearchParams(
+        Object.entries(params).map(([k, v]) => [k, String(v)])
+      ).toString()
+    : "";
+  return fetchJson("/api/chats" + query);
+};
 
 export const getChat = (jid: string) =>
   fetchJson(`/api/chats/${encodeURIComponent(jid)}`);

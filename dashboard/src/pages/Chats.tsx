@@ -28,8 +28,10 @@ export function Chats() {
 
   const fetchChats = async () => {
     try {
-      const result = await getChats({ limit: 200 });
-      const list = result.items || result;
+      const result = (await getChats({ limit: 200 })) as {
+        items?: Chat[];
+      } & Chat[];
+      const list: Chat[] = Array.isArray(result) ? result : result.items || [];
 
       // Merge with presence cache
       const merged = list.map((chat: Chat) => {

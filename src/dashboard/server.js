@@ -53,16 +53,22 @@ function ensureReactBuilt() {
   setImmediate(() => {
     try {
       const script = path.join(__dirname, '..', '..', 'scripts', 'build-dashboard.js');
-      const result = require('child_process').spawnSync(process.execPath, [script], {
+      const child = require('child_process').spawn(process.execPath, [script], {
         stdio: 'inherit',
         shell: false,
       });
 
-      if (result.status === 0 && fs.existsSync(indexHtml)) {
-        logger.info('React dashboard built successfully in background');
-      } else {
-        logger.error('Background dashboard build failed');
-      }
+      child.on('close', (code) => {
+        if (code === 0 && fs.existsSync(indexHtml)) {
+          logger.info('React dashboard built successfully in background');
+        } else {
+          logger.error({ code }, 'Background dashboard build failed');
+        }
+      });
+
+      child.on('error', (err) => {
+        logger.error({ err: err.message }, 'Background build process error');
+      });
     } catch (err) {
       logger.error({ err: err.message }, 'Background build-on-boot threw an error');
     }
@@ -250,9 +256,6 @@ function startDashboard(port, store, config) {
     }
   });
 
-  // v1.13.0 — bundled detail endpoint: meta + participants + history + activity
-  // Single round-trip for the drill-down UI. Each sub-fetch fails closed
-  // so a missing piece doesn't blank the whole response.
   app.get('/api/groups/:jid/full', async (req, res, next) => {
     try {
       const jid = req.params.jid;
@@ -266,11 +269,11 @@ function startDashboard(port, store, config) {
           typeof store.getLastHumanMessageTs === 'function'
             ? store.getLastHumanMessageTs(jid).catch(() => null)
             : Promise.resolve(null),
-          // v1.14.0 — settings change log
+
           typeof store.getGroupSettingsHistory === 'function'
             ? store.getGroupSettingsHistory(jid, historyLimit).catch(() => [])
             : Promise.resolve([]),
-          // v1.16.0 — persisted mute history
+
           typeof store.getMuteHistoryByChat === 'function'
             ? store.getMuteHistoryByChat(jid, 100).catch(() => [])
             : Promise.resolve([]),

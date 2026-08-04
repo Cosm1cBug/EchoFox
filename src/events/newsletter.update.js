@@ -39,3 +39,4 @@ module.exports = async ({ u }) => {
     logger.info({ count }, 'newsletter.update persisted');
   }
 };
+

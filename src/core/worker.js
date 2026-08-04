@@ -302,14 +302,14 @@ async function start(retry = 0) {
     browser: Browsers.macOS('Chrome'),
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger.child({ mod: 'signal' }), {
-        cache: caches.signalCache,
-      }),
+      keys: makeCacheableSignalKeyStore(state.keys, logger.child({ mod: 'signal' }),
+      caches.signalCache
+      ),
     },
     markOnlineOnConnect: true,
     syncFullHistory: !!config.features.syncHistory,
     generateHighQualityLinkPreview: true,
-    fireInitQueries: true,
+    fireInitQueries: false,
     enableAutoSessionRecreation: true,
     enableRecentMessageCache: true,
     connectTimeoutMs: 60_000,

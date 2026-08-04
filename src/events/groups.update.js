@@ -55,9 +55,14 @@ module.exports = async function onGroupsUpdate({ sock, store, u }) {
       newMeta = await sock.groupMetadata(jid);
       await store.saveGroupMetadata(jid, newMeta);
     } catch (e) {
-      logger.debug({ err: e, jid }, 'group metadata refresh failed after groups.update');
-    }
+      logger.debug({ err: e, jid }, 'group metadata refresh failed after groups.update — falling back to merged update');
 
+      // Fix: If rate-limited (429) or timed out, merge the partial update onto oldMeta
+      if (oldMeta) {
+        newMeta = { ...oldMeta, ...update };
+        await store.saveGroupMetadata(jid, newMeta).catch(() => {});
+      }
+    }
     // ── 3. Compute + persist diff events (v1.14.0).
     //       Only fires when we have both old + new and the store backend
     //       supports recordGroupSettingsChange.

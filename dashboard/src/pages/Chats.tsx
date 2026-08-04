@@ -30,7 +30,7 @@ export function Chats() {
     try {
       const result = (await getChats({ limit: 200 })) as {
         items?: Chat[];
-      } & Chat[];
+      } | Chat[];
       const list: Chat[] = Array.isArray(result) ? result : result.items || [];
 
       // Merge with presence cache

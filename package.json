@@ -89,7 +89,7 @@
     "better-sqlite3": "^12.4.1",
     "cfonts": "^3.3.0",
     "country-data": "^0.0.31",
-    "express": "^4.21.2",
+    "express": "^5.2.1",
     "express-rate-limit": "^7.4.1",
     "fast-xml-parser": "^5.10.1",
     "fluent-ffmpeg": "^2.1.3",

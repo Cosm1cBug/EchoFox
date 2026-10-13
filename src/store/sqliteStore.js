@@ -527,8 +527,9 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     auditRowCount: db.prepare(`SELECT COUNT(*) AS n FROM admin_audit`),
 
     // v1.13.0 — last human (non-bot) message timestamp per group
-    lastHumanMsgTs: db.prepare(`SELECT MAX(ts) AS ts FROM messages WHERE jid = ? AND from_me = 0`),
-
+    lastHumanMsgTs: db.prepare(
+      `SELECT MAX(CASE WHEN ts > 10000000000 THEN ts / 1000 ELSE ts END) AS ts FROM messages WHERE jid = ? AND from_me = 0`
+    ),
     // v1.14.0 — group settings event log
     gseInsert: db.prepare(
       `INSERT INTO group_settings_events (jid, field, old_value, new_value, actor, ts)
@@ -1585,14 +1586,21 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         for (const m of messages) {
           if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
           if (excluded.has(m.key.remoteJid)) continue;
+          // Ignore protocol messages, stub notifications, and key distributions
+          if (m.message.protocolMessage || m.message.senderKeyDistributionMessage) continue;
+          
+          let ts = Number(m.messageTimestamp) || Math.floor(Date.now() / 1000);
+          if (ts > 10000000000) ts = Math.floor(ts / 1000); // Ensure seconds
+
           rows.push({
             jid: m.key.remoteJid,
             id: m.key.id,
             fromMe: m.key.fromMe ? 1 : 0,
             participant: m.key.participant ?? null,
             msg: storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null,
-            ts: Number(m.messageTimestamp) || Math.floor(Date.now() / 1000),
+            ts,
           });
+          
           if (storeBodies) msgHot.set(`${m.key.remoteJid}|${m.key.id}`, m.message);
         }
         if (rows.length) {

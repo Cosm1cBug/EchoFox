@@ -28,7 +28,7 @@ module.exports = {
               deviceListMetadata: {},
               deviceListMetadataVersion: 2,
             },
-            interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+            interactiveMessage: proto.Message.InteractiveMessage.create({
               contextInfo: {
                 mentionedJid: [m.sender],
                 isForwarded: true,
@@ -47,24 +47,24 @@ module.exports = {
                   renderLargerThumbnail: false,
                 },
               },
-              body: proto.Message.InteractiveMessage.Body.fromObject({
+              body: proto.Message.InteractiveMessage.Body.create({
                 text: `*Hello, @${m.sender.replace(/@.+/g, '')}!*\nWelcome!
                   `,
               }),
-              footer: proto.Message.InteractiveMessage.Footer.fromObject({
+              footer: proto.Message.InteractiveMessage.Footer.create({
                 text: 'Powered By ICSF Team',
               }),
-              header: proto.Message.InteractiveMessage.Header.fromObject({
+              header: proto.Message.InteractiveMessage.Header.create({
                 hasMediaAttachment: false,
               }),
-              carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.fromObject({
+              carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.create({
                 cards: [
                   {
-                    body: proto.Message.InteractiveMessage.Body.fromObject({
+                    body: proto.Message.InteractiveMessage.Body.create({
                       text: '> 7 Days : 1.000\n> 30 Days : 3.000\n> Permanen : 5.000\n\n`</> Benefit Prem </>`\n\n> Get Unlimited Limit\n> Get Acces All Fitur\n> Get Profile Good',
                     }),
-                    footer: proto.Message.InteractiveMessage.Footer.fromObject({}),
-                    header: proto.Message.InteractiveMessage.Header.fromObject({
+                    footer: proto.Message.InteractiveMessage.Footer.create({}),
+                    header: proto.Message.InteractiveMessage.Header.create({
                       title: '</> Premium Bot </>\n',
                       hasMediaAttachment: true,
                       ...(await prepareWAMessageMedia(
@@ -72,26 +72,25 @@ module.exports = {
                         { upload: sock.waUploadToServer },
                       )),
                     }),
-                    nativeFlowMessage:
-                      proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
-                        buttons: [
-                          {
-                            name: 'cta_url',
-                            buttonParamsJson: {
-                              display_text: 'Order Here!',
-                              url: 'https://wa.me/628816609112',
-                              merchant_url: 'https://wa.me/628816609112',
-                            },
+                    nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+                      buttons: [
+                        {
+                          name: 'cta_url',
+                          buttonParamsJson: {
+                            display_text: 'Order Here!',
+                            url: 'https://wa.me/628816609112',
+                            merchant_url: 'https://wa.me/628816609112',
                           },
-                        ],
-                      }),
+                        },
+                      ],
+                    }),
                   },
                   {
-                    body: proto.Message.InteractiveMessage.Body.fromObject({
+                    body: proto.Message.InteractiveMessage.Body.create({
                       text: '> 7 Days : 2.000\n> 30 Days : 4.000\n> Permanen : 7.000\n\n`</> Benefit Sewa </>`\n\n> Auto Welcome\n> Auto Kick\n> Auto Open/Close',
                     }),
-                    footer: proto.Message.InteractiveMessage.Footer.fromObject({}),
-                    header: proto.Message.InteractiveMessage.Header.fromObject({
+                    footer: proto.Message.InteractiveMessage.Footer.create({}),
+                    header: proto.Message.InteractiveMessage.Header.create({
                       title: '</> Sewa Bot </>\n',
                       hasMediaAttachment: true,
                       ...(await prepareWAMessageMedia(
@@ -99,19 +98,18 @@ module.exports = {
                         { upload: sock.waUploadToServer },
                       )),
                     }),
-                    nativeFlowMessage:
-                      proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
-                        buttons: [
-                          {
-                            name: 'cta_url',
-                            buttonParamsJson: {
-                              display_text: 'Order Here!',
-                              url: 'https://wa.me/628816609112',
-                              merchant_url: 'https://wa.me/628816609112',
-                            },
+                    nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+                      buttons: [
+                        {
+                          name: 'cta_url',
+                          buttonParamsJson: {
+                            display_text: 'Order Here!',
+                            url: 'https://wa.me/628816609112',
+                            merchant_url: 'https://wa.me/628816609112',
                           },
-                        ],
-                      }),
+                        },
+                      ],
+                    }),
                   },
                 ],
               }),

@@ -2,6 +2,13 @@
 node_modules
 npm-debug.log*
 
+# Dashboard build inputs: dependencies and build output are produced
+# inside the image by the dashbuilder stage, so never ship the host
+# copies (a host node_modules would also break `npm ci` there).
+dashboard/node_modules
+dashboard/dist
+dashboard/*.tsbuildinfo
+
 # ─── Secrets / user data ──────────────────────────────────────────────────
 src/config.js
 src/@session

@@ -69,7 +69,17 @@ module.exports = {
     enabled: false, // basic-auth React dashboard at /dashboard/
     port: 3001,
     username: 'admin',
-    password: 'testPass@1235#&!',
+    // MUST be changed before enabling the dashboard. The config schema
+    // refuses to boot if this is left as the placeholder while enabled.
+    password: 'CHANGE_ME',
+    // Only trust a proxy that is actually in front of us:
+    // 'loopback' (compose default) | 1 (one reverse-proxy hop) | a CIDR.
+    // Never `true` — it lets clients spoof X-Forwarded-For and bypass the
+    // dashboard rate limiter.
+    trustProxy: 'loopback',
+    // Groups with no inbound human message for this many days render as
+    // "inactive" on the Groups tab.
+    inactiveAfterDays: 14,
   },
 
   processing: {

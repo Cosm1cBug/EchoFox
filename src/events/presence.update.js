@@ -50,4 +50,3 @@ module.exports = async ({ u }) => {
 
 // Export cache so other modules (Contacts page) can read from it
 module.exports.getPresenceCache = () => presenceCache;
-

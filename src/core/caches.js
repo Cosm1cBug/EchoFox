@@ -26,12 +26,21 @@
  */
 const { LRUCache } = require('lru-cache');
 const NodeCache = require('node-cache');
+const { DEFAULT_CACHE_TTLS } = require('@whiskeysockets/baileys');
 const { LruCacheShim } = require('../lib/lruCacheShim');
 
-// Create LRU cache for Signal keys
+// Create LRU cache for Signal keys.
+//
+// The TTL MUST track Baileys' own DEFAULT_CACHE_TTLS.SIGNAL_STORE (5 min).
+// Signal sessions, sender keys and pre-keys are rotated by the protocol; a
+// long-lived cache makes the bot encrypt/decrypt with material the peer has
+// already replaced. That surfaces as "failed to decrypt message" / Bad MAC,
+// and as recipients stuck on "Waiting for this message" when a stale
+// `sender-key-memory` entry makes Baileys skip re-sending a sender key.
+// (Previously hard-coded to 24 h — 288x the library default.)
 const signalCache = new LruCacheShim({
   max: 50000, // Max number of keys to store
-  ttl: 1000 * 60 * 60 * 24, // Optional: 24 hours TTL
+  ttl: DEFAULT_CACHE_TTLS.SIGNAL_STORE * 1000, // seconds -> ms
 });
 // ─── Group metadata (the *single biggest* perf win for group sends) ──────
 //    Baileys consults `cachedGroupMetadata` before every group message.
@@ -42,7 +51,13 @@ const groupMetadataCache = new LRUCache({
 });
 
 // ─── Message-retry counter (resolves "waiting for this message") ─────────
-const msgRetryCounterCache = new NodeCache({ stdTTL: 60, useClones: false });
+// Baileys' own MSG_RETRY default is 1 h. At 60 s the counter resets
+// mid-sequence, so a sender that is genuinely stuck keeps getting fresh
+// retry requests instead of Baileys giving up after maxMsgRetryCount.
+const msgRetryCounterCache = new NodeCache({
+  stdTTL: DEFAULT_CACHE_TTLS.MSG_RETRY,
+  useClones: false,
+});
 
 // ─── Call offer + placeholder resend caches (recommended in 7.x) ─────────
 const callOfferCache = new NodeCache({ stdTTL: 60 * 5, useClones: false });

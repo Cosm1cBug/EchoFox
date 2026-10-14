@@ -5,11 +5,11 @@
  */
 'use strict';
 
+const crypto = require('node:crypto');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const path = require('node:path');
 const fs = require('node:fs');
-const { spawnSync } = require('node:child_process');
 const metrics = require('../services/metrics');
 
 const logger = require('../core/logger').child({ mod: 'dashboard' });
@@ -26,9 +26,18 @@ const REACT_DIR = path.join(__dirname, 'react');
 
 function basicAuth(username, password) {
   const expected = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+  const expectedBuf = Buffer.from(expected, 'utf8');
+
   return (req, res, next) => {
     const got = req.headers.authorization;
-    if (got && got === expected) return next();
+    const gotBuf = got ? Buffer.from(got, 'utf8') : Buffer.alloc(0);
+
+    // Length check first (timingSafeEqual requires equal lengths), then a
+    // constant-time compare so the header can't be recovered byte-by-byte
+    // from response timing.
+    const ok = gotBuf.length === expectedBuf.length && crypto.timingSafeEqual(gotBuf, expectedBuf);
+
+    if (ok) return next();
     res.set('WWW-Authenticate', 'Basic realm="EchoFox Dashboard", charset="UTF-8"');
     res.status(401).type('text/plain').send('Authentication required');
   };
@@ -46,7 +55,7 @@ function ensureReactBuilt() {
 
   logger.warn(
     { path: REACT_DIR },
-    'React dashboard build missing — attempting build-on-boot in background.'
+    'React dashboard build missing — attempting build-on-boot in background.',
   );
 
   // Run build in background (non-blocking)
@@ -93,7 +102,14 @@ h1{color:#f97316}code{background:#1e293b;padding:.15rem .4rem;border-radius:.25r
 
 function startDashboard(port, store, config) {
   const app = express();
-  app.set('trust proxy', true);
+  // Only trust a proxy that is genuinely in front of us.
+  //   'loopback'      docker-compose publishes on 127.0.0.1 (current default)
+  //   1               exactly one reverse-proxy hop (nginx / Caddy / Traefik)
+  //   '10.0.0.0/8'    your container network
+  // NEVER `true`: express-rate-limit reads req.ip, so trusting every peer lets
+  // any client send a spoofed X-Forwarded-For and reset its own bucket,
+  // disabling both limiters below.
+  app.set('trust proxy', config.dashboard?.trustProxy ?? 'loopback');
   // v1.0.1 — rate-limit BOTH /api (data endpoints) and /dashboard (auth surface)
   const dashboardLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15-minute window
@@ -209,11 +225,26 @@ function startDashboard(port, store, config) {
       // Inactivity threshold defaults to 14 days (config.dashboard.inactiveAfterDays).
       const inactiveDays = Number(config.dashboard?.inactiveAfterDays) || 14;
       const cutoffSec = Math.floor(Date.now() / 1000) - inactiveDays * 86400;
+      // One aggregate query for every group instead of one query per group.
+      // The store is better-sqlite3, so the previous N+1 issued N *synchronous*
+      // statements on every 15 s dashboard poll — blocking the same event loop
+      // that serves WhatsApp traffic.
+      let tsMap = null;
+      if (typeof store.getLastHumanMessageTsMap === 'function') {
+        try {
+          tsMap = store.getLastHumanMessageTsMap();
+        } catch {
+          tsMap = null; // fall through to the per-jid path
+        }
+      }
+
       const enriched = await Promise.all(
         rows.map(async (g) => {
           let lastHumanMsgTs = null;
           try {
-            if (typeof store.getLastHumanMessageTs === 'function') {
+            if (tsMap) {
+              lastHumanMsgTs = tsMap.get(g.jid) ?? null;
+            } else if (typeof store.getLastHumanMessageTs === 'function') {
               lastHumanMsgTs = await store.getLastHumanMessageTs(g.jid);
             }
           } catch {
@@ -301,27 +332,6 @@ function startDashboard(port, store, config) {
     }
   });
 
-    // GET /api/chats - List individual contacts with presence
-  app.get('/api/chats', async (req, res, next) => {
-    try {
-      const limit = Math.min(Number(req.query.limit) || 100, 500);
-      const offset = Number(req.query.offset) || 0;
-
-      if (typeof store.listContactsWithPresence !== 'function') {
-        return res.json({ items: [], total: 0 });
-      }
-
-      const [items, total] = await Promise.all([
-        store.listContactsWithPresence({ limit, offset }),
-        store.countContacts(),
-      ]);
-
-      res.json({ items, total, limit, offset });
-    } catch (e) {
-      next(e);
-    }
-  });
-
   // GET /api/chats/:jid/full - Full details of a contact
   app.get('/api/chats/:jid/full', async (req, res, next) => {
     try {
@@ -335,24 +345,21 @@ function startDashboard(port, store, config) {
       if (!contact) return res.status(404).json({ error: 'not_found' });
 
       // Get presence
-      const presence = typeof store.getPresence === 'function' 
-        ? await store.getPresence(jid) 
-        : null;
+      const presence =
+        typeof store.getPresence === 'function' ? await store.getPresence(jid) : null;
 
       // Get message stats
-      const stats = typeof store.getChatStats === 'function' 
-        ? await store.getChatStats(jid) 
-        : null;
+      const stats = typeof store.getChatStats === 'function' ? await store.getChatStats(jid) : null;
 
       // Get first/last seen
-      const seen = typeof store.getFirstLastSeen === 'function' 
-        ? await store.getFirstLastSeen(jid) 
-        : null;
+      const seen =
+        typeof store.getFirstLastSeen === 'function' ? await store.getFirstLastSeen(jid) : null;
 
       // Get command usage
-      const commands = typeof store.getCommandUsageByChat === 'function' 
-        ? await store.getCommandUsageByChat(jid) 
-        : [];
+      const commands =
+        typeof store.getCommandUsageByChat === 'function'
+          ? await store.getCommandUsageByChat(jid)
+          : [];
 
       // Phone enrichment (basic)
       const phone = jid.split('@')[0];
@@ -384,7 +391,7 @@ function startDashboard(port, store, config) {
       next(e);
     }
   });
-  
+
   // ── Per-message timeline endpoints ─────────────────────
   app.get('/api/messages/:jid/:id/edits', async (req, res, next) => {
     try {
@@ -511,10 +518,23 @@ function startDashboard(port, store, config) {
     }
   });
 
-  app.get('/api/chats', async (_req, res, next) => {
+  // NOTE: this must be the ONLY registration for /api/chats. A second
+  // handler used to be declared earlier (calling store.listContactsWithPresence,
+  // which no backend implements) — Express dispatches to the first match, so
+  // that dead handler won and this endpoint always returned an empty list,
+  // which is why the dashboard's Chats tab never showed anything.
+  app.get('/api/chats', async (req, res, next) => {
     try {
-      const data = typeof store.listChats === 'function' ? await store.listChats() : [];
-      res.json(data);
+      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const offset = Number(req.query.offset) || 0;
+
+      if (typeof store.listChats !== 'function') {
+        return res.json({ items: [], total: 0, limit, offset });
+      }
+
+      const all = await store.listChats();
+      const items = all.slice(offset, offset + limit);
+      res.json({ items, total: all.length, limit, offset });
     } catch (e) {
       next(e);
     }
@@ -857,8 +877,11 @@ function startDashboard(port, store, config) {
 
   // ── Error handler ─────────────────────────────────────────────────────
   app.use((err, _req, res, _next) => {
-    logger.error({ err }, 'dashboard route error');
-    res.status(500).json({ error: 'internal', message: err.message });
+    // Log the full error, return only a correlation id: driver messages can
+    // embed connection strings, file paths or query fragments.
+    const errId = crypto.randomUUID();
+    logger.error({ err, errId }, 'dashboard route error');
+    res.status(500).json({ error: 'internal', errId });
   });
 
   app.listen(port, () => {

@@ -1,5 +1,8 @@
 node_modules
 src/@session
+# Built React bundle copied here by scripts/build-dashboard.js (and by the
+# Docker dashbuilder stage). Linting minified output produced ~3.4k errors.
+src/dashboard/react
 src/store/runtime
 src/store/AlienVault
 src/Utils

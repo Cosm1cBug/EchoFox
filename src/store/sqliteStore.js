@@ -19,6 +19,7 @@ const path = require('node:path');
 const { existsSync, mkdirSync } = require('node:fs');
 const { LRUCache } = require('lru-cache');
 const { proto } = require('@whiskeysockets/baileys');
+const { isNonHumanContent, normaliseTs } = require('../lib/messageFilters');
 const { config } = require('../lib/configLoader');
 const { SQL_DDL: PARTICIPANTS_DDL } = require('./schema/participants');
 const { SQL_DDL: STATS_DDL } = require('./schema/stats');
@@ -527,8 +528,16 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     auditRowCount: db.prepare(`SELECT COUNT(*) AS n FROM admin_audit`),
 
     // v1.13.0 — last human (non-bot) message timestamp per group
-    lastHumanMsgTs: db.prepare(
-      `SELECT MAX(CASE WHEN ts > 10000000000 THEN ts / 1000 ELSE ts END) AS ts FROM messages WHERE jid = ? AND from_me = 0`
+    // ts is normalised to seconds on write (see the messages.upsert bind), so
+    // the column can stay bare and idx_messages_jid_ts serves MAX(ts) as an
+    // index lookup. Wrapping it in CASE (the previous form) forced a scan of
+    // every row for that jid.
+    lastHumanMsgTs: db.prepare(`SELECT MAX(ts) AS ts FROM messages WHERE jid = ? AND from_me = 0`),
+    // One round trip for every chat at once — used by the dashboard's
+    // /api/groups, which previously fired one synchronous query per group
+    // every 15 s and blocked the event loop.
+    lastHumanMsgTsAll: db.prepare(
+      `SELECT jid, MAX(ts) AS ts FROM messages WHERE from_me = 0 GROUP BY jid`,
     ),
     // v1.14.0 — group settings event log
     gseInsert: db.prepare(
@@ -1586,11 +1595,13 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         for (const m of messages) {
           if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
           if (excluded.has(m.key.remoteJid)) continue;
-          // Ignore protocol messages, stub notifications, and key distributions
-          if (m.message.protocolMessage || m.message.senderKeyDistributionMessage) continue;
-          
-          let ts = Number(m.messageTimestamp) || Math.floor(Date.now() / 1000);
-          if (ts > 10000000000) ts = Math.floor(ts / 1000); // Ensure seconds
+          // Ignore protocol messages, key distributions, reactions, poll
+          // votes and keep-in-chat bookkeeping. None of these are human
+          // conversation, and they were flipping dormant groups to "active"
+          // on the dashboard (see src/lib/messageFilters.js).
+          if (isNonHumanContent(m.message)) continue;
+
+          const ts = normaliseTs(m.messageTimestamp);
 
           rows.push({
             jid: m.key.remoteJid,
@@ -1600,7 +1611,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
             msg: storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null,
             ts,
           });
-          
+
           if (storeBodies) msgHot.set(`${m.key.remoteJid}|${m.key.id}`, m.message);
         }
         if (rows.length) {
@@ -2060,6 +2071,23 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     },
 
     // v1.13.0 — groups dashboard helper
+    /**
+     * Same data as getLastHumanMessageTs but for every chat in one query.
+     * Returns a Map<jid, tsSeconds>. Used by GET /api/groups.
+     */
+    getLastHumanMessageTsMap() {
+      try {
+        const out = new Map();
+        for (const r of stmts.lastHumanMsgTsAll.all()) {
+          if (typeof r.ts === 'number') out.set(r.jid, r.ts);
+        }
+        return out;
+      } catch (e) {
+        logger.debug({ err: e }, 'getLastHumanMessageTsMap failed');
+        return new Map();
+      }
+    },
+
     async getLastHumanMessageTs(jid) {
       try {
         const row = stmts.lastHumanMsgTs.get(jid);

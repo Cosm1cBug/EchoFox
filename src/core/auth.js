@@ -54,7 +54,7 @@ function makeKeysWrapper({ read, write, remove }) {
         ids.map(async (id) => {
           let value = await read(`${type}-${id}`);
           if (type === 'app-state-sync-key' && value) {
-            value = proto.Message.AppStateSyncKeyData.fromObject(value);
+            value = proto.Message.AppStateSyncKeyData.create(value);
           }
           data[id] = value;
         }),
@@ -96,9 +96,15 @@ async function useRedisAuth(redisUrl, sessionName) {
   return {
     state: {
       creds,
-      keys: makeCacheableSignalKeyStore(
-        makeKeysWrapper({ read, write, remove }),
-        log.child({ mod: 'signal-keys' }),
+      // Already cacheable — the flag stops worker.js wrapping it a second
+      // time (double caching doubles memory and makes the outer, longer-TTL
+      // layer authoritative over the live session store).
+      keys: Object.assign(
+        makeCacheableSignalKeyStore(
+          makeKeysWrapper({ read, write, remove }),
+          log.child({ mod: 'signal-keys' }),
+        ),
+        { __echofoxCacheable: true },
       ),
     },
     saveCreds: () => write(creds, 'creds'),
@@ -157,9 +163,15 @@ async function useSqliteAuth(sqlitePath, sessionName) {
   return {
     state: {
       creds,
-      keys: makeCacheableSignalKeyStore(
-        makeKeysWrapper({ read, write, remove }),
-        log.child({ mod: 'signal-keys' }),
+      // Already cacheable — the flag stops worker.js wrapping it a second
+      // time (double caching doubles memory and makes the outer, longer-TTL
+      // layer authoritative over the live session store).
+      keys: Object.assign(
+        makeCacheableSignalKeyStore(
+          makeKeysWrapper({ read, write, remove }),
+          log.child({ mod: 'signal-keys' }),
+        ),
+        { __echofoxCacheable: true },
       ),
     },
     saveCreds: () => write(creds, 'creds'),
@@ -213,9 +225,15 @@ async function usePostgresAuth(pgUrl, sessionName) {
   return {
     state: {
       creds,
-      keys: makeCacheableSignalKeyStore(
-        makeKeysWrapper({ read, write, remove }),
-        log.child({ mod: 'signal-keys' }),
+      // Already cacheable — the flag stops worker.js wrapping it a second
+      // time (double caching doubles memory and makes the outer, longer-TTL
+      // layer authoritative over the live session store).
+      keys: Object.assign(
+        makeCacheableSignalKeyStore(
+          makeKeysWrapper({ read, write, remove }),
+          log.child({ mod: 'signal-keys' }),
+        ),
+        { __echofoxCacheable: true },
       ),
     },
     saveCreds: () => write(creds, 'creds'),

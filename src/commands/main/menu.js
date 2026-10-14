@@ -64,14 +64,14 @@ module.exports = {
           .join('\n');
 
         cards.push({
-          body: proto.Message.InteractiveMessage.Body.fromObject({ text: commandsText }),
-          footer: proto.Message.InteractiveMessage.Footer.fromObject({}),
-          header: proto.Message.InteractiveMessage.Header.fromObject({
+          body: proto.Message.InteractiveMessage.Body.create({ text: commandsText }),
+          footer: proto.Message.InteractiveMessage.Footer.create({}),
+          header: proto.Message.InteractiveMessage.Header.create({
             title: `</> ${toUpper(type)} </>\n`,
             hasMediaAttachment: !!mediaMessage,
             ...mediaMessage,
           }),
-          nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
+          nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
             buttons: [
               {
                 name: 'cta_url',
@@ -92,18 +92,18 @@ module.exports = {
           viewOnceMessage: {
             message: {
               messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
-              interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+              interactiveMessage: proto.Message.InteractiveMessage.create({
                 contextInfo: {
                   mentionedJid: [senderJid],
                   externalAdReply: { showAdAttribution: false },
                 },
-                body: proto.Message.InteractiveMessage.Body.fromObject({
+                body: proto.Message.InteractiveMessage.Body.create({
                   text: `Hello, @${senderID}\n\nPlease find the features listed by category!`,
                 }),
-                footer: proto.Message.InteractiveMessage.Footer.fromObject({
+                footer: proto.Message.InteractiveMessage.Footer.create({
                   text: '© 2025 Team EchoFox',
                 }),
-                carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.fromObject({
+                carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.create({
                   cards,
                 }),
               }),

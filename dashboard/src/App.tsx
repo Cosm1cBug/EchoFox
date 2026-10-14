@@ -11,6 +11,8 @@ import { setAuth, clearAuth } from "./lib/api";
 import { Overview } from "./pages/Overview";
 import { Groups } from "./pages/Groups";
 import { Chats } from "./pages/Chats";
+import { Status } from "./pages/Status";
+import { Chat } from "./pages/Chat";
 import { Metrics } from "./pages/Metrics";
 import { Diagnostics } from "./pages/Diagnostics";
 import { Alerts } from "./pages/Alerts";
@@ -28,6 +30,8 @@ const TABS = [
   "Overview",
   "Groups",
   "Chats",
+  "Status",
+  "Chat",
   "Leaderboard",
   "Contacts",
   "Presence",
@@ -86,6 +90,8 @@ export default function App() {
           {activeTab === "Overview" && <Overview />}
           {activeTab === "Groups" && <Groups />}
           {activeTab === "Chats" && <Chats />}
+          {activeTab === "Status" && <Status />}
+          {activeTab === "Chat" && <Chat />}
           {activeTab === "Leaderboard" && <Leaderboard />}
           {activeTab === "Contacts" && <Contacts />}
           {activeTab === "Presence" && <Presence />}

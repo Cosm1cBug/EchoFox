@@ -541,15 +541,26 @@ function startDashboard(port, store, config) {
   // which no backend implements) — Express dispatches to the first match, so
   // that dead handler won and this endpoint always returned an empty list,
   // which is why the dashboard's Chats tab never showed anything.
+  // GET /api/chats — merged chat/contact view.
+  //
+  // Prefers store.listChatsEnriched(), which returns one row per person with
+  // saved name + push name, both addressing forms (PN and LID), first/last
+  // inbound message timestamps, and live presence — all in a single query.
+  // Falls back to the plain chat list on backends that do not implement it.
   app.get('/api/chats', async (req, res, next) => {
     try {
-      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const limit = Math.min(Number(req.query.limit) || 200, 1000);
       const offset = Number(req.query.offset) || 0;
+
+      if (typeof store.listChatsEnriched === 'function') {
+        const out = store.listChatsEnriched({ limit, offset });
+        const result = out && typeof out.then === 'function' ? await out : out;
+        return res.json(result);
+      }
 
       if (typeof store.listChats !== 'function') {
         return res.json({ items: [], total: 0, limit, offset });
       }
-
       const all = await store.listChats();
       const items = all.slice(offset, offset + limit);
       res.json({ items, total: all.length, limit, offset });
@@ -735,6 +746,178 @@ function startDashboard(port, store, config) {
     } catch (e) {
       logger.warn({ err: e }, 'metrics export failed');
       res.status(500).type('text/plain').send('# metrics unavailable\n');
+    }
+  });
+
+  // ── Conversation history + send (dashboard Chat tab) ──────────────────
+  //
+  //   GET  /api/conversations/:jid/messages   → decoded history, oldest-first
+  //   POST /api/conversations/send            → { jid, text }
+  //
+  // The send path is the ONLY mutating action the dashboard exposes, so it is
+  // deliberately conservative:
+  //     • already behind the dashboard's HTTP Basic Auth (applied above)
+  //     • jid must be a well-formed user or group JID
+  //     • text must be a non-empty string, capped in length
+  //     • socket must exist and the connection must be open
+  //     • every send is written to the admin audit log
+  const JID_RE = /^(\d+@s\.whatsapp\.net|\d+@g\.us|\d+@lid)$/;
+  const MAX_SEND_CHARS = 4096;
+
+  app.get('/api/conversations/:jid/messages', async (req, res, next) => {
+    try {
+      const jid = req.params.jid;
+      if (!JID_RE.test(jid)) {
+        return res.status(400).json({ error: 'invalid_jid' });
+      }
+      if (typeof store.listMessages !== 'function') {
+        return res.json({ items: [], unavailable: true });
+      }
+      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const before = req.query.before ? Number(req.query.before) : null;
+
+      let items = store.listMessages(jid, { limit, before });
+      if (items && typeof items.then === 'function') items = await items;
+
+      res.json({ items, jid, limit, before });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.post('/api/conversations/send', async (req, res, next) => {
+    try {
+      const { jid, text } = req.body || {};
+
+      if (typeof jid !== 'string' || !JID_RE.test(jid)) {
+        return res.status(400).json({ error: 'invalid_jid' });
+      }
+      if (typeof text !== 'string' || !text.trim()) {
+        return res.status(400).json({ error: 'empty_text' });
+      }
+      if (text.length > MAX_SEND_CHARS) {
+        return res.status(413).json({ error: 'text_too_long', max: MAX_SEND_CHARS });
+      }
+
+      const diagnostics = require('../lib/diagnostics');
+      const sock = diagnostics.getRuntimeContext()?.sock;
+      if (!sock) {
+        return res.status(503).json({ error: 'socket_unavailable' });
+      }
+      const cs = require('../services/connectionState');
+      if (!cs.isConnected()) {
+        return res.status(503).json({ error: 'not_connected' });
+      }
+
+      // sock.sendMessage is wrapped by the outbound send queue in worker.js,
+      // so this respects processing.sendConcurrency automatically.
+      const sent = await sock.sendMessage(jid, { text });
+
+      try {
+        require('../services/adminAuditService').record({
+          actor_jid: 'dashboard',
+          chat_jid: jid,
+          cmd_name: 'dashboard:send',
+          prefix: '',
+          args: text.slice(0, 180),
+          kind: 'admin',
+          outcome: 'ok',
+        });
+      } catch (_) {
+        /* audit failure must never fail the send */
+      }
+
+      res.json({
+        success: true,
+        id: sent?.key?.id || null,
+        jid,
+        ts: sent?.messageTimestamp || null,
+      });
+    } catch (e) {
+      try {
+        require('../services/adminAuditService').record({
+          actor_jid: 'dashboard',
+          chat_jid: req.body?.jid || null,
+          cmd_name: 'dashboard:send',
+          prefix: '',
+          args: String(req.body?.text || '').slice(0, 180),
+          kind: 'admin',
+          outcome: 'failure',
+        });
+      } catch (_) {
+        /* ignore */
+      }
+      next(e);
+    }
+  });
+
+  // ── Status / Stories ──────────────────────────────────────────────────
+  //
+  // Read-only projections over data already being collected:
+  //   statuses  → messages WHERE jid='status@broadcast'
+  //   views     → message_receipts WHERE jid='status@broadcast'
+  // (Baileys emits message-receipt.update for status broadcasts — see
+  // messages-recv.js:1186 — and EchoFox already records those.)
+  //
+  // Responses are grouped by LOCAL calendar day so the UI can render
+  // "No status/story today" without doing date maths on the client.
+  app.get('/api/statuses', async (req, res, next) => {
+    try {
+      if (typeof store.listStatuses !== 'function') {
+        return res.json({ success: true, days: [], total: 0, unavailable: true });
+      }
+
+      const days = Math.max(1, Math.min(365, Number(req.query.days) || 30));
+      const since = Math.floor(Date.now() / 1000) - days * 86400;
+      const limit = Math.min(Number(req.query.limit) || 500, 2000);
+
+      const raw = store.listStatuses({ since, limit });
+      const items = raw && typeof raw.then === 'function' ? await raw : raw;
+
+      // Bucket by local date (YYYY-MM-DD).
+      const byDay = new Map();
+      for (const it of items) {
+        const d = new Date(it.ts * 1000);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+          d.getDate(),
+        ).padStart(2, '0')}`;
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key).push(it);
+      }
+
+      // Emit every day in the window, newest first, so the UI can show
+      // "No status/story today" as an explicit empty day.
+      const out = [];
+      for (let i = 0; i < days; i += 1) {
+        const d = new Date(Date.now() - i * 86400 * 1000);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+          d.getDate(),
+        ).padStart(2, '0')}`;
+        const dayItems = byDay.get(key) || [];
+        out.push({
+          date: key,
+          items: dayItems,
+          count: dayItems.length,
+          mine: dayItems.filter((x) => x.fromMe).length,
+          totalViews: dayItems.reduce((n, x) => n + (x.viewCount || 0), 0),
+        });
+      }
+
+      res.json({ success: true, days: out, total: items.length, windowDays: days });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.get('/api/statuses/:id/viewers', async (req, res, next) => {
+    try {
+      if (typeof store.getStatusViewers !== 'function') {
+        return res.json({ success: true, viewers: [] });
+      }
+      const viewers = store.getStatusViewers(req.params.id, 500);
+      res.json({ success: true, id: req.params.id, viewers, count: viewers.length });
+    } catch (e) {
+      next(e);
     }
   });
 

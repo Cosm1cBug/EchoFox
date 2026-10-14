@@ -18,7 +18,7 @@ const Database = require('better-sqlite3');
 const path = require('node:path');
 const { existsSync, mkdirSync } = require('node:fs');
 const { LRUCache } = require('lru-cache');
-const { proto } = require('@whiskeysockets/baileys');
+const { proto, extractMessageContent, getContentType } = require('@whiskeysockets/baileys');
 const { isNonHumanContent, normaliseTs } = require('../lib/messageFilters');
 const { config } = require('../lib/configLoader');
 const { SQL_DDL: PARTICIPANTS_DDL } = require('./schema/participants');
@@ -678,6 +678,114 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     lidMappingUpsert: db.prepare(
       `INSERT INTO lid_mapping (lid, jid, updated_at) VALUES (?, ?, ?) ON CONFLICT(lid) DO UPDATE SET jid=excluded.jid, updated_at=excluded.updated_at`,
     ),
+    // ─── Merged chat/contact view (dashboard Chats tab) ──────────────────
+    // One round trip joining: saved name + push name (contacts), chat state
+    // (chats), BOTH addressing forms (lid_mapping, looked up in either
+    // direction), first/last inbound message (messages) and live presence
+    // (presence). Replaces the N+1 the Chats page would otherwise need.
+    //
+    // `base` is the UNION of contacts and chats because either can exist
+    // without the other: a contact may have no chat row yet, and a chat may
+    // exist for someone we have no contact entry for.
+    chatEnriched: db.prepare(`
+      SELECT
+        base.jid                                  AS jid,
+        c.name                                    AS savedName,
+        c.notify                                  AS pushName,
+        c.img_url                                 AS imgUrl,
+        c.verified_name                           AS verifiedName,
+        ch.name                                   AS chatName,
+        ch.unread                                 AS unread,
+        ch.pinned                                 AS pinned,
+        ch.archived                               AS archived,
+        pn.jid                                    AS phoneJid,
+        ld.lid                                    AS lid,
+        m.first_ts                                AS firstSeenTs,
+        m.last_ts                                 AS lastSeenTs,
+        m.msg_count                               AS messageCount,
+        p.last_state                              AS presenceState,
+        p.last_seen_ts                            AS presenceLastSeenTs,
+        p.updated_at                              AS presenceUpdatedAt
+      FROM (
+        SELECT jid FROM contacts
+        UNION
+        SELECT jid FROM chats
+      ) AS base
+      LEFT JOIN contacts    c  ON c.jid  = base.jid
+      LEFT JOIN chats       ch ON ch.jid = base.jid
+      LEFT JOIN lid_mapping pn ON pn.lid = base.jid
+      LEFT JOIN lid_mapping ld ON ld.jid = base.jid
+      LEFT JOIN (
+        SELECT jid, MIN(ts) AS first_ts, MAX(ts) AS last_ts, COUNT(*) AS msg_count
+        FROM messages
+        WHERE from_me = 0
+        GROUP BY jid
+      ) m ON m.jid = base.jid
+      LEFT JOIN presence    p  ON p.jid  = base.jid
+      ORDER BY COALESCE(m.last_ts, ch.ts, 0) DESC
+      LIMIT ? OFFSET ?
+    `),
+    chatEnrichedCount: db.prepare(`
+      SELECT COUNT(*) AS n FROM (SELECT jid FROM contacts UNION SELECT jid FROM chats)
+    `),
+
+    // ─── Conversation history (dashboard Chat tab) ───────────────────────
+    // Newest-first then re-reversed by the caller so pagination stays cheap
+    // (the (jid, ts DESC) index serves both the filter and the ORDER BY).
+    messageHistory: db.prepare(`
+      SELECT id, from_me, participant, ts, msg
+      FROM messages
+      WHERE jid = ?
+      ORDER BY ts DESC
+      LIMIT ?
+    `),
+    messageHistoryBefore: db.prepare(`
+      SELECT id, from_me, participant, ts, msg
+      FROM messages
+      WHERE jid = ? AND ts < ?
+      ORDER BY ts DESC
+      LIMIT ?
+    `),
+
+    // ─── Status / Stories ────────────────────────────────────────────────
+    // Statuses are ordinary rows in `messages` with jid = 'status@broadcast'
+    // (messages.upsert is not filtered for status when features.readStatus is
+    // on, and the store's bind has no status exclusion). Views arrive as
+    // message-receipt.update with key.remoteJid='status@broadcast' and land in
+    // `message_receipts` via the existing handler — verified against
+    // baileys/lib/Socket/messages-recv.js:1186, which emits that event for
+    // isJidStatusBroadcast(remoteJid).
+    //
+    // So no new tables or capture paths are required; these are read-only
+    // projections over data already being collected.
+    statusList: db.prepare(`
+      SELECT id, from_me, participant, ts, msg
+      FROM messages
+      WHERE jid = 'status@broadcast' AND ts >= ?
+      ORDER BY ts DESC
+      LIMIT ?
+    `),
+    statusListByAuthor: db.prepare(`
+      SELECT id, from_me, participant, ts, msg
+      FROM messages
+      WHERE jid = 'status@broadcast' AND ts >= ? AND participant = ?
+      ORDER BY ts DESC
+      LIMIT ?
+    `),
+    statusViewCounts: db.prepare(`
+      SELECT message_id, COUNT(*) AS n, MAX(ts) AS last_ts
+      FROM message_receipts
+      WHERE jid = 'status@broadcast'
+      GROUP BY message_id
+    `),
+    statusViewers: db.prepare(`
+      SELECT recipient, status, ts
+      FROM message_receipts
+      WHERE jid = 'status@broadcast' AND message_id = ?
+      ORDER BY ts DESC
+      LIMIT ?
+    `),
+
     lidMappingGet: db.prepare(`SELECT jid FROM lid_mapping WHERE lid = ?`),
     lidMappingRev: db.prepare(`SELECT lid FROM lid_mapping WHERE jid = ?`),
 
@@ -1230,6 +1338,201 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         return [];
       }
     },
+    /**
+     * Merged chat/contact view for the dashboard's Chats tab.
+     *
+     * Each row carries: jid, savedName (address-book name), pushName (their
+     * own display name), phoneJid + lid (both addressing forms when known),
+     * firstSeenTs/lastSeenTs (inbound messages), and presence state.
+     *
+     * @param {{limit?: number, offset?: number}} [opts]
+     */
+    listChatsEnriched({ limit = 200, offset = 0 } = {}) {
+      try {
+        const rows = stmts.chatEnriched.all(limit, offset);
+        return { items: rows, total: stmts.chatEnrichedCount.get()?.n || 0, limit, offset };
+      } catch (e) {
+        logger.warn({ err: e }, 'listChatsEnriched failed');
+        return { items: [], total: 0, limit, offset };
+      }
+    },
+
+    /**
+     * Conversation history for one chat, oldest-first.
+     *
+     * Decoded the same way as listStatuses: wrappers (ephemeral / viewOnce /
+     * deviceSent) are unwrapped with extractMessageContent first, then the
+     * concrete type is read with getContentType. Bodies may be null when
+     * privacy.storeMessageBodies is false — those rows come back as
+     * `type: 'unavailable'` rather than being dropped, so the UI can still
+     * show that a message happened.
+     *
+     * @param {string} jid
+     * @param {{limit?: number, before?: number}} [opts] `before` is a ts cursor
+     */
+    listMessages(jid, { limit = 100, before = null } = {}) {
+      try {
+        if (!jid) return [];
+        const capped = Math.max(1, Math.min(Number(limit) || 100, 500));
+        const rows = before
+          ? stmts.messageHistoryBefore.all(jid, Number(before), capped)
+          : stmts.messageHistory.all(jid, capped);
+
+        const out = rows.map((r) => {
+          let type = 'unavailable';
+          let text = null;
+          let mimetype = null;
+          let media = null;
+
+          if (r.msg) {
+            type = 'unknown';
+            try {
+              const decoded = proto.Message.decode(r.msg);
+              const inner = extractMessageContent(decoded) || decoded;
+              const ct = getContentType(inner) || '';
+              if (ct === 'conversation') {
+                type = 'text';
+                text = inner.conversation || null;
+              } else if (ct === 'extendedTextMessage') {
+                type = 'text';
+                text = inner.extendedTextMessage?.text || null;
+              } else if (ct === 'imageMessage') {
+                type = 'image';
+                text = inner.imageMessage?.caption || null;
+                mimetype = inner.imageMessage?.mimetype || null;
+                media = {
+                  id: r.id,
+                  width: inner.imageMessage?.width,
+                  height: inner.imageMessage?.height,
+                };
+              } else if (ct === 'videoMessage') {
+                type = 'video';
+                text = inner.videoMessage?.caption || null;
+                mimetype = inner.videoMessage?.mimetype || null;
+                media = { id: r.id, seconds: inner.videoMessage?.seconds };
+              } else if (ct === 'audioMessage') {
+                type = 'audio';
+                mimetype = inner.audioMessage?.mimetype || null;
+                media = { id: r.id, seconds: inner.audioMessage?.seconds };
+              } else if (ct === 'documentMessage') {
+                type = 'document';
+                text = inner.documentMessage?.fileName || null;
+                mimetype = inner.documentMessage?.mimetype || null;
+              } else if (ct === 'stickerMessage') {
+                type = 'sticker';
+                mimetype = inner.stickerMessage?.mimetype || null;
+                media = { id: r.id };
+              } else if (ct === 'protocolMessage') {
+                type = 'system';
+              } else if (ct) {
+                type = ct.replace(/Message$/, '').toLowerCase();
+              }
+            } catch (e) {
+              logger.debug({ err: e, id: r.id }, 'message decode failed');
+            }
+          }
+
+          return {
+            id: r.id,
+            fromMe: !!r.from_me,
+            participant: r.participant || null,
+            ts: r.ts,
+            type,
+            text,
+            mimetype,
+            media,
+          };
+        });
+
+        return out.reverse(); // oldest-first for rendering
+      } catch (e) {
+        logger.warn({ err: e, jid }, 'listMessages failed');
+        return [];
+      }
+    },
+
+    /**
+     * Status/Story rows in reverse-chronological order.
+     *
+     * Each item carries a decoded `type` ('text' | 'image' | 'video' |
+     * 'audio' | 'unknown'), the caption/text when present, and a `viewCount`
+     * from message_receipts. View counts are only meaningful for our OWN
+     * statuses (fromMe === true) — WhatsApp sends read receipts for those
+     * only; for someone else's status we simply have no view data.
+     *
+     * @param {{since?: number, participant?: string, limit?: number}} [opts]
+     */
+    listStatuses({ since = 0, participant = null, limit = 500 } = {}) {
+      try {
+        const rows = participant
+          ? stmts.statusListByAuthor.all(since, participant, limit)
+          : stmts.statusList.all(since, limit);
+
+        const counts = new Map();
+        for (const c of stmts.statusViewCounts.all()) counts.set(c.message_id, c.n);
+
+        return rows.map((r) => {
+          let type = 'unknown';
+          let text = null;
+          let mimetype = null;
+
+          if (r.msg) {
+            try {
+              const decoded = proto.Message.decode(r.msg);
+              const inner = extractMessageContent(decoded) || decoded;
+              const ct = getContentType(inner) || '';
+              if (ct === 'conversation') {
+                type = 'text';
+                text = inner.conversation || null;
+              } else if (ct === 'extendedTextMessage') {
+                type = 'text';
+                text = inner.extendedTextMessage?.text || null;
+              } else if (ct === 'imageMessage') {
+                type = 'image';
+                text = inner.imageMessage?.caption || null;
+                mimetype = inner.imageMessage?.mimetype || null;
+              } else if (ct === 'videoMessage') {
+                type = 'video';
+                text = inner.videoMessage?.caption || null;
+                mimetype = inner.videoMessage?.mimetype || null;
+              } else if (ct === 'audioMessage') {
+                type = 'audio';
+                mimetype = inner.audioMessage?.mimetype || null;
+              } else if (ct) {
+                type = ct.replace(/Message$/, '').toLowerCase();
+              }
+            } catch (e) {
+              logger.debug({ err: e, id: r.id }, 'status decode failed');
+            }
+          }
+
+          return {
+            id: r.id,
+            fromMe: !!r.from_me,
+            participant: r.participant || null,
+            ts: r.ts,
+            type,
+            text,
+            mimetype,
+            viewCount: counts.get(r.id) || 0,
+          };
+        });
+      } catch (e) {
+        logger.warn({ err: e }, 'listStatuses failed');
+        return [];
+      }
+    },
+
+    /** Who viewed a specific status (only ever populated for our own). */
+    getStatusViewers(statusId, limit = 500) {
+      try {
+        return stmts.statusViewers.all(statusId, limit);
+      } catch (e) {
+        logger.warn({ err: e, statusId }, 'getStatusViewers failed');
+        return [];
+      }
+    },
+
     async getChat(jid) {
       try {
         return stmts.chatGet.get(jid) || null;

@@ -21,29 +21,43 @@ module.exports = async ({ u }) => {
   if (!store?.recordPresence) return;
 
   const list = Array.isArray(u) ? u : [u];
+  const meaningfulStates = ['unavailable', 'offline', 'available'];
 
   for (const p of list) {
     if (!p?.id) continue;
 
-    try {
-      const presences = p.presences || {};
-      const firstKey = Object.keys(presences)[0];
-      const state = firstKey ? presences[firstKey]?.lastKnownPresence : null;
+    // `p.id` is the CHAT jid. `p.presences` is a map of PARTICIPANT jid ->
+    // presence. The previous implementation read only `Object.keys(presences)[0]`
+    // and stored it against `p.id`, so:
+    //   • for a 1:1 chat it happened to work (chat jid === participant jid)
+    //   • for a GROUP it recorded ONE arbitrary participant's state against the
+    //     GROUP jid, and silently dropped everyone else
+    // The dashboard's per-contact presence dots need the participant, so we
+    // now iterate every entry and key both the cache and the store by it.
+    const presences = p.presences || {};
+    const entries = Object.entries(presences);
+    if (!entries.length) continue;
 
-      // Update in-memory cache (fast path)
-      presenceCache.set(p.id, {
-        state: state || 'unknown',
-        lastSeen: Date.now(),
-      });
+    for (const [participantJid, data] of entries) {
+      if (!participantJid) continue;
+      try {
+        const state = data?.lastKnownPresence || null;
+        const lastSeen = Number(data?.lastSeen) || null;
 
-      // Only persist to database for meaningful states
-      // (offline, unavailable, or when user was previously online)
-      const meaningfulStates = ['unavailable', 'offline', 'available'];
-      if (meaningfulStates.includes(state)) {
-        await store.recordPresence(p.id, state, null, null);
+        // Update in-memory cache (fast path) — keyed by the PERSON.
+        presenceCache.set(participantJid, {
+          state: state || 'unknown',
+          lastSeen: lastSeen || Date.now(),
+        });
+
+        // Persist only meaningful states. chatJid is recorded alongside so the
+        // dashboard can scope presence to a conversation when it wants to.
+        if (meaningfulStates.includes(state)) {
+          await store.recordPresence(participantJid, state, lastSeen, p.id || null);
+        }
+      } catch (err) {
+        logger.debug({ err, jid: participantJid }, 'presence update failed');
       }
-    } catch (err) {
-      logger.debug({ err, jid: p.id }, 'presence update failed');
     }
   }
 };

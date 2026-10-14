@@ -20,7 +20,7 @@
  *   four backends (sqlite/postgres/mongo/redis) — see src/store/db.js.
  */
 
-const { classifyAction } = require('../store/schema/participants');
+const { classifyAction, _participantId } = require('../store/schema/participants');
 const { config } = require('../lib/configLoader');
 const greetings = require('../services/greetingService');
 const logger = require('../core/logger').child({ mod: 'gp.update' });
@@ -31,14 +31,33 @@ module.exports = async function onGroupParticipants({ sock, store, u }) {
   const { id: groupJid, participants, action: rawAction, author } = u;
   const ts = Math.floor(Date.now() / 1000);
 
+  // ─── 0. Normalise participants to JID strings ──────────────────────
+  // Baileys 7.x sends `GroupParticipant[]` = Contact & {admin}, i.e. OBJECTS
+  // like { id, phoneNumber, admin }. This handler used to pass that object
+  // straight into the store, where better-sqlite3 rejected the bind
+  // ("Too few parameter values were provided"). The throw was caught and
+  // logged at WARN, so the event table never received a row and the
+  // dashboard's participant history was permanently empty. It also made
+  // `classifyAction` compare a string to an object (always false → every
+  // removal mislabelled as a kick) and made `participant.split('@')` throw.
+  //
+  // One normalisation here fixes all three.
+  const people = participants
+    .map((p) => ({
+      id: _participantId(p),
+      phoneNumber: typeof p === 'object' ? p?.phoneNumber || null : null,
+      admin: typeof p === 'object' ? (p?.admin ?? null) : null,
+    }))
+    .filter((p) => !!p.id);
+
   // ─── 1. Record each (participant, classified action) into event log
-  for (const p of participants) {
-    const action = classifyAction(rawAction, author, p);
+  for (const person of people) {
+    const action = classifyAction(rawAction, author, person.id);
     try {
-      await store.recordParticipantEvent(groupJid, p, action, author || null, ts);
+      await store.recordParticipantEvent(groupJid, person.id, action, author || null, ts);
     } catch (e) {
       logger.warn(
-        { err: e, groupJid, participant: p, action },
+        { err: e, groupJid, participant: person.id, action },
         'failed to record participant event',
       );
     }
@@ -53,9 +72,12 @@ module.exports = async function onGroupParticipants({ sock, store, u }) {
   }
 
   // ─── 3. Structured log + optional channel notification
-  const classified = participants.map((p) => ({
-    participant: p,
-    action: classifyAction(rawAction, author, p),
+  const classified = people.map((p) => ({
+    // `participant` is deliberately the JID STRING — the dashboard's
+    // HistoryTimeline, the channel notice and greetings all expect a string.
+    participant: p.id,
+    phoneNumber: p.phoneNumber,
+    action: classifyAction(rawAction, author, p.id),
   }));
   logger.info(
     { groupJid, rawAction, author, classified, count: participants.length },

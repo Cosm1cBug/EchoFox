@@ -14,12 +14,28 @@ export function clearAuth() {
   authHeader = null;
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const headers: HeadersInit = {};
+// `init` lets callers issue non-GET requests. Before v1.19.0 this helper
+// accepted no second argument, so a caller passing { method: 'POST' } silently
+// issued a GET instead — the request "succeeded" with the wrong verb.
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) || {}),
+  };
   if (authHeader) headers["Authorization"] = authHeader;
 
-  const res = await fetch(path, { headers, credentials: "include" });
-  if (!res.ok) throw new Error(`API Error: ${res.status}`);
+  const res = await fetch(path, { ...init, headers, credentials: "include" });
+  if (!res.ok) {
+    // Surface the server's error code when there is one (e.g. not_connected,
+    // text_too_long) instead of a bare status number.
+    let detail = "";
+    try {
+      const body = await res.clone().json();
+      detail = body?.error ? ` (${body.error})` : "";
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(`API Error: ${res.status}${detail}`);
+  }
   return res.json();
 }
 
@@ -46,6 +62,21 @@ export const getContacts = (limit = 100, offset = 0) =>
 
 export const getContact = (jid: string) =>
   fetchJson(`/api/contacts/${encodeURIComponent(jid)}`);
+
+export const getConversation = (jid: string, limit = 100) =>
+  fetchJson(`/api/conversations/${encodeURIComponent(jid)}/messages?limit=${limit}`);
+
+export const sendMessage = (jid: string, text: string) =>
+  fetchJson("/api/conversations/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jid, text }),
+  });
+
+export const getStatuses = (days = 30) => fetchJson(`/api/statuses?days=${days}`);
+
+export const getStatusViewers = (id: string) =>
+  fetchJson(`/api/statuses/${encodeURIComponent(id)}/viewers`);
 
 export const getChats = (params?: { limit?: number; offset?: number }) => {
   const query = params

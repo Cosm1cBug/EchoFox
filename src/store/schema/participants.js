@@ -36,6 +36,21 @@
  * schema-creation code lives in its own store file and imports from here.
  */
 
+/**
+ * Extract the JID from a group-participant payload.
+ *
+ * Baileys 7.x emits `GroupParticipant = Contact & { admin }`, i.e. an OBJECT
+ * such as { id, phoneNumber, admin }. Older payloads and our own tests use a
+ * bare JID string. Everything downstream (schema columns, `.split('@')`,
+ * mentions arrays) expects a string, so normalise at the boundary —
+ * `String(obj)` would silently produce '[object Object]'.
+ */
+function _participantId(p) {
+  if (!p) return null;
+  if (typeof p === 'string') return p;
+  return p.id || p.jid || p.lid || p.phoneNumber || null;
+}
+
 const ACTIONS = Object.freeze({
   ADD: 'add',
   JOIN: 'join',
@@ -57,10 +72,15 @@ const VALID_ACTIONS = new Set(Object.values(ACTIONS));
  * Returns one of ACTIONS.
  */
 function classifyAction(rawAction, actor, participant) {
+  // `participant` may be a GroupParticipant OBJECT (v7: Contact & {admin})
+  // or a plain JID string (older payloads / tests). Normalise before the
+  // comparison — `actor === participant` against an object is always false,
+  // which would mislabel every voluntary leave as a kick.
+  const pid = _participantId(participant);
   switch (rawAction) {
     case 'remove':
       // Baileys doesn't tell us "left" vs "kicked"; we derive it.
-      return actor && actor === participant ? ACTIONS.LEAVE : ACTIONS.KICK;
+      return actor && pid && actor === pid ? ACTIONS.LEAVE : ACTIONS.KICK;
     case 'add':
       return ACTIONS.ADD;
     case 'promote':
@@ -116,6 +136,7 @@ const SQL_DDL = {
 
 module.exports = {
   ACTIONS,
+  _participantId,
   VALID_ACTIONS,
   classifyAction,
   SQL_DDL,

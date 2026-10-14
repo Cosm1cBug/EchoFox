@@ -104,7 +104,7 @@ LABEL org.opencontainers.image.authors="COSM1CBUG <cosmicbug.me@pm.me>"
 LABEL org.opencontainers.image.vendor="EchoFox"
 
 ENV NODE_ENV=production \
-    NODE_OPTIONS="--enable-source-maps --max-old-space-size=512" \
+    NODE_OPTIONS="--enable-source-maps --max-old-space-size=1024" \
     LOG_LEVEL=info \
     PORT=3000 \
     TZ=Asia/Kolkata

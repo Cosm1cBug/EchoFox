@@ -7,6 +7,8 @@
 
 const fs = require('fs').promises;
 const { config } = require('../../lib/configLoader');
+const { isConfiguredAdmin } = require('../../lib/jidResolve');
+const { getStore } = require('../../store/instance');
 const {
   proto,
   generateWAMessageFromContent,
@@ -28,7 +30,7 @@ module.exports = {
   start: async (sock, m, { commands, prefix, toUpper, ctx }) => {
     // === FIX: Safe sender ID extraction ===
     const senderJid = ctx?.sender || m?.sender || '';
-    const isAdmin = (config.admins || []).includes(senderJid);
+    const isAdmin = await isConfiguredAdmin(sock, getStore(), senderJid, config.admins);
     const groupedCommands = {};
 
     // Safe sender ID without domain part
@@ -168,7 +170,7 @@ module.exports = {
   noLimit: true,
 
   async start(sock, m, { ctx, commands, prefix, config }) {
-    const isAdmin = (config.admins || []).includes(ctx.sender);
+    const isAdmin = await isConfiguredAdmin(sock, getStore(), ctx.sender, config.admins);
 
     // Group commands by their category (folder name)
     const grouped = new Map();

@@ -6,7 +6,7 @@ module.exports = {
       node_args: '--enable-source-maps --max-old-space-size=1024',
       instances: 1, // bootstrap already supervises a fork
       autorestart: true,
-      max_memory_restart: '900M',
+      max_memory_restart: '1200M',
       kill_timeout: 12000,
       listen_timeout: 8000,
       wait_ready: false,

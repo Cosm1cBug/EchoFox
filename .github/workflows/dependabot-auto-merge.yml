@@ -59,13 +59,25 @@ jobs:
             echo "🚫 $UT — needs manual review"
           fi
 
-      - name: Enable auto-merge (squash)
+      - name: Enable auto-merge (squash) — patch bumps only
         if: steps.decide.outputs.merge == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
         run: |
           # Squash-merge keeps history clean. GitHub will wait for required
           # checks then auto-merge. If checks fail, the PR stays open.
-          gh pr merge --auto --squash "$PR_URL"
-          gh pr review --approve "$PR_URL" || true   # optional 'auto-approved' marker
+          #
+          # v1.18.0 — minors no longer auto-merge, and we no longer
+          # self-approve. Auto-approving let a compromised minor release
+          # satisfy a required approval and land with no human review
+          # (the sharp / undici class of incident). Minors now wait.
+          if [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]]; then
+            gh pr merge --auto --squash "$PR_URL"
+            echo "✅ patch bump — auto-merge enabled"
+          else
+            gh pr comment "$PR_URL" --body \
+              "🔎 **Minor bump — awaiting human review.** Patch bumps auto-merge; minors and majors do not. Review the changelog, then approve manually."
+            echo "⏸  minor bump — left open for review"
+          fi

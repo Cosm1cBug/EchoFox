@@ -3,8 +3,8 @@
 > A production-grade WhatsApp bot built on **[Baileys 7.x](https://github.com/WhiskeySockets/Baileys)** — typed, observable, scalable, and friendly to extend.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Node ≥22](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)](https://nodejs.org/)
-[![Baileys 6.7.24](https://img.shields.io/badge/baileys-6.7.24-orange)](https://www.npmjs.com/package/@whiskeysockets/baileys)
+[![Node ≥22.12](https://img.shields.io/badge/node-%3E%3D22.12.0-brightgreen)](https://nodejs.org/)
+[![Baileys 7.0.0-rc14](https://img.shields.io/badge/baileys-7.0.0--rc14-orange)](https://www.npmjs.com/package/@whiskeysockets/baileys)
 [![npm version](https://img.shields.io/npm/v/echofox?logo=npm)](https://www.npmjs.com/package/echofox)
 [![Docker Hub](https://img.shields.io/badge/docker-cosm1cbug%2Fechofox-blue?logo=docker)](https://hub.docker.com/r/cosm1cbug/echofox)
 [![GHCR](https://img.shields.io/badge/ghcr-Cosm1cBug%2Fechofox-181717?logo=github)](https://github.com/Cosm1cBug/EchoFox/pkgs/container/echofox)
@@ -64,11 +64,11 @@
 
 ### Prerequisites
 
-|          |                                                           |
-| -------- | --------------------------------------------------------- |
-| Node.js  | ≥ 20 (tested on 20 + 22 in CI)                            |
-| OS       | Linux / macOS / Windows 11                                |
-| WhatsApp | A real phone number you can scan a QR / pairing code from |
+|          |                                                                                                                                          |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Node.js  | ≥ 22.12 — Baileys 7.x is ESM-only and is loaded via `require()`; unflagged `require(esm)` landed in Node 22.12 (and 20.19). CI: Node 22. |
+| OS       | Linux / macOS / Windows 11                                                                                                               |
+| WhatsApp | A real phone number you can scan a QR / pairing code from                                                                                |
 
 ### Install
 
@@ -490,7 +490,7 @@ Pull requests welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md).
 CI gates every PR with:
 
 - ESLint + Prettier
-- 147 automated tests (Node 20 + 22 matrix)
+- 309 automated tests (CI: Node 22)
 - AGPL header check (every `.js` file must have one)
 - Dashboard TypeScript typecheck
 - TruffleHog secret scan

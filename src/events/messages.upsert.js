@@ -40,6 +40,7 @@ const afkState = require('../services/afkState');
 const antilink = require('../services/antilinkService');
 const muteService = require('../services/muteService');
 const adminAudit = require('../services/adminAuditService');
+const { isConfiguredAdmin } = require('../lib/jidResolve');
 
 // ─── Inbound rate limiter (token bucket per sender) ──────────────────────
 const senderLimiter = makeRateLimiter({
@@ -177,7 +178,7 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
 
   // Privacy: block unknown senders in private chats
   if (config.privacy?.blockUnknownSenders && ctx.isPrivate) {
-    const isAdmin = (config.admins || []).includes(ctx.sender);
+    const isAdmin = await isConfiguredAdmin(sock, store, ctx.sender);
     if (!isAdmin) {
       const known = await store.hasContact?.(ctx.sender);
       if (!known) {
@@ -231,7 +232,7 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
       if (alCfg.enabled) {
         const host = antilink.findFirstHost(ctx.body);
         const whitelisted = antilink.isWhitelisted(host, alCfg.whitelist);
-        const callerIsAdmin = (config.admins || []).includes(ctx.sender);
+        const callerIsAdmin = await isConfiguredAdmin(sock, store, ctx.sender);
         // Group-admin exemption — fetch metadata lazily
         let groupAdmin = callerIsAdmin;
         if (!groupAdmin) {
@@ -338,7 +339,7 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
   if (!cmdName) return;
 
   // Rate limiting
-  const isAdminUser = (config.admins || []).includes(ctx.sender);
+  const isAdminUser = await isConfiguredAdmin(sock, store, ctx.sender);
   if (!isAdminUser && !senderLimiter.tryConsume(ctx.sender)) {
     metrics.incRateLimit();
     return ctx.reply('⏱️ Slow down a bit — try again in a few seconds.');

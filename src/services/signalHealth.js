@@ -56,6 +56,8 @@ const MAP_PRUNE_INTERVAL_MS = 10 * 60 * 1000;
 const _failures = new Map();
 // jid -> lastRecoveryTs
 const _recoveries = new Map();
+// Total self-healing prekey failures seen (observability only).
+let _benignCount = 0;
 
 // Static recognisers — matched against Error.message
 const KNOWN_PATTERNS = [
@@ -66,10 +68,43 @@ const KNOWN_PATTERNS = [
   /No identity key/i,
 ];
 
-function _isDecryptionFailure(err) {
+/**
+ * Decryption failures that are SELF-HEALING and must NOT trigger the session
+ * reset below.
+ *
+ * `Invalid PreKey ID` is thrown by libsignal at
+ *   SessionBuilder.initIncoming → storage.loadPreKey(message.preKeyId)
+ * when the sender referenced a one-time prekey we no longer hold. Signal
+ * prekeys are single-use and Baileys deletes each one the moment it is
+ * consumed (Signal/libsignal.js: `removePreKey: id => keys.set({'pre-key':
+ * {[id]: null}})`).
+ *
+ * So the sequence is:
+ *   1. sender cached our prekey bundle and did not message for a while
+ *   2. we consumed that prekey on an earlier message (or rotated it)
+ *   3. sender sends a `pkmsg` naming the already-consumed prekey
+ *   4. libsignal throws → Baileys sends a retry receipt
+ *   5. sender fetches a FRESH bundle and re-encrypts → the message arrives
+ *
+ * Deleting our session record does NOT help: the stale material is on the
+ * sender's side. Worse, wiping a healthy session forces an unnecessary
+ * re-handshake, so routing this through the recovery path would do harm and
+ * no good. It is counted separately instead, purely for observability.
+ */
+const BENIGN_PATTERNS = [/Invalid PreKey ID/i, /Missing SignedPreKey/i];
+
+function _matchesAny(patterns, err) {
   if (!err) return false;
   const msg = String(err.message || err);
-  return KNOWN_PATTERNS.some((re) => re.test(msg));
+  return patterns.some((re) => re.test(msg));
+}
+
+function _isDecryptionFailure(err) {
+  return _matchesAny(KNOWN_PATTERNS, err);
+}
+
+function _isBenignFailure(err) {
+  return _matchesAny(BENIGN_PATTERNS, err);
 }
 
 /**
@@ -107,7 +142,10 @@ function _normaliseJid(jid) {
  *   recovery) and the caller should demote the log to debug.
  */
 async function record(sock, logObj) {
-  if (!logObj || !_isDecryptionFailure(logObj.err)) {
+  // Accept both classes up front. Benign patterns must get past this guard or
+  // the branch below is unreachable — the logger would keep emitting them at
+  // ERROR and they would never be classified.
+  if (!logObj || (!_isDecryptionFailure(logObj.err) && !_isBenignFailure(logObj.err))) {
     return { matched: false };
   }
 
@@ -121,6 +159,20 @@ async function record(sock, logObj) {
     '';
   const jid = _normaliseJid(rawJid);
   if (!jid) return { matched: true, jid: '', count: 0 };
+
+  // Self-healing prekey churn: recognise it (so the logger demotes it and
+  // stops paging anyone at ERROR) but never count it toward recovery.
+  if (_isBenignFailure(logObj.err)) {
+    _benignCount += 1;
+    return {
+      matched: true,
+      benign: true,
+      jid,
+      count: 0,
+      willRecover: false,
+      recovered: false,
+    };
+  }
 
   const now = Date.now();
   const cur = _failures.get(jid);
@@ -220,6 +272,7 @@ function snapshot() {
 function _resetForTests() {
   _failures.clear();
   _recoveries.clear();
+  _benignCount = 0;
 }
 
 module.exports = {

@@ -155,20 +155,27 @@ async function resolveLidForPn(sock, store, pn) {
  * @param {string[]} [admins]  defaults to config.admins
  * @returns {Promise<boolean>}
  */
-async function isConfiguredAdmin(sock, store, senderJid, admins) {
+async function isConfiguredAdmin(sock, store, senderJid, admins, altJid) {
   const list = admins || require('./configLoader').config.admins || [];
   if (!senderJid || !list.length) return false;
 
-  // Fast path — exact match (covers admins already stored in LID form).
+  // Fast path 1 — exact match (covers admins already stored in LID form).
   if (list.includes(senderJid)) return true;
+
+  // Fast path 2 — the alternate addressing form Baileys already decoded onto
+  // the message key (ctx.senderPn / m.key.participantAlt). This is the common
+  // case and needs NO lookup at all: the server supplies both forms whenever
+  // the stanza is LID-addressed, which is the default on v7. Checked before
+  // the async lidMapping path because it is synchronous and always fresh.
+  if (altJid && list.includes(altJid)) return true;
 
   try {
     if (senderJid.endsWith('@lid')) {
       const pn = await resolvePnForLid(sock, store, senderJid);
-      if (pn && list.includes(pn)) return true;
+      if (pn && pn !== altJid && list.includes(pn)) return true;
     } else if (senderJid.endsWith('@s.whatsapp.net')) {
       const lid = await resolveLidForPn(sock, store, senderJid);
-      if (lid && list.includes(lid)) return true;
+      if (lid && lid !== altJid && list.includes(lid)) return true;
     }
   } catch (e) {
     logger.debug({ err: e, senderJid }, 'admin resolution failed — using exact match');

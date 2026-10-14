@@ -30,7 +30,13 @@ module.exports = {
   start: async (sock, m, { commands, prefix, toUpper, ctx }) => {
     // === FIX: Safe sender ID extraction ===
     const senderJid = ctx?.sender || m?.sender || '';
-    const isAdmin = await isConfiguredAdmin(sock, getStore(), senderJid, config.admins);
+    const isAdmin = await isConfiguredAdmin(
+      sock,
+      getStore(),
+      senderJid,
+      config.admins,
+      ctx?.senderPn,
+    );
     const groupedCommands = {};
 
     // Safe sender ID without domain part
@@ -170,7 +176,7 @@ module.exports = {
   noLimit: true,
 
   async start(sock, m, { ctx, commands, prefix, config }) {
-    const isAdmin = await isConfiguredAdmin(sock, getStore(), ctx.sender, config.admins);
+    const isAdmin = await isConfiguredAdmin(sock, getStore(), ctx.sender, config.admins, ctx.senderPn);
 
     // Group commands by their category (folder name)
     const grouped = new Map();

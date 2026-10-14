@@ -194,6 +194,68 @@ test('record() passes an ARRAY to deleteSession (Baileys 7.x contract)', async (
   assert.equal(arg.length, 1, 'not the 7 characters of the JID string');
 });
 
+test('Invalid PreKey ID is recognised as benign — no session recovery', async () => {
+  signalHealth._resetForTests();
+  const sock = makeMockSock();
+
+  // Reproduces the production log exactly:
+  //   PreKeyError: Invalid PreKey ID
+  //     at SessionBuilder.initIncoming (libsignal/…/session_builder.js)
+  const preKeyObj = {
+    err: Object.assign(new Error('Invalid PreKey ID'), { name: 'PreKeyError' }),
+    key: {
+      remoteJid: '120363330210321528@g.us',
+      fromMe: false,
+      id: 'AC96652504DB3C5F8F88CD2D78A8B59A',
+      participant: '236120122126433@lid',
+      participantAlt: '917560995644@s.whatsapp.net',
+      addressingMode: 'lid',
+    },
+    messageType: 'pkmsg',
+    author: '236120122126433@lid',
+  };
+
+  // Ten occurrences is WELL past the recovery threshold of 3 — if this error
+  // were routed through the normal path it would have wiped the session.
+  const results = [];
+  for (let i = 0; i < 10; i += 1) {
+    results.push(await signalHealth.record(sock, preKeyObj));
+  }
+
+  for (const r of results) {
+    assert.equal(r.matched, true, 'must be recognised (so the logger demotes it)');
+    assert.equal(r.benign, true, 'must be flagged benign');
+    assert.equal(r.willRecover, false, 'must never trigger a session reset');
+    assert.equal(r.count, 0, 'must not count toward the failure threshold');
+  }
+
+  // The decisive assertion: a healthy session must survive prekey churn.
+  // Deleting it would force an unnecessary re-handshake for a problem that
+  // lives on the SENDER's side.
+  assert.equal(sock.deletions.length, 0, 'session must NOT be reset for a stale prekey');
+
+  // A subsequent genuine Bad MAC failure must still start from 1 — the benign
+  // events must not have poisoned the counter.
+  const r = await signalHealth.record(sock, badMacLogObj('236120122126433@lid'));
+  assert.equal(r.count, 1, 'benign events must not increment the real failure counter');
+});
+
+test('Missing SignedPreKey is also treated as benign', async () => {
+  signalHealth._resetForTests();
+  const sock = makeMockSock();
+  const obj = {
+    err: new Error('Missing SignedPreKey'),
+    key: { remoteJid: '1@g.us', fromMe: false, id: 'X', participant: 'a@lid' },
+    author: 'a@lid',
+  };
+  for (let i = 0; i < 5; i += 1) {
+    const r = await signalHealth.record(sock, obj);
+    assert.equal(r.benign, true);
+    assert.equal(r.willRecover, false);
+  }
+  assert.equal(sock.deletions.length, 0);
+});
+
 test('record() handles missing signalRepository gracefully', async () => {
   signalHealth._resetForTests();
   const sock = {}; // no signalRepository

@@ -85,6 +85,31 @@ test('persisted store mapping is used when the socket has no lidMapping (6.x pat
   assert.equal(await isConfiguredAdmin({}, store, LID, ADMINS_PN), true);
 });
 
+test('altJid (ctx.senderPn) authorises with NO lookup and no mapping data', async () => {
+  _clearCache();
+  // Baileys decodes both addressing forms onto the message key, so the PN is
+  // already available synchronously. This is the common v7 path and must work
+  // even on a fresh install where lidMapping is empty.
+  const noLookup = { signalRepository: {} };
+  assert.equal(await isConfiguredAdmin(noLookup, {}, LID, ADMINS_PN, PN), true);
+  assert.equal(await isConfiguredAdmin(null, null, LID, ADMINS_PN, PN), true);
+});
+
+test('altJid that is not an admin does not authorise', async () => {
+  _clearCache();
+  const noLookup = { signalRepository: {} };
+  assert.equal(
+    await isConfiguredAdmin(noLookup, {}, LID, ADMINS_PN, '15550001111@s.whatsapp.net'),
+    false,
+  );
+});
+
+test('missing altJid still falls back to the lookup path', async () => {
+  _clearCache();
+  assert.equal(await isConfiguredAdmin(sockWithMapping(), {}, LID, ADMINS_PN, null), true);
+  assert.equal(await isConfiguredAdmin(sockWithMapping(), {}, LID, ADMINS_PN, undefined), true);
+});
+
 test('resolution guards against a null/undefined jid', async () => {
   _clearCache();
   assert.equal(await resolvePnForLid(sockWithMapping(), {}, null), null);

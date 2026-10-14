@@ -93,6 +93,22 @@ function enrich(m, sock) {
   const sender = jidNormalizedUser(
     m.key.fromMe ? sock.user?.id : m.key.participant || remoteJid || '',
   );
+
+  // Baileys 7.x decodes BOTH addressing forms onto the message key: when a
+  // stanza is LID-addressed it also carries the phone-number form, and vice
+  // versa. These live on `WAMessageKey` (the runtime type Baileys hands you),
+  // NOT on `proto.MessageKey` (the protobuf wire type) — which is why
+  // `participantAlt` does not appear when you inspect proto.MessageKey.
+  //
+  //   decode-wa-message.js:  participantAlt: isJidGroup(chatId) ? senderAlt : undefined
+  //                          remoteJidAlt:   !isJidGroup(chatId) ? senderAlt : undefined
+  //
+  // So for a group message `m.key.participant` is a LID and
+  // `m.key.participantAlt` is the matching @s.whatsapp.net JID, for free —
+  // no lidMapping lookup needed. This mirrors Baileys' own helper:
+  //   getKeyAuthor = key => key.participantAlt || key.remoteJidAlt || key.participant
+  const senderAltRaw = m.key.participantAlt || m.key.remoteJidAlt || null;
+  const senderPn = senderAltRaw ? jidNormalizedUser(senderAltRaw) : null;
   const innerContent = extractMessageContent(m.message) || {};
   const mtype = getContentType(innerContent);
   const inner = mtype ? innerContent[mtype] : null;
@@ -104,6 +120,11 @@ function enrich(m, sock) {
     chat: remoteJid,
     from: remoteJid,
     sender,
+    // Best-effort phone-number form of `sender`. Present (synchronously) for
+    // virtually every inbound message; null when the server did not include
+    // the alternate form. Prefer this over an async lidMapping lookup.
+    senderPn,
+    addressingMode: m.key.addressingMode || null,
     fromMe: !!m.key.fromMe,
     pushName: m.pushName || 'Unknown',
     timestamp: Number(m.messageTimestamp) || Math.floor(Date.now() / 1000),
@@ -178,7 +199,7 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
 
   // Privacy: block unknown senders in private chats
   if (config.privacy?.blockUnknownSenders && ctx.isPrivate) {
-    const isAdmin = await isConfiguredAdmin(sock, store, ctx.sender);
+    const isAdmin = await isConfiguredAdmin(sock, store, ctx.sender, config.admins, ctx.senderPn);
     if (!isAdmin) {
       const known = await store.hasContact?.(ctx.sender);
       if (!known) {
@@ -232,7 +253,13 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
       if (alCfg.enabled) {
         const host = antilink.findFirstHost(ctx.body);
         const whitelisted = antilink.isWhitelisted(host, alCfg.whitelist);
-        const callerIsAdmin = await isConfiguredAdmin(sock, store, ctx.sender);
+        const callerIsAdmin = await isConfiguredAdmin(
+          sock,
+          store,
+          ctx.sender,
+          config.admins,
+          ctx.senderPn,
+        );
         // Group-admin exemption — fetch metadata lazily
         let groupAdmin = callerIsAdmin;
         if (!groupAdmin) {
@@ -339,7 +366,7 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
   if (!cmdName) return;
 
   // Rate limiting
-  const isAdminUser = await isConfiguredAdmin(sock, store, ctx.sender);
+  const isAdminUser = await isConfiguredAdmin(sock, store, ctx.sender, config.admins, ctx.senderPn);
   if (!isAdminUser && !senderLimiter.tryConsume(ctx.sender)) {
     metrics.incRateLimit();
     return ctx.reply('⏱️ Slow down a bit — try again in a few seconds.');

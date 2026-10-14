@@ -42,6 +42,13 @@ services:
       LOG_LEVEL: info
       PORT: 3000
       TZ: ${TZ:-Asia/Kolkata}
+      # Dashboard Basic Auth. The dashboard is only served when
+      # config.dashboard.enabled is true; these two also let Prometheus
+      # authenticate to :3001/metrics (see docker/prometheus/prometheus.yml).
+      # configSchema refuses to boot if the dashboard is enabled with a
+      # template/empty password, so set a real one in .env.
+      ECHOFOX_DASHBOARD_USERNAME: ${ECHOFOX_DASHBOARD_USERNAME:-admin}
+      ECHOFOX_DASHBOARD_PASSWORD: ${ECHOFOX_DASHBOARD_PASSWORD:-}
       # Examples — uncomment and set what you need:
       # ECHOFOX_BOT_PREFIX:        "."
       # ECHOFOX_BOT_ADMINPREFIX:   "$"
@@ -78,6 +85,11 @@ services:
     restart: unless-stopped
     profiles: ['observability']
     user: '65534:65534'
+    # Same credentials the echofox container uses, so the :3001/metrics scrape
+    # authenticates instead of returning 401.
+    environment:
+      ECHOFOX_DASHBOARD_USERNAME: ${ECHOFOX_DASHBOARD_USERNAME:-admin}
+      ECHOFOX_DASHBOARD_PASSWORD: ${ECHOFOX_DASHBOARD_PASSWORD:-}
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d

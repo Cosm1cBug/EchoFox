@@ -121,6 +121,24 @@ function startDashboard(port, store, config) {
   app.use('/api', dashboardLimiter);
   app.use('/dashboard', dashboardLimiter);
 
+  // ── /metrics needs its OWN ceiling, not the dashboard one ──────────────
+  // Prometheus scrapes every 15s (config default) = 4/min = 240 requests per
+  // 15-minute window, which is already 80% of the 300-request dashboard cap.
+  // Sharing that bucket would either throttle the scrape or starve the
+  // dashboard. Previously /metrics and / were not limited at all.
+  const metricsLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 1500, // ~6 scrapers at 15s, or one at 1s — generous but bounded
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'rate_limited', message: 'Too many metric scrapes.' },
+  });
+  app.use('/metrics', metricsLimiter);
+
+  // `/` is only a 301 to /dashboard/, but leaving it unlimited made it a free
+  // request amplifier against the auth middleware below.
+  app.use('/', dashboardLimiter);
+
   if (config.dashboard.username) {
     app.use(basicAuth(config.dashboard.username, config.dashboard.password));
   } else {

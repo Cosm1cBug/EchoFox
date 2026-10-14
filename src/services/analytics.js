@@ -19,43 +19,59 @@ const path = require('node:path');
 const fs = require('node:fs');
 const logger = require('../core/logger').child({ mod: 'analytics' });
 
-const DB_DIR = path.join(__dirname, '..', 'store', 'runtime');
-if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-const db = new Database(path.join(DB_DIR, 'analytics.db'));
-db.pragma('journal_mode = WAL');
-db.pragma('synchronous = NORMAL');
+// ─── Lazy SQLite singleton ──────────────────────────────────────────────
+// Opened on first *use* rather than at require() time. See the matching note
+// in src/services/userDirectory.js: a require()-time connection is created
+// during module graph evaluation, before lifecycle.selectStore(), so it
+// breaks boot when the datasource is missing and holds a fourth SQLite
+// handle open for the whole process lifetime. Behaviour is unchanged.
+let _db = null;
+let _stmts = null;
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS msg_counts (
-    jid       TEXT NOT NULL,
-    day       TEXT NOT NULL,        -- YYYY-MM-DD
-    mtype     TEXT NOT NULL,
-    n         INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (jid, day, mtype)
-  );
-  CREATE INDEX IF NOT EXISTS idx_msg_counts_day ON msg_counts (day);
+function _ensureDb() {
+  if (_db) return _db;
 
-  CREATE TABLE IF NOT EXISTS command_usage (
-    jid       TEXT NOT NULL,
-    cmd       TEXT NOT NULL,
-    n         INTEGER NOT NULL DEFAULT 0,
-    last_used INTEGER NOT NULL,
-    PRIMARY KEY (jid, cmd)
-  );
-`);
+  const dir = path.join(__dirname, '..', 'store', 'runtime');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-const stmts = {
-  upsertMsg: db.prepare(`
-    INSERT INTO msg_counts (jid,day,mtype,n) VALUES (?,?,?,?)
-    ON CONFLICT(jid,day,mtype) DO UPDATE SET n = n + excluded.n`),
-  upsertCmd: db.prepare(`
-    INSERT INTO command_usage (jid,cmd,n,last_used) VALUES (?,?,1,?)
-    ON CONFLICT(jid,cmd) DO UPDATE SET n = n + 1, last_used = excluded.last_used`),
-  leaderboard: db.prepare(`
-    SELECT jid, SUM(n) AS total
-    FROM msg_counts
-    WHERE day >= date('now', ?) GROUP BY jid ORDER BY total DESC LIMIT 10`),
-};
+  const db = new Database(path.join(dir, 'analytics.db'));
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS msg_counts (
+      jid       TEXT NOT NULL,
+      day       TEXT NOT NULL,        -- YYYY-MM-DD
+      mtype     TEXT NOT NULL,
+      n         INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (jid, day, mtype)
+    );
+    CREATE INDEX IF NOT EXISTS idx_msg_counts_day ON msg_counts (day);
+
+    CREATE TABLE IF NOT EXISTS command_usage (
+      jid       TEXT NOT NULL,
+      cmd       TEXT NOT NULL,
+      n         INTEGER NOT NULL DEFAULT 0,
+      last_used INTEGER NOT NULL,
+      PRIMARY KEY (jid, cmd)
+    );
+  `);
+
+  _stmts = {
+    upsertMsg: db.prepare(`
+      INSERT INTO msg_counts (jid,day,mtype,n) VALUES (?,?,?,?)
+      ON CONFLICT(jid,day,mtype) DO UPDATE SET n = n + excluded.n`),
+    upsertCmd: db.prepare(`
+      INSERT INTO command_usage (jid,cmd,n,last_used) VALUES (?,?,1,?)
+      ON CONFLICT(jid,cmd) DO UPDATE SET n = n + 1, last_used = excluded.last_used`),
+    leaderboard: db.prepare(`
+      SELECT jid, SUM(n) AS total
+      FROM msg_counts
+      WHERE day >= date('now', ?) GROUP BY jid ORDER BY total DESC LIMIT 10`),
+  };
+  _db = db;
+  return _db;
+}
 
 // ─── Coalesce many tiny writes into one tx per 250 ms ────────────────────
 const buffer = [];
@@ -69,8 +85,9 @@ function flush() {
   if (!buffer.length) return;
   const batch = buffer.splice(0, buffer.length);
   try {
-    db.transaction((rows) => {
-      for (const r of rows) stmts.upsertMsg.run(r.jid, r.day, r.mtype, r.n);
+    _ensureDb();
+    _db.transaction((rows) => {
+      for (const r of rows) _stmts.upsertMsg.run(r.jid, r.day, r.mtype, r.n);
     })(batch);
   } catch (e) {
     logger.warn({ err: e }, 'analytics flush failed');
@@ -88,21 +105,28 @@ async function recordMessage(ctx) {
 
 async function trackCommandUsage(jid, cmd) {
   try {
-    stmts.upsertCmd.run(jid, cmd, Math.floor(Date.now() / 1000));
+    _ensureDb();
+    _stmts.upsertCmd.run(jid, cmd, Math.floor(Date.now() / 1000));
   } catch (e) {
     logger.warn({ err: e }, 'cmd usage upsert failed');
   }
 }
 
 function getLeaderboard(days = 7) {
-  return stmts.leaderboard.all(`-${days} days`);
+  _ensureDb();
+  return _stmts.leaderboard.all(`-${days} days`);
 }
 
 function close() {
   flush();
+  if (!_db) return; // never opened — nothing to close
   try {
-    db.close();
-  } catch {}
+    _db.close();
+  } catch {
+    /* already closed */
+  }
+  _db = null;
+  _stmts = null;
 }
 
 module.exports = { recordMessage, trackCommandUsage, getLeaderboard, close };

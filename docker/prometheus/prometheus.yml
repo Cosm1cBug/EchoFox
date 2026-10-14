@@ -16,24 +16,25 @@ scrape_configs:
           service: echofox
           job_part: supervisor
           env: production
-      # NOTE: /metrics on :3001 sits behind the dashboard's HTTP Basic Auth
+      # /metrics on :3001 sits behind the dashboard's HTTP Basic Auth
       # (src/dashboard/server.js applies basicAuth() to every route when
-      # config.dashboard.username is set). This target therefore returns 401
-      # and shows as DOWN unless you give Prometheus credentials. Two options:
+      # config.dashboard.username is set), so this target needs credentials
+      # or it returns 401 and shows as permanently DOWN — which is what it
+      # did before v1.18.0, leaving every store-backed metric invisible.
       #
-      #   A. Keep auth — add the block below and create the password file:
-      #        basic_auth:
-      #          username: admin
-      #          password_file: /etc/prometheus/dashboard_password
-      #      then mount it:  -v ./docker/prometheus/dashboard_password:/etc/prometheus/dashboard_password:ro
-      #
-      #   B. Exempt /metrics from basicAuth in startDashboard() and rely on
-      #      the compose port binding (127.0.0.1:3001) for safety.
+      # Prometheus expands ${VAR} in this file, and docker-compose passes the
+      # same values it gives the echofox container, so the two always agree.
+      # Set them once in .env:
+      #     ECHOFOX_DASHBOARD_USERNAME=admin
+      #     ECHOFOX_DASHBOARD_PASSWORD=<same value as the bot's config.js>
       - targets: ['echofox:3001']
         labels:
           service: echofox
           job_part: dashboard
           env: production
+        basic_auth:
+          username: ${ECHOFOX_DASHBOARD_USERNAME}
+          password: ${ECHOFOX_DASHBOARD_PASSWORD}
 
   - job_name: prometheus
     static_configs:

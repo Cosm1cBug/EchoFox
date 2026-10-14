@@ -130,7 +130,6 @@ async function dispatchGreetings({ sock, groupJid, classified }) {
   }
 }
 
-
 /*
 const logger = require('../core/logger').child({ mod: 'group-participants' });
 const { getStore } = require('../store/instance');

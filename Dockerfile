@@ -14,7 +14,10 @@
 #    (use `docker buildx bake` or the workflow in M4 to produce both).
 # ──────────────────────────────────────────────────────────────────────────
 
-ARG NODE_VERSION=20-alpine3.20
+# Node 20 reached EOL 2026-04-30 and Alpine 3.20 on 2026-04-01 — both are
+# unpatched. 22-alpine3.22 matches package.json "engines": ">=22.0.0" and is
+# in security support until 2027-04-30.
+ARG NODE_VERSION=22-alpine3.22
 
 # ════════════════════════════════════════════════════════════════════════
 # Stage 1 — Builder
@@ -37,8 +40,16 @@ WORKDIR /build
 COPY package.json package-lock.json* ./
 
 # Production install only — devDeps (eslint, husky, prettier) are NOT shipped.
-# --ignore-scripts avoids running husky's prepare hook in the container.
-RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+#
+# NOTE: do NOT add --ignore-scripts here. better-sqlite3 and node-datachannel
+# produce their native bindings from an install script
+# ("prebuild-install || node-gyp rebuild --release"). Skipping scripts leaves
+# the .node binary absent, and `new Database()` then throws
+# "Could not locate the bindings file" at boot — sqliteStore.js,
+# userDirectory.js, analytics.js and useSqliteAuth all construct a Database.
+# husky's prepare hook is already a no-op ("husky || true") and husky is
+# omitted along with the other devDependencies.
+RUN npm ci --omit=dev --no-audit --no-fund \
   && npm cache clean --force
 
 # Now copy the source. (App code changes don't bust the dep cache above.)
@@ -46,8 +57,11 @@ COPY src       ./src
 COPY scripts   ./scripts
 COPY ecosystem.config.js LICENSE NOTICE README.md DISCLAIMER.md SECURITY.md ./
 
-# Sanity check: every file we ship parses
-RUN node -e "['src/core/bootstrap.js','src/core/worker.js','src/lib/configLoader.js'].forEach(f=>require('node:vm').compileFunction(require('node:fs').readFileSync(f,'utf8'),[],{filename:f}))"
+# Sanity check: every file we ship parses AND the native stack actually loads.
+# The second half is what catches the --ignore-scripts regression: requiring
+# better-sqlite3 is not enough (the binding loads lazily in the Database
+# constructor), so we must construct one.
+RUN node -e "['src/core/bootstrap.js','src/core/worker.js','src/lib/configLoader.js'].forEach(f=>require('node:vm').compileFunction(require('node:fs').readFileSync(f,'utf8'),[],{filename:f})); new (require('better-sqlite3'))(':memory:').close(); console.log('native deps OK')"
 
 # Remove things we definitely don't need at runtime
 RUN rm -rf \
@@ -59,6 +73,24 @@ RUN rm -rf \
       node_modules/**/.github 2>/dev/null || true
 
 # ════════════════════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════════════
+# Stage 1b — Dashboard build
+══════════════════════════════════════════════════════════════════════
+# src/dashboard/react/ is gitignored, so a fresh checkout never contains the
+# built SPA. The runtime image previously shipped without it, so
+# startDashboard() served the "React build missing" maintenance page (503)
+# forever — scripts/build-dashboard.js fails fast when dashboard/ is absent.
+# Build the SPA here and COPY the artefact into the runtime stage.
+FROM node:${NODE_VERSION} AS dashbuilder
+
+WORKDIR /build/dashboard
+
+COPY dashboard/package.json dashboard/package-lock.json* ./
+RUN npm ci --no-audit --no-fund
+
+COPY dashboard ./
+RUN npx vite build
+
 # Stage 2 — Runtime
 # ════════════════════════════════════════════════════════════════════════
 FROM node:${NODE_VERSION} AS runtime
@@ -100,6 +132,9 @@ WORKDIR /app
 COPY --from=builder --chown=echofox:echofox /build/node_modules ./node_modules
 COPY --from=builder --chown=echofox:echofox /build/src         ./src
 COPY --from=builder --chown=echofox:echofox /build/scripts     ./scripts
+# Built React dashboard (see Stage 1b). Without this the /dashboard route
+# can only ever render the maintenance page.
+COPY --from=dashbuilder --chown=echofox:echofox /build/dashboard/dist ./src/dashboard/react
 COPY --from=builder --chown=echofox:echofox /build/package.json /build/ecosystem.config.js /build/LICENSE /build/NOTICE /build/README.md /build/DISCLAIMER.md /build/SECURITY.md ./
 
 # Pre-create the directories we expect to be volume-mounted, so a fresh

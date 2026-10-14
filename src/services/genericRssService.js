@@ -22,6 +22,7 @@
  */
 
 const { axiosWithBreaker, isOpenBreakerError } = require('../lib/network');
+const { assertPublicUrl } = require('../lib/netGuard');
 // v1.5.0 security: migrated from xml2js (prototype pollution risk per CVE-2023-0842)
 // to fast-xml-parser. Attribute prefix '@_' and text node '#text' replace
 // xml2js' $ and _ conventions; normaliseCategories + extractLink handle both.
@@ -84,12 +85,20 @@ function normaliseCategories(item) {
 
 async function fetchFeed(url) {
   try {
+    // SSRF gate. `url` comes straight from `.rss add <url>`, so without this
+    // any user who can DM the bot can make it fetch cloud metadata, the
+    // dashboard on 127.0.0.1, or any internal service — and, since parsed
+    // items are delivered back to the subscriber, read the response too.
+    await assertPublicUrl(url);
+
     const { data } = await axiosWithBreaker(`rss:${new URL(url).hostname}`, {
       method: 'GET',
       url,
       timeout: 15000,
       responseType: 'text',
       headers: { 'User-Agent': 'EchoFox/1.0 (RSS subscription)' },
+      // No redirects: a 302 to 169.254.169.254 would bypass the check above.
+      maxRedirects: 0,
     });
     const result = parser.parse(data); // sync
     // RSS 2.0

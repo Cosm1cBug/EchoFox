@@ -95,7 +95,6 @@ async function runOnce() {
     }
     return { ran: true, affected: _lastRunAffected };
   } catch (err) {
-
     try {
       metrics.incDecaySweep('failure');
     } catch (_) {

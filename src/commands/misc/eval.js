@@ -56,9 +56,7 @@ module.exports = {
         const result = await eval(wrap);
         await ctx.reply('```\n' + truncate(result) + '\n```');
       } catch (err) {
-        await ctx.reply(
-          '💥 *eval threw*\n```\n' + truncate(err.message || String(err)) + '\n```',
-        );
+        await ctx.reply('💥 *eval threw*\n```\n' + truncate(err.message || String(err)) + '\n```');
       }
       return;
     }
@@ -70,10 +68,8 @@ module.exports = {
         (stdout ? `*stdout*\n\`\`\`\n${truncate(stdout)}\n\`\`\`\n` : '') +
           (stderr ? `*stderr*\n\`\`\`\n${truncate(stderr)}\n\`\`\`\n` : '') || '_(no output)_';
       await ctx.reply(out);
-      } catch (err) {
-        await ctx.reply(
-          '💥 *exec failed*\n```\n' + truncate(err.message || String(err)) + '\n```',
-        );
-      }
+    } catch (err) {
+      await ctx.reply('💥 *exec failed*\n```\n' + truncate(err.message || String(err)) + '\n```');
+    }
   },
 };

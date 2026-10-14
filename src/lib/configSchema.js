@@ -144,6 +144,23 @@ const schema = z
         username: z.string().default('admin'),
         password: z.string().default('change-me-please'),
         inactiveAfterDays: z.coerce.number().int().min(1).max(365).default(14),
+        // Which proxies to trust for req.ip. express-rate-limit keys its
+        // buckets on req.ip, so `true` lets any client spoof
+        // X-Forwarded-For and reset its own bucket.
+        trustProxy: z.union([z.string(), z.number().int()]).default('loopback'),
+      })
+      .superRefine((cfg, ctx) => {
+        // Refuse to boot with a template password while the dashboard is on.
+        const PLACEHOLDERS = ['CHANGE_ME', 'change-me-please', 'testPass@1235#&!', ''];
+        if (cfg.enabled && PLACEHOLDERS.includes(cfg.password)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['password'],
+            message:
+              'dashboard.password is still a template value. Set a strong, unique ' +
+              'password before enabling the dashboard.',
+          });
+        }
       })
       .default({})
       .refine((d) => !d.enabled || d.password.length >= 16, {

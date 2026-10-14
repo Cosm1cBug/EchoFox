@@ -168,6 +168,11 @@ function configuredAxios() {
     httpAgent,
     httpsAgent,
     proxy: false, // ← we use agents directly; tell axios to skip
+    // Reject redirects by default: a 302 is the standard way to bypass an
+    // SSRF host check (checked host -> redirect -> 169.254.169.254). Callers
+    // that genuinely need redirects opt in explicitly (e.g. `.mediafire`
+    // sets maxRedirects: 5).
+    maxRedirects: 0,
   });
   return _axios;
 }

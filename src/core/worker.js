@@ -157,82 +157,97 @@ function getJitteredDelay(baseMs) {
   return baseMs + jitter;
 }
 
-setInterval(async () => {
-  if (!acquireLock('thehackersnews')) {
-    logger.debug('thehackersnews scheduler still running, skipping this tick');
-    return;
-  }
-  try {
-    await checkTheHackerNews(sock);
-  } catch (err) {
-    logger.error({ err }, '[thehackersnews] Cron job failed');
-  } finally {
-    releaseLock('thehackersnews');
-  }
-}, getJitteredDelay(60 * 60 * 1000)).unref();
+setInterval(
+  async () => {
+    if (!acquireLock('thehackersnews')) {
+      logger.debug('thehackersnews scheduler still running, skipping this tick');
+      return;
+    }
+    try {
+      await checkTheHackerNews(sock);
+    } catch (err) {
+      logger.error({ err }, '[thehackersnews] Cron job failed');
+    } finally {
+      releaseLock('thehackersnews');
+    }
+  },
+  getJitteredDelay(60 * 60 * 1000),
+).unref();
 
-setInterval(async () => {
-  if (!acquireLock('alienvault')) {
-    logger.debug('alienvault scheduler still running, skipping this tick');
-    return;
-  }
-  try {
-    await checkAlienVault(sock);
-  } catch (err) {
-    logger.error({ err }, '[alienvault] Cron job failed');
-  } finally {
-    releaseLock('alienvault');
-  }
-}, getJitteredDelay((AV_INTERVAL_MIN || 60) * 60 * 1000)).unref();
+setInterval(
+  async () => {
+    if (!acquireLock('alienvault')) {
+      logger.debug('alienvault scheduler still running, skipping this tick');
+      return;
+    }
+    try {
+      await checkAlienVault(sock);
+    } catch (err) {
+      logger.error({ err }, '[alienvault] Cron job failed');
+    } finally {
+      releaseLock('alienvault');
+    }
+  },
+  getJitteredDelay((AV_INTERVAL_MIN || 60) * 60 * 1000),
+).unref();
 
-setInterval(async () => {
-  if (!acquireLock('rss')) {
-    logger.debug('rss scheduler still running, skipping this tick');
-    return;
-  }
-  try {
-    await checkRss(sock);
-  } catch (err) {
-    logger.error({ err }, '[rss] Cron job failed');
-  } finally {
-    releaseLock('rss');
-  }
-}, getJitteredDelay((RSS_INTERVAL_MIN || 30) * 60 * 1000)).unref();
+setInterval(
+  async () => {
+    if (!acquireLock('rss')) {
+      logger.debug('rss scheduler still running, skipping this tick');
+      return;
+    }
+    try {
+      await checkRss(sock);
+    } catch (err) {
+      logger.error({ err }, '[rss] Cron job failed');
+    } finally {
+      releaseLock('rss');
+    }
+  },
+  getJitteredDelay((RSS_INTERVAL_MIN || 30) * 60 * 1000),
+).unref();
 
-setInterval(async () => {
-  if (!acquireLock('github')) {
-    logger.debug('github scheduler still running, skipping this tick');
-    return;
-  }
-  try {
-    await checkGitHub(sock);
-  } catch (err) {
-    logger.error({ err }, '[github] Cron job failed');
-  } finally {
-    releaseLock('github');
-  }
-}, getJitteredDelay((GH_INTERVAL_MIN || 60) * 60 * 1000)).unref();
+setInterval(
+  async () => {
+    if (!acquireLock('github')) {
+      logger.debug('github scheduler still running, skipping this tick');
+      return;
+    }
+    try {
+      await checkGitHub(sock);
+    } catch (err) {
+      logger.error({ err }, '[github] Cron job failed');
+    } finally {
+      releaseLock('github');
+    }
+  },
+  getJitteredDelay((GH_INTERVAL_MIN || 60) * 60 * 1000),
+).unref();
 
-setInterval(async () => {
-  if (!acquireLock('vtwatch')) {
-    logger.debug('vtwatch scheduler still running, skipping this tick');
-    return;
-  }
-  try {
-    await checkVtWatch(sock);
-  } catch (err) {
-    logger.error({ err }, '[vtwatch] Cron job failed');
-  } finally {
-    releaseLock('vtwatch');
-  }
-}, getJitteredDelay((VTW_INTERVAL_MIN || 360) * 60 * 1000)).unref();
+setInterval(
+  async () => {
+    if (!acquireLock('vtwatch')) {
+      logger.debug('vtwatch scheduler still running, skipping this tick');
+      return;
+    }
+    try {
+      await checkVtWatch(sock);
+    } catch (err) {
+      logger.error({ err }, '[vtwatch] Cron job failed');
+    } finally {
+      releaseLock('vtwatch');
+    }
+  },
+  getJitteredDelay((VTW_INTERVAL_MIN || 360) * 60 * 1000),
+).unref();
 
 async function start(retry = 0) {
   if (shuttingDown) return;
 
   if (retry === 0) {
     lifecycle.logBoot();
-    lifecycle.checkBaileysVersion(); 
+    lifecycle.checkBaileysVersion();
   }
 
   auth = await lifecycle.selectAuth();
@@ -302,9 +317,17 @@ async function start(retry = 0) {
     browser: Browsers.macOS('Chrome'),
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger.child({ mod: 'signal' }),
-      caches.signalCache
-      ),
+      // REDIS/SQLITE/POSTGRES backends (src/core/auth.js) already return a
+      // makeCacheableSignalKeyStore-wrapped store. Wrapping it again cached
+      // every key twice and made the outer layer authoritative. Only the
+      // MULTIFILE backend (useMultiFileAuthState) hands back raw keys.
+      keys: state.keys.__echofoxCacheable
+        ? state.keys
+        : makeCacheableSignalKeyStore(
+            state.keys,
+            logger.child({ mod: 'signal' }),
+            caches.signalCache,
+          ),
     },
     markOnlineOnConnect: true,
     syncFullHistory: !!config.features.syncHistory,

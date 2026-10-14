@@ -65,4 +65,5 @@ dashboard/*.tsbuildinfo
 
 # Lockfiles ─────────────────────────────────────────────────────────────────
 # package-lock.json
-# dashboard/package-lock.json
+# dashboard/package-lock.jsondashboard/vite.config.js
+dashboard/vite.config.d.ts

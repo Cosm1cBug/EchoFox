@@ -132,9 +132,11 @@
     "zod": "^3.23.8"
   },
   "overrides": {
+    "undici": "^7.30.0",
+    "qs": "^6.15.4",
     "wa-sticker-formatter": {
       "axios": "^1.7.7",
-      "sharp": "^0.34.5",
+      "sharp": "^0.35.4",
       "file-type": "^22.0.1"
     },
     "google-tts-api": {

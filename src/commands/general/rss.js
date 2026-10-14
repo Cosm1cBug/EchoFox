@@ -22,6 +22,8 @@ const { getStore } = require('../../store/instance');
 const { config } = require('../../lib/configLoader');
 const logger = require('../../core/logger').child({ mod: 'rss-cmd' });
 
+const { assertPublicUrl } = require('../../lib/netGuard');
+
 const SERVICE = 'rss';
 const MAX_FEEDS = config.apis?.rss?.maxFeedsPerSubscriber || 20;
 const URL_RE = /^https?:\/\/\S+$/i;
@@ -87,6 +89,23 @@ module.exports = {
         return await sock.sendMessage(
           m.chat,
           { text: 'Usage: `.rss add <http(s)://feed-url> [topic1 topic2 ...]`' },
+          { quoted: m },
+        );
+      }
+
+      // Fail fast on private / loopback targets. genericRssService re-checks
+      // at fetch time (netGuard), but rejecting here gives the user a clear
+      // message instead of a silently dead subscription.
+      try {
+        await assertPublicUrl(url);
+      } catch {
+        return await sock.sendMessage(
+          m.chat,
+          {
+            text:
+              '❌ That URL points at a private or local address.\n' +
+              '_Public http(s) feeds only._',
+          },
           { quoted: m },
         );
       }

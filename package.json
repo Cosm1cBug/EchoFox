@@ -1,7 +1,7 @@
 {
   "name": "echofox",
-  "version": "1.17.0",
-  "description": "A production-grade WhatsApp bot built on Baileys 7.x — typed, observable, scalable.",
+  "version": "1.18.0",
+  "description": "A production-grade WhatsApp bot built on Baileys 7.x \u2014 typed, observable, scalable.",
   "main": "src/core/bootstrap.js",
   "scripts": {
     "start": "node --enable-source-maps src/core/bootstrap.js",
@@ -83,8 +83,8 @@
     "@distube/ytdl-core": "^4.16.5",
     "@google/generative-ai": "^0.24.1",
     "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "6.7.24",
-    "axios": "^1.20.0",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "axios": "^1.18.0",
     "axios-retry": "^4.5.0",
     "better-sqlite3": "^12.4.1",
     "cfonts": "^3.3.0",
@@ -103,7 +103,6 @@
     "jimp": "^1.6.1",
     "jsqr": "^1.4.0",
     "libphonenumber-js": "^1.13.3",
-    "link-preview-js": "^3.0.5",
     "lru-cache": "^11.0.1",
     "mime-types": "^2.1.35",
     "moment-timezone": "^0.6.2",
@@ -134,10 +133,11 @@
   "overrides": {
     "undici": "^7.30.0",
     "qs": "^6.15.4",
+    "sharp": "^0.35.5",
     "wa-sticker-formatter": {
       "axios": "^1.7.7",
       "sharp": "^0.35.4",
-      "file-type": "^22.0.1"
+      "image-size": "^2.0.4"
     },
     "google-tts-api": {
       "axios": "^1.7.7"
@@ -151,5 +151,15 @@
     "lint-staged": "^15.5.2",
     "prettier": "^3.3.3",
     "vitepress": "^1.6.4"
+  },
+  "allowScripts": {
+    "@whiskeysockets/baileys": true,
+    "better-sqlite3": true,
+    "esbuild": true,
+    "msedge-tts": true,
+    "node-datachannel": true,
+    "protobufjs": true,
+    "sharp": true,
+    "tesseract.js": true
   }
 }

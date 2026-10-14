@@ -156,13 +156,14 @@ async function _triggerRecovery(sock, jid, cur) {
 
   try {
     if (sock?.signalRepository?.deleteSession) {
-      // NB: Baileys 6.7.24 does not expose signalRepository.deleteSession
-      // at all, so on the currently-pinned version this branch never runs
-      // and the fallback below is what recovers. When you move to v7 the
-      // signature is deleteSession(jids: string[]) — update this call AND
-      // src/__tests__/integration/signal-health.test.js together, or the
-      // bare string will be iterated per character and delete nothing.
-      await sock.signalRepository.deleteSession(jid);
+      // Baileys 7.x: signalRepository.deleteSession(jids: string[]).
+      // The ARRAY is mandatory. v7's implementation is
+      //     async deleteSession(jids) { if (!jids.length) return; jids.forEach(...) }
+      // so a bare string passes the length check (7 chars), then forEach
+      // iterates its CHARACTERS — seven bogus JIDs, a silent no-op, and the
+      // auto-recovery never actually happens. (On 6.7.24 this method did not
+      // exist at all, so this branch was dead and the fallback below ran.)
+      await sock.signalRepository.deleteSession([jid]);
     } else if (sock?.authState?.keys?.set) {
       // Older Baileys: clear session keys directly
       await sock.authState.keys.set({ session: { [jid]: null } });

@@ -15,14 +15,17 @@ const assert = require('node:assert/strict');
 
 const signalHealth = require('../../services/signalHealth');
 
-// Minimal mock sock — captures deleteSession calls so we can assert
+// Minimal mock sock — captures deleteSession calls so we can assert.
+// NOTE: the real Baileys 7.x signature is deleteSession(jids: string[]).
+// The mock records whatever it is handed, so the assertions below pin the
+// ARRAY contract — a regression to a bare string would fail here.
 function makeMockSock() {
   const deletions = [];
   return {
     deletions,
     signalRepository: {
-      async deleteSession(jid) {
-        deletions.push(jid);
+      async deleteSession(jids) {
+        deletions.push(jids);
       },
     },
   };
@@ -120,7 +123,7 @@ test('record() triggers deleteSession at threshold (3 failures)', async () => {
   assert.equal(r3.count, 3);
   assert.equal(r3.willRecover, true);
   assert.equal(r3.recovered, true);
-  assert.deepEqual(sock.deletions, ['bob@lid']);
+  assert.deepEqual(sock.deletions, [['bob@lid']]);
 });
 
 test('record() respects cooldown — no double-recovery within 30min window', async () => {
@@ -157,7 +160,7 @@ test('record() does not bleed counts across different JIDs', async () => {
   await signalHealth.record(sock, badMacLogObj('alice:1@lid'));
   await signalHealth.record(sock, badMacLogObj('bob:5@lid'));
   assert.equal(sock.deletions.length, 2);
-  assert.deepEqual(sock.deletions.sort(), ['alice@lid', 'bob@lid']);
+  assert.deepEqual(sock.deletions.sort(), [['alice@lid'], ['bob@lid']]);
 });
 
 test('record() recognises both Bad MAC and No session errors', async () => {
@@ -170,7 +173,25 @@ test('record() recognises both Bad MAC and No session errors', async () => {
   const r = await signalHealth.record(sock, noSessionLogObj('dan:2@lid'));
   assert.equal(r.count, 3);
   assert.equal(r.willRecover, true);
-  assert.deepEqual(sock.deletions, ['dan@lid']);
+  assert.deepEqual(sock.deletions, [['dan@lid']]);
+});
+
+test('record() passes an ARRAY to deleteSession (Baileys 7.x contract)', async () => {
+  signalHealth._resetForTests();
+  const sock = makeMockSock();
+
+  for (let i = 0; i < 3; i += 1) {
+    await signalHealth.record(sock, badMacLogObj('erin:1@lid'));
+  }
+
+  assert.equal(sock.deletions.length, 1, 'exactly one recovery');
+  const arg = sock.deletions[0];
+  // v7 does `if (!jids.length) return; jids.forEach(...)`. A bare string has
+  // length 7 and would be iterated CHARACTER BY CHARACTER — seven bogus JIDs
+  // and a silent no-op. The array form is the only correct call.
+  assert.ok(Array.isArray(arg), 'deleteSession must receive an array, not a string');
+  assert.deepEqual(arg, ['erin@lid']);
+  assert.equal(arg.length, 1, 'not the 7 characters of the JID string');
 });
 
 test('record() handles missing signalRepository gracefully', async () => {

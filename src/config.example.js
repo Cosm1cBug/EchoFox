@@ -166,6 +166,11 @@ module.exports = {
     fetchTimeoutMs: 30000,
     extraCaCertPath: '',
     userAgent: 'EchoFox/1.0 (+https://github.com/Cosm1cBug/EchoFox)',
+    // Optional WhatsApp Web client_revision pin, e.g. [2, 3000, 1050196505].
+    // Leave undefined to auto-detect the live value from
+    // web.whatsapp.com/sw.js — recommended, because a stale revision
+    // makes WhatsApp refuse new device links.
+    // waWebVersion: [2, 3000, 1050196505],
   },
 
   // ─── Operations ──────────────────────────────────

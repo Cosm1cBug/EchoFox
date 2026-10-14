@@ -312,6 +312,11 @@ const schema = z
         fetchTimeoutMs: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
         extraCaCertPath: z.string().default(''),
         userAgent: z.string().default('EchoFox/0.4 (+https://github.com/Cosm1cBug/EchoFox)'),
+        // Optional WhatsApp Web client_revision override, as [2, 3000, <rev>]
+        // or "2.3000.<rev>". Leave empty to auto-detect the live value from
+        // web.whatsapp.com/sw.js (recommended). Pin it only if a live revision
+        // trips your pinned Baileys' protobufs, or if sw.js is unreachable.
+        waWebVersion: z.union([z.array(z.coerce.number()), z.string()]).optional(),
       })
       .default({}),
 

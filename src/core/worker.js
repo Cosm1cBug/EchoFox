@@ -30,6 +30,7 @@ const logger = require('./logger');
 const caches = require('./caches');
 const { config } = require('../lib/configLoader');
 const { CallManager } = require('../lib/callManager');
+const { classifyDisconnect, ACTIONS } = require('./disconnectReasons');
 const lifecycle = require('./lifecycle');
 const metrics = require('../services/metrics');
 const signalHealth = require('../services/signalHealth');
@@ -92,6 +93,7 @@ let commands;
 let auth;
 let dashboardStarted = false;
 let shuttingDown = false;
+let waVersion = null;
 
 process.on('message', async (msg) => {
   if (msg === 'shutdown') {
@@ -283,6 +285,9 @@ async function start(retry = 0) {
   }
 
   const version = await lifecycle.fetchVersion();
+  // Remember the negotiated revision so a connection-close log can name it —
+  // a version rejection is otherwise indistinguishable from a network drop.
+  waVersion = version;
 
   // v1.4.2: Wrap the Baileys logger so we can intercept decryption errors,
   // count per-sender failures, and auto-trigger a Signal session reset
@@ -510,24 +515,116 @@ async function start(retry = 0) {
         /* never block */
       }
 
-      const reason = Object.entries(DisconnectReason).find(([, v]) => v === code)?.[0] || 'unknown';
-      log.warn({ phase: 'connection', status: 'closed', code, reason }, 'connection closed');
+      // ── Classify the close ───────────────────────────────────────────
+      // Baileys only names ten codes; WhatsApp sends more, and
+      // getErrorCodeFromStreamError() passes node.attrs.code straight
+      // through, so e.g. 516 arrives as a bare number. See
+      // src/core/disconnectReasons.js for the full table and its sources.
+      const cls = classifyDisconnect(code);
+      const baileysReason =
+        Object.entries(DisconnectReason).find(([, v]) => v === code)?.[0] || null;
 
-      if (code === DisconnectReason.loggedOut || code === 401 || code === 403) {
+      log.warn(
+        {
+          phase: 'connection',
+          status: 'closed',
+          code: cls.code,
+          reason: cls.reason,
+          baileysReason,
+          action: cls.action,
+          waVersion: waVersion ? waVersion.join('.') : undefined,
+        },
+        'connection closed',
+      );
+
+      if (!cls.known) {
         log.error(
-          { phase: 'connection', status: 'logged_out' },
-          'logged out / forbidden – clearing credentials and exiting for re-pair',
+          { code: cls.code, waVersion: waVersion ? waVersion.join('.') : undefined },
+          cls.advice,
+        );
+      } else if (cls.advice) {
+        log.info({ code: cls.code, action: cls.action }, cls.advice);
+      }
+
+      // ── 'stop': retrying is pointless or actively harmful ────────────
+      // Deliberately does NOT exit. Exiting would hand control back to the
+      // supervisor (pm2 autorestart / Docker restart policy), which would
+      // restart the process and reproduce the same failure in a tight loop —
+      // exactly how a locked or temporarily-banned account gets hammered.
+      // Staying resident also keeps the dashboard and /healthz reachable so
+      // the operator can see why the bot is down.
+      if (cls.action === ACTIONS.STOP) {
+        log.fatal(
+          { code: cls.code, reason: cls.reason },
+          `⛔ not reconnecting (${cls.reason}). Fix the underlying issue and restart the ` +
+            'process manually — an automatic restart would just loop.',
+        );
+        try {
+          connectionState.set({
+            connection: 'close',
+            code: cls.code,
+            reason: cls.reason,
+            action: 'stop',
+            reconnectAttempts,
+          });
+        } catch (_) {
+          /* never block */
+        }
+        // Alert over Telegram, not WhatsApp — the WA socket is dead, and
+        // telegram.forward() is a no-op when telegram is disabled.
+        try {
+          const telegram = require('../services/telegram');
+          telegram.forward('errLogs', {
+            level: 'fatal',
+            source: 'connection',
+            text:
+              `WhatsApp connection STOPPED — ${cls.reason} (code ${cls.code}).\n` +
+              `${cls.advice}\n` +
+              '_The process is staying up (not reconnecting) so this does not loop. ' +
+              'Fix the cause, then restart EchoFox._',
+          });
+        } catch (_) {
+          /* never block the close handler */
+        }
+        return;
+      }
+
+      // ── 're-pair': the stored session is dead ────────────────────────
+      // 401, 516 (server-forced logout), 411. Wiping credentials is the
+      // ONLY way forward — reconnecting with them cannot succeed.
+      if (cls.action === ACTIONS.REPAIR) {
+        log.error(
+          { phase: 'connection', status: 'session_dead', code: cls.code, reason: cls.reason },
+          `🔐 ${cls.reason} — clearing credentials and exiting for re-pair (a fresh QR / ` +
+            'pairing code will be offered on restart)',
         );
         try {
           if (clear) await clear();
         } catch (e) {
           log.error({ err: e }, 'Failed to clear auth credentials');
         }
-        // Controlled exit with slight delay for logging
         setTimeout(() => process.exit(2), 800);
         return;
       }
-      // Normal reconnection for other errors
+
+      // ── 'reconnect': transient ───────────────────────────────────────
+      // Includes 515 (force_login — expected right after QR pairing) and
+      // 405 (client_too_old — the session is fine, the VERSION is not).
+      if (cls.code === 405) {
+        log.error(
+          { waVersion: waVersion ? waVersion.join('.') : undefined },
+          '🚫 CLIENT_TOO_OLD — WhatsApp rejected this WA Web client_revision. Credentials are ' +
+            'intact; fix the version (config.network.waWebVersion) rather than re-pairing.',
+        );
+        // Force a re-resolve of the version on the next start().
+        waVersion = null;
+        try {
+          lifecycle.invalidateVersionCache();
+        } catch (_) {
+          /* optional */
+        }
+      }
+
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++;
 
@@ -574,8 +671,15 @@ async function start(retry = 0) {
   sock.ev.on('message-receipt.update', (payload) =>
     eventRouter.emit('message-receipt.update', { sock, store, payload }),
   );
-  sock.ev.on('newsletter.upsert', (u) => eventRouter.emit('newsletter.upsert', { sock, u }));
-  sock.ev.on('newsletters.update', (u) => eventRouter.emit('newsletters.update', { sock, u }));
+  // NOTE (v7 migration): `newsletter.upsert` and `newsletters.update` do not
+  // exist in Baileys 6.7.24 or 7.x. `sock.ev.on()` silently accepts unknown
+  // names, so the old subscriptions here never fired and the Newsletters
+  // dashboard tab could never populate. v7's real channel events are
+  // newsletter-participants.update / newsletter-settings.update /
+  // newsletter.reaction / newsletter.view.
+  sock.ev.on('newsletter-participants.update', (u) =>
+    eventRouter.emit('newsletter-participants.update', { sock, u }),
+  );
   sock.ev.on('blocklist.set', (u) => eventRouter.emit('blocklist.set', { sock, u }));
   sock.ev.on('blocklist.update', (u) => eventRouter.emit('blocklist.update', { sock, u }));
   sock.ev.on('chats.upsert', (u) => eventRouter.emit('chats.upsert', { sock, store, u }));

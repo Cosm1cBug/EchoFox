@@ -25,11 +25,10 @@ const onMessagesUpdate = require('./messages.update');
 const onMessagesDelete = require('./messages.delete');
 const onMessageReaction = require('./messages.reaction');
 const onMessageReceipt = require('./message-receipt.update');
-const onNewsletterUpsert = require('./newsletter.upsert');
-const onNewsletterUpdate = require('./newsletter.update');
 const onNewsletterReaction = require('./newsletter.reaction');
 const onNewsletterView = require('./newsletter.view');
 const onNewsletterSettingsUpdate = require('./newsletter-settings.update');
+const onNewsletterParticipantsUpdate = require('./newsletter-participants.update');
 const onBlocklistSet = require('./blocklist.set');
 const onBlocklistUpdate = require('./blocklist.update');
 const onLidMappingUpdate = require('./lid-mapping.update');
@@ -56,10 +55,11 @@ bus.on('messages.update', (p) => Promise.resolve(onMessagesUpdate(p)).catch(() =
 bus.on('messages.delete', (p) => Promise.resolve(onMessagesDelete(p)).catch(() => {}));
 bus.on('messages.reaction', (p) => Promise.resolve(onMessageReaction(p)).catch(() => {}));
 bus.on('message-receipt.update', (p) => Promise.resolve(onMessageReceipt(p)).catch(() => {}));
-bus.on('newsletter.upsert', (p) => Promise.resolve(onNewsletterUpsert(p)).catch(() => {}));
-bus.on('newsletters.update', (p) => Promise.resolve(onNewsletterUpdate(p)).catch(() => {}));
 bus.on('newsletter.reaction', (p) => Promise.resolve(onNewsletterReaction(p)).catch(() => {}));
 bus.on('newsletter.view', (p) => Promise.resolve(onNewsletterView(p)).catch(() => {}));
+bus.on('newsletter-participants.update', (p) =>
+  Promise.resolve(onNewsletterParticipantsUpdate(p)).catch(() => {}),
+);
 bus.on('newsletter-settings.update', (p) =>
   Promise.resolve(onNewsletterSettingsUpdate(p)).catch(() => {}),
 );

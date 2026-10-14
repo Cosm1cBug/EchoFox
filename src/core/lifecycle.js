@@ -276,21 +276,107 @@ async function startLoginFlow(sock) {
 }
 
 // ─── Phase 7-pre: WA version fetch (used in worker socket config) ───────
+//
+// Why this does NOT use fetchLatestBaileysVersion()
+// ------------------------------------------------
+// fetchLatestBaileysVersion() reads
+//   https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json
+// i.e. the client_revision baked into the Baileys package. Measured on
+// 2026-10-13 with the pinned 6.7.24:
+//
+//   fetchLatestBaileysVersion() -> [2, 3000, 1043857760]   <- package-pinned
+//   fetchLatestWaWebVersion()   -> [2, 3000, 1050196505]   <- live, from sw.js
+//   gap: 6,338,745 revisions
+//
+// WhatsApp refuses to complete handshakes from a client_revision that far
+// behind. The symptom is a connect -> close loop *during login* with a status
+// code that has no DisconnectReason member (405, 516, ...), so the logs just
+// say "connection closed" with an unknown code. Upstream:
+// WhiskeySockets/Baileys#2679. Reported against other Baileys projects too,
+// e.g. FaserF/ha-whatsapp#106 — "Stale WA Web version from
+// fetchLatestBaileysVersion() blocks new device linking (connect -> close
+// loop, no QR)".
+//
+// fetchLatestWaWebVersion() scrapes the live client_revision out of
+// https://web.whatsapp.com/sw.js, so it tracks what the server actually
+// accepts.
+//
+// Precedence
+//   1. config.network.waWebVersion — manual pin. Use this if a live version
+//      ever trips your pinned Baileys' protobufs ("newer versions can be
+//      incompatible" — see docs).
+//   2. fetchLatestWaWebVersion()   — live value (default).
+//   3. undefined                   — Baileys' own bundled default.
+
+/** Accept [2,3000,1050196505] or "2.3000.1050196505" → normalised array. */
+function normaliseWaVersion(v) {
+  if (v == null || v === '') return undefined;
+  const parts = Array.isArray(v) ? v.map(Number) : String(v).split('.').map(Number);
+  if (parts.length !== 3 || !parts.every((n) => Number.isInteger(n) && n > 0)) return undefined;
+  return parts;
+}
+
+// Cache the resolved version so a reconnect burst does not issue one HTTPS
+// request to web.whatsapp.com per attempt. start() runs on every reconnect and
+// calls this, so without a cache a flapping connection hammers sw.js.
+const VERSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 h
+let _versionCache = { value: null, at: 0 };
+
 async function fetchVersion() {
-  try {
-    const { fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-    const r = await fetchLatestBaileysVersion();
+  // 1. Explicit pin wins (pins bypass the cache — they are already constant).
+  const pinned = normaliseWaVersion(config.network?.waWebVersion);
+  if (pinned) {
     log.info(
-      { phase: 'version', status: 'ok', version: r.version.join('.'), latest: r.isLatest },
-      '📡 WA version',
+      { phase: 'version', status: 'pinned', version: pinned.join('.') },
+      '📡 WA version (pinned via config.network.waWebVersion)',
     );
-    return r.version;
+    return pinned;
+  }
+
+  // Use the memoised value while it is fresh.
+  if (_versionCache.value && Date.now() - _versionCache.at < VERSION_CACHE_TTL_MS) {
+    log.debug(
+      { phase: 'version', status: 'cached', version: _versionCache.value.join('.') },
+      '📡 WA version (cached)',
+    );
+    return _versionCache.value;
+  }
+
+  // 2. Live client_revision.
+  try {
+    const { fetchLatestWaWebVersion } = require('@whiskeysockets/baileys');
+    const r = await fetchLatestWaWebVersion();
+
+    if (r?.version && r.isLatest) {
+      _versionCache = { value: r.version, at: Date.now() };
+      log.info(
+        { phase: 'version', status: 'ok', version: r.version.join('.') },
+        '📡 WA version (live)',
+      );
+      return r.version;
+    }
+
+    // It did not throw, but it also could not read sw.js and fell back to the
+    // package-pinned revision — the exact value that breaks new device links.
+    log.warn(
+      {
+        phase: 'version',
+        status: 'package_fallback',
+        version: r?.version?.join('.'),
+        err: r?.error?.message,
+      },
+      '📡 fetchLatestWaWebVersion could not read a live client_revision — ' +
+        'falling back to the Baileys bundled version. New device linking may ' +
+        'fail with an unknown disconnect code. Pin config.network.waWebVersion ' +
+        'to a known-good value if so.',
+    );
+    return r?.version;
   } catch (e) {
     log.warn(
       { phase: 'version', status: 'fallback', err: e },
-      '📡 fetchLatestBaileysVersion failed — using bundled',
+      '📡 fetchLatestWaWebVersion threw — using the Baileys bundled default',
     );
-    return undefined;
+    return undefined; // makeWASocket falls back to its bundled version
   }
 }
 
@@ -333,4 +419,9 @@ module.exports = {
   initMetrics,
   startLoginFlow,
   fetchVersion,
+  /** Drop the memoised WA Web version. Called when the server rejects it
+   *  with 405 CLIENT_TOO_OLD so the next start() re-resolves it. */
+  invalidateVersionCache() {
+    _versionCache = { value: null, at: 0 };
+  },
 };

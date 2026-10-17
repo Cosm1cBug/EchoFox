@@ -29,6 +29,7 @@ connectionState module state — the dashboard reads these in-process. ✓
 ```
 
 Verified invariants that are **correct**:
+
 - Dashboard runs in the same process as the socket/store, so `connectionState` /
   `getRuntimeContext().sock` module state is shared — no cross-process bug.
 - `getMessage`, `cachedGroupMetadata`, `makeCacheableSignalKeyStore`,
@@ -37,7 +38,7 @@ Verified invariants that are **correct**:
   (`ECHOFOX_DASHBOARD_PORT`) maps to `config.dashboard.port` via the
   `ECHOFOX_<SECTION>_<KEY>` scheme. All SPA fetches are `/api/*`, so the dev proxy
   covers 100% of current traffic.
-- Frontend `tsc -b` is clean; every *live* page's response-shape handling matches its
+- Frontend `tsc -b` is clean; every _live_ page's response-shape handling matches its
   endpoint (items/total wrappers, `{users}`, `{active}`, `{viewers}`, etc.).
 - `build-dashboard.js` output (`src/dashboard/react/`) matches `REACT_DIR` in
   `server.js`; build-on-boot + maintenance page path is coherent.
@@ -69,28 +70,31 @@ Once the window is exhausted **everything** on the limiter429s — API, the SPA 
 until the 15-minute window rolls. This is the single most damaging integration defect.
 
 **Fix (pick one or combine):**
+
 1. Mount the limiter **once** (e.g. `app.use(dashboardLimiter)` only) or give `/`,
    `/dashboard` static, and `/api` separate instances — never the same instance twice.
 2. Re-do the budget math for the UI's polling design (HealthPill alone needs ~270/15min
-   *with single counting*), or
+   _with single counting_), or
 3. Slow the pill to 30–60 s, share one poller across components (a tiny event emitter /
    SWR-style cache), or move to SSE/WebSocket push (Vite dev proxy would need
    `ws: true` for that).
 
 ---
 
-### 🔴 C2 — `fetchJson` throws on every non-2xx, so the server's *degraded* payloads (503 + JSON body) can never reach the UI
+### 🔴 C2 — `fetchJson` throws on every non-2xx, so the server's _degraded_ payloads (503 + JSON body) can never reach the UI
 
 **Where:** `dashboard/src/lib/api.ts:20-42`, `src/dashboard/server.js:227` (health),
 `src/dashboard/server.js:454-457` (diagnostics), `dashboard/src/pages/Diagnostics.tsx:37-45`,
 `dashboard/src/components/HealthPill.tsx:53-58`
 
 The server deliberately answers **503 + a rich JSON body** when things are degraded:
+
 - `/api/health` → `{ ok:false, degraded, checks:{store, loginConnected, …}, backends }`
 - `/api/diagnostics` → full report with `ok:false` and per-check results
 
 But `fetchJson` does `if (!res.ok) throw` and only skims `body.error` for the message,
 discarding the payload. Consequences:
+
 - `Diagnostics.tsx` renders `report.ok ? "✅ Healthy" : "❌ Degraded"` — that branch is
   **unreachable**: a degraded system throws before `setReport`, and the page shows
   "Failed to load diagnostics." precisely when the report matters.
@@ -114,15 +118,16 @@ silently with generic "Failed to fetch data" strings — `fetchJson` collapses s
 into a message, so no page can distinguish 401 (bad auth) from 503/outage.
 
 Additional quirks:
+
 - `authHeader` is a module-level `let` — a page reload forgets the session and shows
   Login again, while the browser's native Basic-auth cache (populated by the
   `WWW-Authenticate` dialog the server triggers on the very first document request)
-  may still attach its *own* Authorization header to fetches. Two overlapping auth
+  may still attach its _own_ Authorization header to fetches. Two overlapping auth
   mechanisms (browser dialog + in-app form), potentially with different credentials;
   the in-app header always wins and can be the wrong one.
 - `credentials: "include"` is vestigial (no cookie sessions exist).
 
-**Fix:** `handleLogin` should call `getHealth()` (or a cheap `/api/version`) *before*
+**Fix:** `handleLogin` should call `getHealth()` (or a cheap `/api/version`) _before_
 `setIsAuthenticated(true)` and show the error on failure; have `fetchJson` reject with
 a typed `status` so the app can react to 401 (clear auth + show Login). Consider
 dropping the SPA form (rely on the browser dialog) or, better, a real session cookie
@@ -139,6 +144,7 @@ and no `WWW-Authenticate` on the HTML shell.
 Every other writer uses `'success' | 'failure' | 'timeout' | 'denied'`
 (`commandRunner.js`, `messages.upsert.js` for denials). The dashboard's
 `POST /api/conversations/send` is the only producer of `'ok'`, which:
+
 - violates the documented union (the TS type literally cannot represent it),
 - renders in `AuditLog.tsx` as an unstyled chip (`OUTCOME_CLS['ok']` → `""`).
 
@@ -181,16 +187,17 @@ counters (e.g. `messages_received_total`-style series from the store).
 
 ---
 
-### 🟠 H4 — The dashboard server only comes up *after* the WhatsApp connection opens
+### 🟠 H4 — The dashboard server only comes up _after_ the WhatsApp connection opens
 
 **Where:** `src/core/worker.js:408-448` (`connection.update` → `'open'` handler),
 `src/dashboard/server.js:1088` (`app.listen` with no `'error'` handler)
 
 `startDashboard` is invoked inside `if (connection === 'open')`. Consequences:
+
 - On a fresh install / logged-out session (QR pairing phase) **no dashboard exists** —
   and the dashboard has no pairing UI anyway (QR is terminal-only).
 - When the WA socket is down (network loss, `loggedOut`, crash-looping auth), the
-  dashboard — the tool you'd use to *debug* that state — is unreachable.
+  dashboard — the tool you'd use to _debug_ that state — is unreachable.
 - If `startDashboard` throws (e.g. `EADDRINUSE`), `dashboardStarted` is only set on
   success but the error is merely logged and never retried; `app.listen` has no
   `error` listener, so a bind failure becomes an unhandled `'error'` event that can
@@ -243,12 +250,12 @@ endpoint whose whole job is truth-telling during incidents.
 
 ### 🟡 M4 — Dead / orphaned frontend artifacts imply missing wiring
 
-| Artifact | Status |
-|---|---|
-| `hooks/useRealTime.ts` | Never imported. Also buggy: `[fetchFn, intervalMs]` dep re-runs the effect on every render when an inline lambda is passed (fetch → state → render → new fn → re-run loop), and `setError` is never cleared on recovery. |
-| `components/chats/ChatDetail.tsx` | Never imported. Its prop shape (`contact/presence/stats/commands/enrichment`) is exactly the response of **`GET /api/chats/:jid/full`** — a server endpoint with no frontend caller. The Chats drill-down was never connected. |
-| `components/RecentActivity.tsx`, `components/MostChangedGroups.tsx` | Never imported (see H3). |
-| `api.ts` exports with no callers | `getContact`, `getChat`, `getChatPresence`, `getPresence`, `getChatLabels`, `getLidMapping`, `getNewsletterReactions`, `getGroupSettingsHistoryFiltered` (documented as intentionally optional in `SettingsHistory.tsx`). |
+| Artifact                                                            | Status                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `hooks/useRealTime.ts`                                              | Never imported. Also buggy: `[fetchFn, intervalMs]` dep re-runs the effect on every render when an inline lambda is passed (fetch → state → render → new fn → re-run loop), and `setError` is never cleared on recovery.       |
+| `components/chats/ChatDetail.tsx`                                   | Never imported. Its prop shape (`contact/presence/stats/commands/enrichment`) is exactly the response of **`GET /api/chats/:jid/full`** — a server endpoint with no frontend caller. The Chats drill-down was never connected. |
+| `components/RecentActivity.tsx`, `components/MostChangedGroups.tsx` | Never imported (see H3).                                                                                                                                                                                                       |
+| `api.ts` exports with no callers                                    | `getContact`, `getChat`, `getChatPresence`, `getPresence`, `getChatLabels`, `getLidMapping`, `getNewsletterReactions`, `getGroupSettingsHistoryFiltered` (documented as intentionally optional in `SettingsHistory.tsx`).      |
 
 **Fix:** either wire `ChatDetail` to `/api/chats/:jid/full` from `Chats.tsx` (the
 backend is ready) or delete both sides; delete or fix `useRealTime`; prune unused
@@ -290,7 +297,7 @@ through the backend.
 All 33 helpers in `dashboard/src/lib/api.ts` resolve to existing routes; response
 shapes checked against store output for the live pages (`items/total`, `{users}`,
 `{active}`, `{viewers}`, `{counters,gauges,startedAt}`, `{days,…}` statuses grouping,
-audit `{events,total}`). **No missing-route bugs.** The gaps are the *dead* pairs
+audit `{events,total}`). **No missing-route bugs.** The gaps are the _dead_ pairs
 listed in M4 (server `/api/chats/:jid/full` without a client, `ChatDetail` without a
 fetcher) and the contract mismatches C2/H1/H2 above.
 
@@ -302,16 +309,16 @@ actions — all read-only except `POST /api/conversations/send`.
 
 ## 4. Priority fix list
 
-| # | Issue | Severity | Effort |
-|---|---|---|---|
-| C1 | Rate-limiter double-mount + polling budget | Critical | S–M |
-| C2 | `fetchJson` discards 503 payloads | Critical | S |
-| C3 | Login not validated, no 401 recovery | Critical | S |
-| H1 | audit `outcome: 'ok'` | High | S |
-| H2 | Chat list vs `JID_RE` | High | S |
-| H3 | Overview mock data / dead cards | High | M |
-| H4 | Dashboard lifecycle tied to WA `open` | High | S–M |
-| M1–M5 | filters, awaits, dead code, avatars | Medium | S–M |
+| #     | Issue                                      | Severity | Effort |
+| ----- | ------------------------------------------ | -------- | ------ |
+| C1    | Rate-limiter double-mount + polling budget | Critical | S–M    |
+| C2    | `fetchJson` discards 503 payloads          | Critical | S      |
+| C3    | Login not validated, no 401 recovery       | Critical | S      |
+| H1    | audit `outcome: 'ok'`                      | High     | S      |
+| H2    | Chat list vs `JID_RE`                      | High     | S      |
+| H3    | Overview mock data / dead cards            | High     | M      |
+| H4    | Dashboard lifecycle tied to WA `open`      | High     | S–M    |
+| M1–M5 | filters, awaits, dead code, avatars        | Medium   | S–M    |
 
 C1–C3 + H1 + H2 are small, surgical changes with outsized user impact: together they
 explain the likely observed symptoms ("dashboard randomly stops loading", "diagnostics

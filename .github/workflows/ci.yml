@@ -36,7 +36,8 @@ jobs:
         run: |
           cd dashboard
           npm ci
-          npx tsc -b --noEmit
+          npx tsc -p . --noEmit
+          npx tsc -p tsconfig.node.json --noEmit
 
   test:
     name: Test (Node ${{ matrix.node-version }})

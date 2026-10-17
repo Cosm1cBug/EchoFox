@@ -25,6 +25,10 @@ const { SQL_DDL: PARTICIPANTS_DDL } = require('./schema/participants');
 const { SQL_DDL: STATS_DDL } = require('./schema/stats');
 const { SQL_DDL: EXTRAS_DDL, applyMessagesMigration_sqlite } = require('./schema/messages-extras');
 
+// Reserved row id for the account-level message-capping quota (v1.20.0, E5).
+// Real JIDs are always `something@domain`, so '@account' cannot collide.
+const ACCOUNT_CAPPING_JID = '@account';
+
 function makeSQLiteStore({ dbPath, logger, groupCache }) {
   const dir = path.dirname(dbPath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -177,7 +181,11 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     CREATE TABLE IF NOT EXISTS message_capping (
       jid         TEXT PRIMARY KEY,
       cap_value   INTEGER NOT NULL,
-      updated_at  INTEGER NOT NULL DEFAULT 0
+      updated_at  INTEGER NOT NULL DEFAULT 0,
+      -- v1.20.0 (E5): full JSON of the account-level NewChatMessageCapInfo
+      -- (the message-capping.update event). The account row uses the
+      -- reserved jid '@account'; cap_value mirrors used_quota.
+      info        TEXT
     );
 
     -- v1.2.0 AI tables ───────────────────────────────────────
@@ -795,6 +803,12 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     messageCappingGet: db.prepare(
       `SELECT cap_value, updated_at FROM message_capping WHERE jid = ?`,
     ),
+    messageCappingInfoUpsert: db.prepare(
+      `INSERT INTO message_capping (jid, cap_value, updated_at, info) VALUES (?, ?, ?, ?) ON CONFLICT(jid) DO UPDATE SET cap_value=excluded.cap_value, updated_at=excluded.updated_at, info=excluded.info`,
+    ),
+    messageCappingInfoGet: db.prepare(
+      `SELECT cap_value, updated_at, info FROM message_capping WHERE jid = ?`,
+    ),
 
     // v1.2.0 AI ──────────────────────────────────────────────
     aiConvInsert: db.prepare(
@@ -1217,6 +1231,44 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         return r ? { cap_value: r.cap_value, updated_at: r.updated_at } : null;
       } catch (e) {
         logger.warn({ err: e, jid }, 'getMessageCap failed');
+        return null;
+      }
+    },
+
+    /**
+     * Account-level "new chat" message quota (Baileys `message-capping.update`
+     * → NewChatMessageCapInfo). Stored under the reserved jid '@account' —
+     * real JIDs are always `something@domain`, so this cannot collide.
+     * `cap_value` mirrors used_quota so the legacy scalar getter stays
+     * meaningful; `info` holds the full field set.
+     */
+    async setMessageCapInfo(info) {
+      try {
+        if (!info) return;
+        const used = Number(info.used_quota) || 0;
+        stmts.messageCappingInfoUpsert.run(
+          ACCOUNT_CAPPING_JID,
+          used,
+          Math.floor(Date.now() / 1000),
+          JSON.stringify(info),
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'setMessageCapInfo failed');
+      }
+    },
+    async getMessageCapInfo() {
+      try {
+        const r = stmts.messageCappingInfoGet.get(ACCOUNT_CAPPING_JID);
+        if (!r) return null;
+        let info = null;
+        try {
+          info = r.info ? JSON.parse(r.info) : null;
+        } catch {
+          info = null;
+        }
+        return { cap_value: r.cap_value, updated_at: r.updated_at, info };
+      } catch (e) {
+        logger.warn({ err: e }, 'getMessageCapInfo failed');
         return null;
       }
     },
@@ -1890,40 +1942,91 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       });
     },
 
+    /**
+     * Persist raw WAMessage[] — the SINGLE write path for message bodies.
+     * Used by the live `messages.upsert` bind listener AND by
+     * `messaging-history.set` (history sync backfill), so both channels get
+     * identical filtering: privacy exclusions, `storeMessageBodies=false`,
+     * and non-human content (protocol / key-distribution / reactions /
+     * poll votes / keep-in-chat — see src/lib/messageFilters.js).
+     *
+     * @param {Array} messages  raw WAMessage[] from Baileys
+     * @returns {Promise<number>} rows written
+     */
+    async saveMessages(messages) {
+      if (!Array.isArray(messages) || !messages.length) return 0;
+      const storeBodies = config.privacy?.storeMessageBodies !== false;
+      const excluded = new Set(config.privacy?.excludeFromStore || []);
+      const rows = [];
+      for (const m of messages) {
+        if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
+        if (excluded.has(m.key.remoteJid)) continue;
+        // Ignore protocol messages, key distributions, reactions, poll
+        // votes and keep-in-chat bookkeeping. None of these are human
+        // conversation, and they were flipping dormant groups to "active"
+        // on the dashboard (see src/lib/messageFilters.js).
+        if (isNonHumanContent(m.message)) continue;
+
+        const ts = normaliseTs(m.messageTimestamp);
+
+        rows.push({
+          jid: m.key.remoteJid,
+          id: m.key.id,
+          fromMe: m.key.fromMe ? 1 : 0,
+          participant: m.key.participant ?? null,
+          msg: storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null,
+          ts,
+        });
+
+        if (storeBodies) msgHot.set(`${m.key.remoteJid}|${m.key.id}`, m.message);
+      }
+      if (rows.length) {
+        try {
+          writeMessages(rows);
+        } catch (e) {
+          logger.warn({ err: e }, 'store: msg write failed');
+          return 0;
+        }
+      }
+      return rows.length;
+    },
+
+    /**
+     * Persist a Chat object (proto.IConversation shape — from `chats.upsert`
+     * or `messaging-history.set`). name/unread/ts are written authoritatively
+     * (insert-or-replace); pinned/mute/archived are merged only when the
+     * payload defines them. Note: updateChat is COALESCE-based, so an
+     * explicit un-mute cannot clear `muted_until` — same limitation as the
+     * live chats.upsert path.
+     *
+     * @returns {Promise<boolean>} true when a row was written
+     */
+    async saveChat(chat) {
+      if (!chat?.id) return false;
+      try {
+        stmts.chatUpsert.run(
+          chat.id,
+          chat.name ?? null,
+          Number(chat.unreadCount) || 0,
+          Number(chat.conversationTimestamp) || Math.floor(Date.now() / 1000),
+        );
+        const ext = {};
+        if (chat.pinned !== undefined) ext.pinned = chat.pinned;
+        if (chat.mute !== undefined) ext.muted_until = chat.mute ?? null;
+        if (chat.archived !== undefined) ext.archived = chat.archived;
+        if (Object.keys(ext).length) await this.updateChat(chat.id, ext);
+        return true;
+      } catch (e) {
+        logger.warn({ err: e, jid: chat.id }, 'store: saveChat failed');
+        return false;
+      }
+    },
+
     bind(ev) {
       ev.on('messages.upsert', ({ messages }) => {
-        const storeBodies = config.privacy?.storeMessageBodies !== false;
-        const excluded = new Set(config.privacy?.excludeFromStore || []);
-        const rows = [];
-        for (const m of messages) {
-          if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
-          if (excluded.has(m.key.remoteJid)) continue;
-          // Ignore protocol messages, key distributions, reactions, poll
-          // votes and keep-in-chat bookkeeping. None of these are human
-          // conversation, and they were flipping dormant groups to "active"
-          // on the dashboard (see src/lib/messageFilters.js).
-          if (isNonHumanContent(m.message)) continue;
-
-          const ts = normaliseTs(m.messageTimestamp);
-
-          rows.push({
-            jid: m.key.remoteJid,
-            id: m.key.id,
-            fromMe: m.key.fromMe ? 1 : 0,
-            participant: m.key.participant ?? null,
-            msg: storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null,
-            ts,
-          });
-
-          if (storeBodies) msgHot.set(`${m.key.remoteJid}|${m.key.id}`, m.message);
-        }
-        if (rows.length) {
-          try {
-            writeMessages(rows);
-          } catch (e) {
-            logger.warn({ err: e }, 'store: msg write failed');
-          }
-        }
+        this.saveMessages(messages).catch((e) =>
+          logger.warn({ err: e }, 'store: saveMessages failed'),
+        );
       });
 
       ev.on('chats.upsert', (chats) => {

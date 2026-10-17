@@ -8,6 +8,11 @@
 const { config } = require('../lib/configLoader');
 const { Pool } = require('pg');
 const { proto } = require('@whiskeysockets/baileys');
+const { isNonHumanContent } = require('../lib/messageFilters');
+
+// Reserved row id for the account-level message-capping quota (v1.20.0, E5).
+// Real JIDs are always `something@domain`, so '@account' cannot collide.
+const ACCOUNT_CAPPING_JID = '@account';
 const { SQL_DDL: PARTICIPANTS_DDL } = require('./schema/participants');
 const { makeBatcher } = require('../lib/backpressure');
 const { SQL_DDL: STATS_DDL } = require('./schema/stats');
@@ -501,6 +506,47 @@ function makePostgresStore(url, logger, groupCache) {
         return rows[0] || null;
       } catch (e) {
         logger.warn({ err: e, jid }, 'getMessageCap failed');
+        return null;
+      }
+    },
+
+    /**
+     * Account-level "new chat" message quota (Baileys `message-capping.update`
+     * → NewChatMessageCapInfo). Stored under the reserved jid '@account'
+     * (real JIDs are `something@domain`, so no collision). `cap_value`
+     * mirrors used_quota; `info` holds the full JSON field set.
+     */
+    async setMessageCapInfo(info) {
+      try {
+        if (!info) return;
+        const used = Number(info.used_quota) || 0;
+        await pool.query(
+          `INSERT INTO message_capping (jid, cap_value, updated_at, info) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (jid) DO UPDATE SET cap_value = EXCLUDED.cap_value,
+             updated_at = EXCLUDED.updated_at, info = EXCLUDED.info`,
+          [ACCOUNT_CAPPING_JID, used, Date.now(), JSON.stringify(info)],
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'setMessageCapInfo failed');
+      }
+    },
+    async getMessageCapInfo() {
+      try {
+        const { rows } = await pool.query(
+          'SELECT cap_value, updated_at, info FROM message_capping WHERE jid = $1',
+          [ACCOUNT_CAPPING_JID],
+        );
+        const r = rows[0];
+        if (!r) return null;
+        let info = null;
+        try {
+          info = r.info ? JSON.parse(r.info) : null;
+        } catch {
+          info = null;
+        }
+        return { cap_value: r.cap_value, updated_at: r.updated_at, info };
+      } catch (e) {
+        logger.warn({ err: e }, 'getMessageCapInfo failed');
         return null;
       }
     },
@@ -1092,22 +1138,73 @@ function makePostgresStore(url, logger, groupCache) {
       }
     },
 
+    /**
+     * Persist raw WAMessage[] — SINGLE write path for live `messages.upsert`
+     * AND `messaging-history.set` backfill (v1.20.0, E1). Same filtering both
+     * ways: privacy exclusions + non-human content (protocol / key
+     * distribution / reactions / poll votes — see src/lib/messageFilters.js;
+     * this aligns postgres with the sqlite store's long-standing filter).
+     *
+     * @returns {Promise<number>} rows queued for write
+     */
+    async saveMessages(messages) {
+      if (!Array.isArray(messages) || !messages.length) return 0;
+      const storeBodies = config.privacy?.storeMessageBodies !== false;
+      const excluded = new Set(config.privacy?.excludeFromStore || []);
+      let n = 0;
+      for (const m of messages) {
+        if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
+        if (excluded.has(m.key.remoteJid)) continue;
+        if (isNonHumanContent(m.message)) continue;
+        messageBatcher.push({
+          jid: m.key.remoteJid,
+          id: m.key.id,
+          fromMe: !!m.key.fromMe,
+          participant: m.key.participant,
+          msg: storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null,
+          ts: Number(m.messageTimestamp),
+        });
+        n++;
+      }
+      return n;
+    },
+
+    /**
+     * Persist a Chat object (chats.upsert / messaging-history.set).
+     * name/unread/ts written authoritatively; pinned/mute/archived merged
+     * when present (via COALESCE-based updateChat).
+     */
+    async saveChat(chat) {
+      if (!chat?.id) return false;
+      try {
+        await pool.query(
+          `INSERT INTO chats (jid, name, unread, ts) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (jid) DO UPDATE SET name=EXCLUDED.name,
+             unread=EXCLUDED.unread, ts=EXCLUDED.ts`,
+          [
+            chat.id,
+            chat.name ?? null,
+            Number(chat.unreadCount) || 0,
+            Number(chat.conversationTimestamp) || Math.floor(Date.now() / 1000),
+          ],
+        );
+        const ext = {};
+        if (chat.pinned !== undefined) ext.pinned = chat.pinned;
+        if (chat.mute !== undefined) ext.muted_until = chat.mute ?? null;
+        if (chat.archived !== undefined) ext.archived = chat.archived;
+        if (Object.keys(ext).length) await this.updateChat(chat.id, ext);
+        return true;
+      } catch (e) {
+        logger.warn({ err: e, jid: chat.id }, 'saveChat failed');
+        return false;
+      }
+    },
+
     bind(ev) {
       ev.on('messages.upsert', ({ messages }) => {
-        const storeBodies = config.privacy?.storeMessageBodies !== false;
-        const excluded = new Set(config.privacy?.excludeFromStore || []);
-        for (const m of messages) {
-          if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
-          if (excluded.has(m.key.remoteJid)) continue;
-          messageBatcher.push({
-            jid: m.key.remoteJid,
-            id: m.key.id,
-            fromMe: !!m.key.fromMe,
-            participant: m.key.participant,
-            msg: storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null,
-            ts: Number(m.messageTimestamp),
-          });
-        }
+        this.saveMessages(messages).catch((e) =>
+          logger.warn({ err: e }, 'store: saveMessages failed'),
+        );
       });
 
       ev.on('chats.upsert', async (chats) => {

@@ -21,16 +21,16 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     ...((init?.headers as Record<string, string>) || {}),
   };
-  if (authHeader) headers["Authorization"] = authHeader;
+  if (authHeader) headers['Authorization'] = authHeader;
 
-  const res = await fetch(path, { ...init, headers, credentials: "include" });
+  const res = await fetch(path, { ...init, headers, credentials: 'include' });
   if (!res.ok) {
     // Surface the server's error code when there is one (e.g. not_connected,
     // text_too_long) instead of a bare status number.
-    let detail = "";
+    let detail = '';
     try {
       const body = await res.clone().json();
-      detail = body?.error ? ` (${body.error})` : "";
+      detail = body?.error ? ` (${body.error})` : '';
     } catch {
       /* non-JSON error body */
     }
@@ -39,9 +39,9 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export const getHealth = () => fetchJson("/api/health");
-export const getStats = () => fetchJson("/api/stats");
-export const getGroups = () => fetchJson("/api/groups");
+export const getHealth = () => fetchJson('/api/health');
+export const getStats = () => fetchJson('/api/stats');
+export const getGroups = () => fetchJson('/api/groups');
 
 // v1.13.0 — bundled drill-down endpoint: meta + participants + history + activity
 export const getGroupFull = (jid: string, historyLimit = 200) =>
@@ -51,25 +51,24 @@ export const getGroupFull = (jid: string, historyLimit = 200) =>
 export const getGroupSettingsHistory = (jid: string, limit = 200) =>
   fetchJson(`/api/groups/${encodeURIComponent(jid)}/settings/history?limit=${limit}`);
 
-export const getDiagnostics = () => fetchJson("/api/diagnostics");
-export const getAlerts = () => fetchJson("/api/alerts");
-export const getSubscriptions = () => fetchJson("/api/subscriptions");
+export const getDiagnostics = () => fetchJson('/api/diagnostics');
+export const getAlerts = () => fetchJson('/api/alerts');
+export const getSubscriptions = () => fetchJson('/api/subscriptions');
 
-export const getBlocklist = () => fetchJson("/api/blocklist");
+export const getBlocklist = () => fetchJson('/api/blocklist');
 
 export const getContacts = (limit = 100, offset = 0) =>
   fetchJson(`/api/contacts?limit=${limit}&offset=${offset}`);
 
-export const getContact = (jid: string) =>
-  fetchJson(`/api/contacts/${encodeURIComponent(jid)}`);
+export const getContact = (jid: string) => fetchJson(`/api/contacts/${encodeURIComponent(jid)}`);
 
 export const getConversation = (jid: string, limit = 100) =>
   fetchJson(`/api/conversations/${encodeURIComponent(jid)}/messages?limit=${limit}`);
 
 export const sendMessage = (jid: string, text: string) =>
-  fetchJson("/api/conversations/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+  fetchJson('/api/conversations/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jid, text }),
   });
 
@@ -80,26 +79,21 @@ export const getStatusViewers = (id: string) =>
 
 export const getChats = (params?: { limit?: number; offset?: number }) => {
   const query = params
-    ? "?" + new URLSearchParams(
-        Object.entries(params).map(([k, v]) => [k, String(v)])
-      ).toString()
-    : "";
-  return fetchJson("/api/chats" + query);
+    ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()
+    : '';
+  return fetchJson('/api/chats' + query);
 };
 
-export const getChat = (jid: string) =>
-  fetchJson(`/api/chats/${encodeURIComponent(jid)}`);
+export const getChat = (jid: string) => fetchJson(`/api/chats/${encodeURIComponent(jid)}`);
 
-export const getRecentPresence = (limit = 50) =>
-  fetchJson(`/api/presence?limit=${limit}`);
+export const getRecentPresence = (limit = 50) => fetchJson(`/api/presence?limit=${limit}`);
 
-export const getPresence = (jid: string) =>
-  fetchJson(`/api/presence/${encodeURIComponent(jid)}`);
+export const getPresence = (jid: string) => fetchJson(`/api/presence/${encodeURIComponent(jid)}`);
 
 export const getChatPresence = (jid: string) =>
   fetchJson(`/api/chats/${encodeURIComponent(jid)}/presence`);
 
-export const getLabels = () => fetchJson("/api/labels");
+export const getLabels = () => fetchJson('/api/labels');
 
 export const getLabelAssociations = (id: string) =>
   fetchJson(`/api/labels/${encodeURIComponent(id)}/associations`);
@@ -107,7 +101,7 @@ export const getLabelAssociations = (id: string) =>
 export const getChatLabels = (jid: string) =>
   fetchJson(`/api/chats/${encodeURIComponent(jid)}/labels`);
 
-export const getNewsletters = () => fetchJson("/api/newsletters");
+export const getNewsletters = () => fetchJson('/api/newsletters');
 
 export const getNewsletter = (id: string) =>
   fetchJson(`/api/newsletters/${encodeURIComponent(id)}`);
@@ -121,12 +115,11 @@ export const getNewsletterReactions = (id: string, msgId: string) =>
 export const getLidMapping = (lid: string) =>
   fetchJson(`/api/lid-mapping/${encodeURIComponent(lid)}`);
 
-export const getAiStats = (days = 30) =>
-  fetchJson(`/api/ai/stats?days=${days}`);
+export const getAiStats = (days = 30) => fetchJson(`/api/ai/stats?days=${days}`);
 
-export const getAiChats = () => fetchJson("/api/ai/chats");
+export const getAiChats = () => fetchJson('/api/ai/chats');
 
-export const getAiConfig = () => fetchJson("/api/ai/config");
+export const getAiConfig = () => fetchJson('/api/ai/config');
 
 // v1.16.0 — leaderboard tab
 export const getLeaderboard = (days = 7, limit = 10) =>
@@ -152,8 +145,8 @@ export const getGroupSettingsHistoryFiltered = (
   opts: { field?: string | null; limit?: number } = {},
 ) => {
   const qs = new URLSearchParams();
-  if (opts.field) qs.set("field", opts.field);
-  qs.set("limit", String(opts.limit ?? 200));
+  if (opts.field) qs.set('field', opts.field);
+  qs.set('limit', String(opts.limit ?? 200));
   return fetchJson<{
     jid: string;
     field: string | null;
@@ -177,18 +170,20 @@ export interface AuditEvent {
   cmd_name: string;
   prefix: string | null;
   args: string | null;
-  kind: "admin" | "group_admin";
-  outcome: "success" | "failure" | "timeout" | "denied";
+  kind: 'admin' | 'group_admin';
+  outcome: 'success' | 'failure' | 'timeout' | 'denied';
   latency_ms: number | null;
 }
 
-export const getAudit = (opts: { days?: number; limit?: number; offset?: number; actor?: string; cmd?: string } = {}) => {
+export const getAudit = (
+  opts: { days?: number; limit?: number; offset?: number; actor?: string; cmd?: string } = {},
+) => {
   const qs = new URLSearchParams();
-  qs.set("days", String(opts.days ?? 7));
-  qs.set("limit", String(opts.limit ?? 100));
-  qs.set("offset", String(opts.offset ?? 0));
-  if (opts.actor) qs.set("actor", opts.actor);
-  if (opts.cmd) qs.set("cmd", opts.cmd);
+  qs.set('days', String(opts.days ?? 7));
+  qs.set('limit', String(opts.limit ?? 100));
+  qs.set('offset', String(opts.offset ?? 0));
+  if (opts.actor) qs.set('actor', opts.actor);
+  if (opts.cmd) qs.set('cmd', opts.cmd);
   return fetchJson<{
     days: number;
     limit: number;
@@ -207,4 +202,25 @@ export const getAuditStatus = () =>
     lastPruneAt: number | null;
     lastPruneDeleted: number;
     total: number;
-  }>("/api/audit/status");
+  }>('/api/audit/status');
+
+// v1.20.0 — account-level "new chat" message quota (Baileys
+// `message-capping.update` → NewChatMessageCapInfo). Powers the
+// New-chat quota box on the Overview tab.
+export interface NewChatQuotaInfo {
+  total_quota: number | null;
+  used_quota: number | null;
+  cycle_start_timestamp: string | null;
+  cycle_end_timestamp: string | null;
+  server_sent_timestamp: string | null;
+  ote_status: string | null;
+  mv_status: string | null;
+  capping_status: string | null;
+}
+
+export const getMessageCapping = () =>
+  fetchJson<{
+    available: boolean;
+    info: NewChatQuotaInfo | null;
+    updatedAt: number | null;
+  }>('/api/message-capping');

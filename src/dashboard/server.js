@@ -7,7 +7,6 @@
 
 const crypto = require('node:crypto');
 const express = require('express');
-const rateLimit = require('express-rate-limit');
 const path = require('node:path');
 const fs = require('node:fs');
 const metrics = require('../services/metrics');
@@ -106,38 +105,21 @@ function startDashboard(port, store, config) {
   //   'loopback'      docker-compose publishes on 127.0.0.1 (current default)
   //   1               exactly one reverse-proxy hop (nginx / Caddy / Traefik)
   //   '10.0.0.0/8'    your container network
-  // NEVER `true`: express-rate-limit reads req.ip, so trusting every peer lets
-  // any client send a spoofed X-Forwarded-For and reset its own bucket,
-  // disabling both limiters below.
+  // NEVER `true`: trusting every peer lets any client spoof X-Forwarded-For,
+  // which corrupts req.ip for logging and any future per-IP logic.
   app.set('trust proxy', config.dashboard?.trustProxy ?? 'loopback');
-  // v1.0.1 — rate-limit BOTH /api (data endpoints) and /dashboard (auth surface)
-  const dashboardLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15-minute window
-    max: 300, // 300 requests per IP per window
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'rate_limited', message: 'Too many requests; slow down.' },
-  });
-  app.use('/api', dashboardLimiter);
-  app.use('/dashboard', dashboardLimiter);
 
-  // ── /metrics needs its OWN ceiling, not the dashboard one ──────────────
-  // Prometheus scrapes every 15s (config default) = 4/min = 240 requests per
-  // 15-minute window, which is already 80% of the 300-request dashboard cap.
-  // Sharing that bucket would either throttle the scrape or starve the
-  // dashboard. Previously /metrics and / were not limited at all.
-  const metricsLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 1500, // ~6 scrapers at 15s, or one at 1s — generous but bounded
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'rate_limited', message: 'Too many metric scrapes.' },
-  });
-  app.use('/metrics', metricsLimiter);
-
-  // `/` is only a 301 to /dashboard/, but leaving it unlimited made it a free
-  // request amplifier against the auth middleware below.
-  app.use('/', dashboardLimiter);
+  // v1.20.0 — HTTP rate limiting REMOVED entirely.
+  //   The dashboard is an internal, admin-only tool (never public), so the
+  //   limiter was pure downside: one `rateLimit` instance was mounted at
+  //   `/api`, `/dashboard` AND `/`, which made every API request decrement
+  //   the budget TWICE, while the HealthPill's 5s/10s polling alone needed
+  //   ~270 req/15min — so the UI bricked itself with 429s after ~7 minutes.
+  //   With no limiter, the polling design is fine on an internal network.
+  //   Residual risk accepted: unlimited Basic-auth guessing IF the port is
+  //   ever exposed publicly — keep the bind internal and the password strong
+  //   (configSchema already refuses the CHANGE_ME placeholder while enabled).
+  //   (express-rate-limit stays in package.json to avoid lockfile churn.)
 
   if (config.dashboard.username) {
     app.use(basicAuth(config.dashboard.username, config.dashboard.password));
@@ -1074,6 +1056,25 @@ function startDashboard(port, store, config) {
       },
     };
     res.json(safe);
+  });
+
+  // ── v1.20.0 — account-level "new chat" message quota (E5) ────────────
+  //
+  //   Baileys `message-capping.update` → NewChatMessageCapInfo, stored by
+  //   src/events/message-capping.update.js via store.setMessageCapInfo().
+  //   Powers the dashboard's "New-chat quota" box.
+  app.get('/api/message-capping', async (_req, res, next) => {
+    try {
+      const row =
+        typeof store.getMessageCapInfo === 'function' ? await store.getMessageCapInfo() : null;
+      res.json({
+        available: !!(row && row.info),
+        info: row?.info ?? null,
+        updatedAt: row?.updated_at ?? null,
+      });
+    } catch (e) {
+      next(e);
+    }
   });
 
   // ── Error handler ─────────────────────────────────────────────────────

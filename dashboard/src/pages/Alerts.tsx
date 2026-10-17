@@ -8,14 +8,29 @@ import { useEffect, useState } from "react";
 import { getAlerts } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
 
+
+type ActiveAlert = {
+  command: string;
+  rate: number;
+  invocations: number;
+  since: string | number;
+};
+
+type AlertsResponse = {
+  active?: ActiveAlert[];
+};
+
 export function Alerts() {
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<ActiveAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getAlerts()
-      .then((res: any) => setAlerts(res.active || []))
+      .then((res) => {
+        const response = res as AlertsResponse;
+        setAlerts(Array.isArray(response.active) ? response.active : []);
+      })
       .catch(() => setError("Failed to load alerts."))
       .finally(() => setLoading(false));
   }, []);
@@ -48,7 +63,11 @@ export function Alerts() {
             {alerts.map((alert, index) => (
               <tr key={index} className="border-b border-white/5">
                 <td className="px-5 py-4 font-mono text-rose-400">.{alert.command}</td>
-                <td className="px-5 py-4 text-rose-400">{(alert.rate * 100).toFixed(1)}%</td>
+                <td className="px-5 py-4 text-rose-400">
+                  {Number.isFinite(alert.rate)
+                  ? `${(alert.rate * 100).toFixed(1)}%`
+                  : "—"}
+                </td>
                 <td className="px-5 py-4">{alert.invocations}</td>
                 <td className="px-5 py-4 text-slate-400">
                   {new Date(alert.since).toLocaleDateString()}

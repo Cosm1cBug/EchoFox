@@ -8,23 +8,36 @@ import { useEffect, useState } from "react";
 import { getDiagnostics } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
 
+
+type DiagnosticCheck = {
+  ok: boolean;
+  ms?: number;
+};
+
+type DiagnosticsResponse = {
+  ok: boolean;
+  checks?: Record<string, DiagnosticCheck>;
+};
+
 export function Diagnostics() {
-  const [report, setReport] = useState<any>(null);
+  const [report, setReport] = useState<DiagnosticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    getDiagnostics()
-      .then(setReport)
-      .catch(() => setError("Failed to load diagnostics."))
-      .finally(() => setLoading(false));
-  }, []);
+useEffect(() => {
+  getDiagnostics()
+    .then((data) => {
+      setReport(data as DiagnosticsResponse);
+    })
+    .catch(() => setError("Failed to load diagnostics."))
+    .finally(() => setLoading(false));
+}, []);
 
   if (loading) return <Loading />;
   if (error) return <ErrorMessage message={error} />;
   if (!report) return null;
 
-  const checks = Object.entries(report.checks || {});
+  const checks = Object.entries(report.checks ?? {});
 
   return (
     <div>
@@ -43,10 +56,12 @@ export function Diagnostics() {
           </thead>
           <tbody>
             {checks.length > 0 ? (
-              checks.map(([name, check]: any, index) => (
+              checks.map(([name, check], index) => (
                 <tr key={index} className="border-b border-white/5">
                   <td className="px-5 py-4 font-medium">{name}</td>
-                  <td className="px-5 py-4 font-mono text-slate-400">{check.ms}ms</td>
+                  <td className="px-5 py-4 font-mono text-slate-400">
+                    {typeof check.ms === "number" && Number.isFinite(check.ms) ? `${check.ms}ms` : "—"}
+                  </td>
                   <td className="px-5 py-4">
                     {check.ok ? (
                       <span className="text-emerald-400">✅ OK</span>

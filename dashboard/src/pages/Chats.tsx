@@ -1,264 +1,443 @@
+
 /*
  * EchoFox - WhatsApp bot built on Baileys
  * Copyright (C) 2026 COSM1CBUG and EchoFox contributors
  * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
  */
 
-// v1.19.0 — merged into a single identity card per person.
-//
-// Backed by GET /api/chats, which returns one row per contact/chat with:
-//   savedName    — the name YOU saved them as (contacts.name)
-//   pushName     — the name THEY set for themselves (contacts.notify)
-//   phoneJid     — @s.whatsapp.net form (when known)
-//   lid          — @lid form (when known)
-//   firstSeenTs  — oldest inbound message
-//   lastSeenTs   — newest inbound message
-//   presenceState— available | unavailable | composing | recording | paused
-//
-// The three-state dot mirrors GroupTile:
-//   green  = available / composing / recording  (actively online)
-//   red    = unavailable                        (seen, currently offline)
-//   grey   = no presence data at all
-//
-// Presence stickers expire after ~10s in WhatsApp, so "available" only ever
-// means "online as of the last update we received".
-
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getChats } from "../lib/api";
 
-type Chat = {
+type ChatEntry = {
   jid: string;
-  savedName: string | null;
-  pushName: string | null;
-  phoneJid: string | null;
-  lid: string | null;
-  firstSeenTs: number | null;
-  lastSeenTs: number | null;
-  messageCount: number | null;
-  presenceState: string | null;
-  presenceLastSeenTs: number | null;
+  savedName?: string | null;
+  pushName?: string | null;
+  phoneJid?: string | null;
+  lid?: string | null;
+  firstSeenTs?: number | null;
+  lastSeenTs?: number | null;
+  messageCount?: number | null;
+  presenceState?: string | null;
+  presenceLastSeenTs?: number | null;
   imgUrl?: string | null;
   unread?: number | null;
 };
 
-const POLL_MS = 20000;
+type Filter = "all" | "online" | "offline";
 
-/** "3d ago" / "2h ago" / "just now" */
-function ago(tsSec: number | null | undefined): string {
-  if (!tsSec) return "—";
-  const sec = Math.max(0, Math.floor(Date.now() / 1000) - tsSec);
-  if (sec < 60) return "just now";
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  return `${Math.floor(sec / 86400)}d ago`;
-}
-
-function fullDate(tsSec: number | null | undefined): string {
-  if (!tsSec) return "unknown";
-  return new Date(tsSec * 1000).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function shortJid(jid: string | null | undefined): string {
-  if (!jid) return "—";
-  return jid.split("@")[0] || jid;
-}
-
-type PresKind = "online" | "offline" | "unknown";
-
-function presenceKind(state: string | null | undefined): PresKind {
+function presenceKind(state?: string | null): "online" | "offline" | "unknown" {
   if (!state) return "unknown";
-  const s = state.toLowerCase();
-  if (s === "available" || s === "composing" || s === "recording") return "online";
-  if (s === "unavailable" || s === "offline" || s === "paused") return "offline";
+
+  const value = state.toLowerCase();
+
+  if (["available", "composing", "recording"].includes(value)) {
+    return "online";
+  }
+
+  if (["unavailable", "offline"].includes(value)) {
+    return "offline";
+  }
+
   return "unknown";
 }
 
-const DOT: Record<PresKind, string> = {
-  online: "bg-emerald-400 shadow-emerald-400/40",
-  offline: "bg-rose-500 shadow-rose-500/40",
-  unknown: "bg-slate-500 shadow-slate-500/30",
-};
+function fmtDate(ts?: number | null): string {
+  if (typeof ts !== "number" || !Number.isFinite(ts) || ts <= 0) {
+    return "—";
+  }
 
-const DOT_LABEL: Record<PresKind, string> = {
-  online: "Online",
-  offline: "Offline",
-  unknown: "No presence data",
-};
+  const date = new Date(ts * 1000);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+}
 
-function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function fmtRelative(ts?: number | null): string {
+  if (typeof ts !== "number" || !Number.isFinite(ts) || ts <= 0) {
+    return "Unknown";
+  }
+
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+
+  if (seconds < 60) return "Just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+
+  return new Date(ts * 1000).toLocaleDateString();
+}
+
+function displayValue(value?: string | null): string {
+  return value?.trim() || "—";
+}
+
+function IdentityField({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | null;
+}) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-0.5">
-      <span className="shrink-0 text-[11px] uppercase tracking-wide text-slate-500">{label}</span>
-      <span
-        className={`min-w-0 truncate text-right text-xs text-slate-300 ${
-          mono ? "font-mono" : ""
-        }`}
-        title={value}
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        {label}
+      </p>
+      <p
+        className="mt-1 break-all font-mono text-xs text-slate-300"
+        title={value || undefined}
       >
-        {value}
-      </span>
+        {displayValue(value)}
+      </p>
     </div>
   );
 }
 
-export function Chats() {
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "online" | "offline">("all");
+function ChatCard({ chat }: { chat: ChatEntry }) {
+  const name = chat.savedName?.trim() || chat.pushName?.trim() || "Unknown contact";
+  const presence = presenceKind(chat.presenceState);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      getChats({ limit: 500 })
-        .then((r: any) => {
-          if (cancelled) return;
-          setChats(Array.isArray(r) ? r : r?.items || []);
-          setError(null);
-        })
-        .catch((e: Error) => {
-          if (!cancelled) setError(e.message || "Failed to load chats");
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    };
-    load();
-    const id = setInterval(load, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+  const dotColor =
+    presence === "online"
+      ? "bg-emerald-400"
+      : presence === "offline"
+        ? "bg-rose-400"
+        : "bg-slate-500";
 
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let list = chats;
-
-    if (q) {
-      list = list.filter((c) =>
-        [c.savedName, c.pushName, c.phoneJid, c.lid, c.jid]
-          .filter(Boolean)
-          .some((v) => String(v).toLowerCase().includes(q)),
-      );
-    }
-    if (filter !== "all") {
-      list = list.filter((c) => presenceKind(c.presenceState) === filter);
-    }
-    return [...list].sort((a, b) => (b.lastSeenTs || 0) - (a.lastSeenTs || 0));
-  }, [chats, search, filter]);
-
-  const onlineCount = chats.filter((c) => presenceKind(c.presenceState) === "online").length;
-
-  // Only render the "no chats" empty state once the first load has settled.
-  if (loading && !chats.length) {
-    return <div className="p-8 text-center text-slate-400">Loading chats…</div>;
-  }
-  if (error && !chats.length) {
-    return <div className="p-8 text-center text-rose-400">{error}</div>;
-  }
+  const presenceLabel =
+    presence === "online"
+      ? "Online"
+      : presence === "offline"
+        ? "Offline"
+        : "Unknown";
 
   return (
-    <div className="p-6">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-100">💬 Chats</h2>
-          <p className="mt-0.5 text-xs text-slate-400">
-            {chats.length} contacts ·{" "}
-            <span className="text-emerald-400">{onlineCount} online</span>
-            {error && <span className="ml-2 text-amber-400">· stale ({error})</span>}
+    <article className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 p-4 transition-colors hover:border-slate-600">
+      <div className="flex min-w-0 items-start gap-3">
+        {chat.imgUrl ? (
+          <img
+            src={chat.imgUrl}
+            alt=""
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            className="h-11 w-11 shrink-0 rounded-full border border-slate-700 object-cover"
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-700 text-lg font-semibold text-slate-200"
+          >
+            {name.charAt(0).toUpperCase()}
+          </div>
+        )}
+
+        <div className="min-w-0 flex-1">
+          <h3 className="break-words text-sm font-semibold text-slate-100">
+            {name}
+          </h3>
+
+          <p className="mt-1 break-all text-xs text-slate-400">
+            {chat.savedName && chat.pushName && chat.savedName !== chat.pushName
+              ? `WhatsApp name: ${chat.pushName}`
+              : chat.phoneJid
+                ? `PN: ${chat.phoneJid}`
+                : "WhatsApp contact"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {(["all", "online", "offline"] as const).map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFilter(f)}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                filter === f
-                  ? "bg-white/10 text-white ring-1 ring-inset ring-white/20"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
-              }`}
-            >
-              {f === "all" ? "All" : f === "online" ? "Online" : "Offline"}
-            </button>
-          ))}
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name / number / jid…"
-            className="w-full max-w-xs rounded-lg border border-white/10 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:border-white/20 focus:outline-none sm:w-64"
+
+        <span
+          className="inline-flex shrink-0 items-center gap-1.5 text-xs text-slate-300"
+          title={`Presence: ${presenceLabel}`}
+        >
+          <span
+            aria-hidden="true"
+            className={`h-2 w-2 rounded-full ${dotColor}`}
           />
+          <span>{presenceLabel}</span>
+        </span>
+      </div>
+
+      <div className="my-4 border-t border-slate-700" />
+
+      <div className="grid min-w-0 grid-cols-1 gap-3">
+        <IdentityField label="Phone number / PN" value={chat.phoneJid} />
+        <IdentityField label="LID" value={chat.lid} />
+        <IdentityField label="JID" value={chat.jid} />
+      </div>
+
+      <div className="my-4 border-t border-slate-700" />
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            First seen
+          </p>
+          <p className="mt-1 text-xs text-slate-300" title={fmtDate(chat.firstSeenTs)}>
+            {fmtRelative(chat.firstSeenTs)}
+          </p>
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            Last activity
+          </p>
+          <p className="mt-1 text-xs text-slate-300" title={fmtDate(chat.lastSeenTs)}>
+            {fmtRelative(chat.lastSeenTs)}
+          </p>
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            Messages
+          </p>
+          <p className="mt-1 text-sm font-semibold text-slate-100">
+            {typeof chat.messageCount === "number"
+              ? chat.messageCount.toLocaleString()
+              : "—"}
+          </p>
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            Presence last seen
+          </p>
+          <p
+            className="mt-1 text-xs text-slate-300"
+            title={fmtDate(chat.presenceLastSeenTs)}
+          >
+            {fmtRelative(chat.presenceLastSeenTs)}
+          </p>
         </div>
       </div>
 
-      {visible.length === 0 ? (
-        <div className="rounded-2xl border border-white/5 bg-slate-900/40 px-5 py-12 text-center text-slate-400">
-          {chats.length === 0
-            ? "No contacts yet. (The bot records contacts as messages arrive.)"
-            : `No chats match ${search ? `"${search}"` : "this filter"}.`}
+      {typeof chat.unread === "number" && chat.unread > 0 && (
+        <div className="mt-3">
+          <span className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-xs text-sky-300">
+            {chat.unread} unread
+          </span>
         </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-          {visible.map((c) => {
-            const kind = presenceKind(c.presenceState);
-            const display = c.savedName || c.pushName || shortJid(c.jid);
-            return (
-              <div
-                key={c.jid}
-                className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 transition-all hover:border-white/10 hover:bg-slate-900/70"
-              >
-                <div className="mb-2 flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-sm font-semibold text-slate-100" title={display}>
-                      {display}
-                    </h3>
-                    {c.savedName && c.pushName && c.savedName !== c.pushName && (
-                      <p className="truncate text-[11px] text-slate-500" title={c.pushName}>
-                        push name: {c.pushName}
-                      </p>
-                    )}
-                  </div>
-                  <span
-                    className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full shadow ${DOT[kind]}`}
-                    title={`${DOT_LABEL[kind]}${
-                      c.presenceState ? ` (${c.presenceState})` : ""
-                    }`}
-                  />
-                </div>
+      )}
+    </article>
+  );
+}
 
-                <div className="space-y-1 border-t border-white/5 pt-2">
-                  <Field label="Phone" value={shortJid(c.phoneJid)} mono />
-                  <Field label="LID" value={shortJid(c.lid)} mono />
-                  <Field label="JID" value={c.jid} mono />
-                  <Field
-                    label="First seen"
-                    value={`${fullDate(c.firstSeenTs)}${c.firstSeenTs ? ` (${ago(c.firstSeenTs)})` : ""}`}
-                  />
-                  <Field
-                    label="Last seen"
-                    value={`${fullDate(c.lastSeenTs)}${c.lastSeenTs ? ` (${ago(c.lastSeenTs)})` : ""}`}
-                  />
-                  <Field label="Messages" value={c.messageCount != null ? String(c.messageCount) : "—"} />
-                </div>
-              </div>
-            );
-          })}
+export function Chats() {
+  const [chats, setChats] = useState<ChatEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+
+  const inFlightRef = useRef(false);
+  const mountedRef = useRef(false);
+
+  const fetchChats = useCallback(async () => {
+    if (inFlightRef.current) return;
+
+    inFlightRef.current = true;
+
+    try {
+      const response: unknown = await getChats({ limit: 500 });
+
+      let items: ChatEntry[];
+
+      if (Array.isArray(response)) {
+        items = response as ChatEntry[];
+      } else if (
+        typeof response === "object" &&
+        response !== null &&
+        "items" in response &&
+        Array.isArray(response.items)
+      ) {
+        items = response.items as ChatEntry[];
+      } else {
+        throw new Error("Unexpected response from the chats API");
+      }
+
+      if (mountedRef.current) {
+        setChats(items);
+        setError(null);
+      }
+    } catch {
+      if (mountedRef.current) {
+        setError("Failed to fetch chats. Please check the API connection.");
+      }
+    } finally {
+      inFlightRef.current = false;
+
+      if (mountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    void fetchChats();
+
+    const interval = setInterval(() => {
+      void fetchChats();
+    }, 20000);
+
+    return () => {
+      mountedRef.current = false;
+      clearInterval(interval);
+    };
+  }, [fetchChats]);
+
+
+  const visible = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return chats.filter((chat) => {
+      const state = presenceKind(chat.presenceState);
+
+      if (filter === "online" && state !== "online") return false;
+      if (filter === "offline" && state !== "offline") return false;
+
+      if (!query) return true;
+
+      const searchable = [
+        chat.savedName,
+        chat.pushName,
+        chat.phoneJid,
+        chat.lid,
+        chat.jid,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(query);
+    });
+  }, [chats, filter, search]);
+
+  const onlineCount = chats.filter(
+    (chat) => presenceKind(chat.presenceState) === "online",
+  ).length;
+
+  const unknownCount = chats.filter(
+    (chat) => presenceKind(chat.presenceState) === "unknown",
+  ).length;
+
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-100">Chats</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Browse contacts, WhatsApp identifiers, presence, and activity.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            void fetchChats();
+          }}
+          className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Total contacts
+          </p>
+          <p className="mt-2 text-2xl font-bold text-slate-50">
+            {chats.length.toLocaleString()}
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Online
+          </p>
+          <p className="mt-2 text-2xl font-bold text-emerald-400">
+            {onlineCount.toLocaleString()}
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Unknown presence
+          </p>
+          <p className="mt-2 text-2xl font-bold text-slate-300">
+            {unknownCount.toLocaleString()}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <label className="min-w-0 flex-1">
+          <span className="sr-only">Search chats</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search name, phone number, PN, LID, or JID..."
+            className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-slate-500 focus:outline-none"
+          />
+        </label>
+
+        <div className="flex flex-wrap gap-2" aria-label="Filter chats">
+          {(["all", "online", "offline"] as const).map((value) => (
+            <button
+              type="button"
+              key={value}
+              aria-pressed={filter === value}
+              onClick={() => setFilter(value)}
+              className={`rounded-md px-3 py-2 text-sm capitalize transition-colors ${
+                filter === value
+                  ? "bg-white/10 text-white ring-1 ring-inset ring-white/20"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+              }`}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && (
+        <div
+          role="alert"
+          className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-3 text-sm text-rose-300"
+        >
+          {error}
+          {chats.length > 0 && " Showing the last successfully loaded data."}
         </div>
       )}
 
-      <p className="mt-6 text-center text-xs text-slate-500">
-        Auto-refreshing every {POLL_MS / 1000}s · presence expires ~10s after the last update
+      {loading && chats.length === 0 ? (
+        <div role="status" className="py-10 text-center text-slate-400">
+          Loading chats...
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="rounded-lg border border-slate-700 bg-slate-800 p-8 text-center">
+          <p className="text-sm text-slate-300">
+            {chats.length === 0
+              ? "No chats found."
+              : "No chats match your search or filter."}
+          </p>
+        </div>
+      ) : (
+        <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {visible.map((chat) => (
+            <ChatCard
+              key={chat.jid || chat.lid || chat.phoneJid || chat.pushName}
+              chat={chat}
+            />
+          ))}
+        </div>
+      )}
+
+      <p className="text-xs text-slate-500">
+        Showing {visible.length.toLocaleString()} of{" "}
+        {chats.length.toLocaleString()} contacts. Presence may be unavailable
+        when WhatsApp has not supplied a recent presence update.
       </p>
-    </div>
+    </section>
   );
 }

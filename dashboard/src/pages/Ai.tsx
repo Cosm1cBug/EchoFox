@@ -77,28 +77,51 @@ export function Ai() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAll = async () => {
-    try {
-      const [s, c, k] = await Promise.all([
-        getAiStats(30),
-        getAiChats(),
-        getAiConfig(),
-      ]);
-      setStats(s as StatsResponse);
-      setChats(c as ChatsResponse);
-      setCfg(k as ConfigResponse);
-      setError(null);
-    } catch {
-      setError("Failed to load AI data — the dashboard store may not implement AI methods (try sqlite v1.2.0+).");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    fetchAll();
-    const id = setInterval(fetchAll, 60_000);
-    return () => clearInterval(id);
+    let cancelled = false;
+    let inFlight = false;
+
+    const load = async () => {
+      if (inFlight) return;
+      inFlight = true;
+
+      try {
+        const [s, c, k] = await Promise.all([
+          getAiStats(30),
+          getAiChats(),
+          getAiConfig(),
+        ]);
+
+        if (cancelled) return;
+
+        setStats(s as StatsResponse);
+        setChats(c as ChatsResponse);
+        setCfg(k as ConfigResponse);
+        setError(null);
+      } catch {
+        if (!cancelled) {
+          setError(
+            "Failed to load AI data — the dashboard store may not implement AI methods (try sqlite v1.2.0+)."
+          );
+        }
+      } finally {
+        inFlight = false;
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+    const id = window.setInterval(() => {
+      void load();
+    }, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, []);
 
   if (loading && !stats) return <Loading />;

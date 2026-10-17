@@ -8,10 +8,21 @@ import { useEffect, useState } from "react";
 import { getStats } from "../lib/api";
 import { TopCommandsChart } from "../components/Chart/TopCommandsChart";
 import { MessageTrendChart } from "../components/Chart/MessageTrendChart";
-import { RecentActivity } from "../components/RecentActivity";
 import { SoakStatus } from "../components/SoakStatus";
-import { MostChangedGroups } from "../components/MostChangedGroups";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+
+function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 p-4">
+      {' '}
+      <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {label}{' '}
+      </p>{' '}
+      <p className="mt-2 text-2xl font-bold text-slate-50">{value} </p>{' '}
+      <p className="mt-1 text-xs text-slate-400">{detail} </p>{' '}
+    </div>
+  );
+}
 
 export function Overview() {
   const [data, setData] = useState<any>(null);
@@ -57,26 +68,38 @@ export function Overview() {
     { time: "23:59", sent: 210, received: 310 },
   ];
 
-  const recentActivities: { type: "message" | "command" | "alert"; description: string; time: string }[] = [
-    { type: "message", description: "New message received in EchoFox Community", time: "2m ago" },
-    { type: "command", description: "Command .song executed", time: "5m ago" },
-    { type: "alert", description: "High failure rate on .mediafire", time: "12m ago" },
-  ];
-
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {/* Metric cards can be added here */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <MetricCard label="Messages processed" value="—" detail="Total messages" />
+        <MetricCard label="Commands run (24h)" value="—" detail="Command activity" />
+        <MetricCard label="Active groups" value="—" detail="Currently tracked groups" />
+        <MetricCard label="AI cost today" value="—" detail="AI usage statistics" />
+        <MetricCard label="Rate-limit hits" value="—" detail="Recorded events" />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <SoakStatus />
-        <TopCommandsChart data={topCommands} />
-        <MessageTrendChart data={messageTrend} />
-        <MostChangedGroups />
+      <div className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 p-4 xl:col-span-3">
+        <h2 className="mb-1 text-sm font-semibold text-slate-100"> Message volume — last 24 hours </h2>
+        <p className="mb-4 text-xs text-slate-400">Message activity over time </p>
+        <div className="min-w-0">
+          <MessageTrendChart data={messageTrend} />
+        </div>
       </div>
 
-      <RecentActivity activities={recentActivities} />
+      <div className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 p-4 xl:col-span-2">
+        <h2 className="mb-1 text-sm font-semibold text-slate-100">Top commands (24h)</h2>
+        <p className="mb-4 text-xs text-slate-400">By invocation count</p>
+        <div className="min-w-0">
+          <TopCommandsChart data={topCommands} />
+        </div>
+      </div>
+
+      <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-5">
+        <section className="min-w-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-800 p-4 xl:col-span-2">
+          <h2 className="mb-4 text-sm font-semibold text-slate-100">System status</h2>
+          <SoakStatus />
+        </section>
+      </div>
     </div>
   );
 }

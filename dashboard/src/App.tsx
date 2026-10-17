@@ -29,7 +29,7 @@ import { AuditLog } from "./pages/AuditLog";
 const TABS = [
   "Overview",
   "Groups",
-  "Chats",
+  "Chats", //Needs to change it.
   "Status",
   "Chat",
   "Leaderboard",

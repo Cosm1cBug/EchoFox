@@ -5,22 +5,33 @@
  */
 'use strict';
 
-/**
- * labels.edit — WA Business label add/update/delete. Payload:
- *   { sock, u: [{ id, name?, color?, predefinedId?, deleted? }, ...] }
- *
- * NOTE: payload has no `store` — pulled from the singleton.
- */
-
 const logger = require('../core/logger').child({ mod: 'labels.edit' });
 const { getStore } = require('../store/instance');
 
+/**
+ * labels.edit — a WhatsApp Business label was created / renamed / recoloured
+ * / deleted.
+ *
+ * Baileys 7.x payload is a SINGLE `Label` object —
+ *   { id, name, color: number, deleted: boolean, predefinedId?: string }
+ * (verified: Types/Events.ts `'labels.edit': Label`, the emit site
+ * Utils/chat-utils.ts:944, and the buffered-emitter's BUFFERABLE_EVENT list
+ * which does NOT batch this event into arrays).
+ *
+ * v1.20.0 (E3 fix): the previous handler started with
+ * `if (!Array.isArray(u) || !u.length) return;` — a single Label object is
+ * not an array, so EVERY label event was silently dropped. Normalising to a
+ * list keeps the handler correct for both the real single-object payload
+ * and any array a test/tool might pass.
+ */
 module.exports = async ({ u }) => {
-  if (!Array.isArray(u) || !u.length) return;
+  if (!u) return;
   const store = getStore();
   if (!store?.upsertLabel) return;
-
-  for (const lbl of u) {
+  const list = Array.isArray(u) ? u : [u];
+  if (!list.length) return;
+  let count = 0;
+  for (const lbl of list) {
     if (!lbl?.id) continue;
     try {
       if (lbl.deleted) {
@@ -28,9 +39,10 @@ module.exports = async ({ u }) => {
       } else {
         await store.upsertLabel(lbl.id, lbl.name || '(unnamed)', lbl.color);
       }
+      count++;
     } catch (err) {
       logger.debug({ err, labelId: lbl.id }, 'label edit propagation failed');
     }
   }
-  logger.debug({ count: u.length }, 'labels.edit processed');
+  logger.debug({ count }, 'labels.edit processed');
 };

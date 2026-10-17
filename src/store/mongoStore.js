@@ -9,6 +9,11 @@ const { config } = require('../lib/configLoader');
 const mongoose = require('mongoose');
 const { makeBatcher } = require('../lib/backpressure');
 const { proto } = require('@whiskeysockets/baileys');
+const { isNonHumanContent } = require('../lib/messageFilters');
+
+// Reserved row id for the account-level message-capping quota (v1.20.0, E5).
+// Real JIDs are always `something@domain`, so '@account' cannot collide.
+const ACCOUNT_CAPPING_JID = '@account';
 
 function makeMongoStore(uri, logger, groupCache) {
   const conn = mongoose.createConnection(uri, {
@@ -38,6 +43,13 @@ function makeMongoStore(uri, logger, groupCache) {
       name: String,
       unread: Number,
       ts: Number,
+      // v1.20.0 — these are written by updateChat()/markChatDeleted() but
+      // were silently DROPPED before (mongoose strict mode discards $set
+      // paths missing from the schema). Added for parity with sqlite/pg.
+      pinned: Number,
+      muted_until: Number,
+      archived: Number,
+      deleted_at: Number,
     }),
   );
 
@@ -578,6 +590,43 @@ function makeMongoStore(uri, logger, groupCache) {
         return r || null;
       } catch (e) {
         logger.warn({ err: e, jid }, 'getMessageCap failed');
+        return null;
+      }
+    },
+
+    /**
+     * Account-level "new chat" message quota (Baileys `message-capping.update`
+     * → NewChatMessageCapInfo). Stored under the reserved jid '@account'
+     * (real JIDs are `something@domain`, so no collision). `cap_value`
+     * mirrors used_quota; `info` holds the full field set (native object).
+     */
+    async setMessageCapInfo(info) {
+      try {
+        if (!info) return;
+        const used = Number(info.used_quota) || 0;
+        await conn.collection('message_capping').updateOne(
+          { jid: ACCOUNT_CAPPING_JID },
+          {
+            $set: { cap_value: used, updated_at: Date.now(), info },
+            $setOnInsert: { jid: ACCOUNT_CAPPING_JID },
+          },
+          { upsert: true },
+        );
+      } catch (e) {
+        logger.warn({ err: e }, 'setMessageCapInfo failed');
+      }
+    },
+    async getMessageCapInfo() {
+      try {
+        const r = await conn
+          .collection('message_capping')
+          .findOne(
+            { jid: ACCOUNT_CAPPING_JID },
+            { projection: { _id: 0, cap_value: 1, updated_at: 1, info: 1 } },
+          );
+        return r || null;
+      } catch (e) {
+        logger.warn({ err: e }, 'getMessageCapInfo failed');
         return null;
       }
     },
@@ -1127,29 +1176,79 @@ function makeMongoStore(uri, logger, groupCache) {
       }
     },
 
+    /**
+     * Persist raw WAMessage[] — SINGLE write path for live `messages.upsert`
+     * AND `messaging-history.set` backfill (v1.20.0, E1). Same filtering both
+     * ways: privacy exclusions + non-human content (protocol / key
+     * distribution / reactions / poll votes — see src/lib/messageFilters.js;
+     * this aligns mongo with the sqlite store's long-standing filter).
+     *
+     * @returns {Promise<number>} rows queued for write
+     */
+    async saveMessages(messages) {
+      if (!Array.isArray(messages) || !messages.length) return 0;
+      const storeBodies = config.privacy?.storeMessageBodies !== false;
+      const excluded = new Set(config.privacy?.excludeFromStore || []);
+      let n = 0;
+      for (const m of messages) {
+        if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
+        if (excluded.has(m.key.remoteJid)) continue;
+        if (isNonHumanContent(m.message)) continue;
+        const msgBuf = storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null;
+        messageBatcher.push({
+          updateOne: {
+            filter: { jid: m.key.remoteJid, id: m.key.id },
+            update: {
+              jid: m.key.remoteJid,
+              id: m.key.id,
+              from_me: !!m.key.fromMe,
+              participant: m.key.participant,
+              msg: msgBuf,
+              ts: Number(m.messageTimestamp),
+            },
+            upsert: true,
+          },
+        });
+        n++;
+      }
+      return n;
+    },
+
+    /**
+     * Persist a Chat object (chats.upsert / messaging-history.set).
+     * name/unread/ts written when defined; pinned/mute/archived merged
+     * when present in the payload.
+     */
+    async saveChat(chat) {
+      if (!chat?.id) return false;
+      try {
+        const update = {
+          name: chat.name ?? null,
+          unread: Number(chat.unreadCount) || 0,
+          ts: Number(chat.conversationTimestamp) || Math.floor(Date.now() / 1000),
+        };
+        if (chat.pinned !== undefined) update.pinned = chat.pinned ? 1 : 0;
+        if (chat.mute !== undefined) update.muted_until = chat.mute ?? null;
+        if (chat.archived !== undefined) update.archived = chat.archived ? 1 : 0;
+        await conn
+          .collection('chats')
+          .updateOne(
+            { jid: chat.id },
+            { $set: update, $setOnInsert: { jid: chat.id } },
+            { upsert: true },
+          );
+        return true;
+      } catch (e) {
+        logger.warn({ err: e, jid: chat.id }, 'saveChat failed');
+        return false;
+      }
+    },
+
     bind(ev) {
       ev.on('messages.upsert', ({ messages }) => {
-        const storeBodies = config.privacy?.storeMessageBodies !== false;
-        const excluded = new Set(config.privacy?.excludeFromStore || []);
-        for (const m of messages) {
-          if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
-          if (excluded.has(m.key.remoteJid)) continue;
-          const msgBuf = storeBodies ? Buffer.from(proto.Message.encode(m.message).finish()) : null;
-          messageBatcher.push({
-            updateOne: {
-              filter: { jid: m.key.remoteJid, id: m.key.id },
-              update: {
-                jid: m.key.remoteJid,
-                id: m.key.id,
-                from_me: !!m.key.fromMe,
-                participant: m.key.participant,
-                msg: msgBuf,
-                ts: Number(m.messageTimestamp),
-              },
-              upsert: true,
-            },
-          });
-        }
+        this.saveMessages(messages).catch((e) =>
+          logger.warn({ err: e }, 'store: saveMessages failed'),
+        );
       });
 
       ev.on('chats.upsert', async (chats) => {

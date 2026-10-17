@@ -52,6 +52,11 @@ function _decodeSubscriberValue(jid, v) {
 const { config } = require('../lib/configLoader');
 const Redis = require('ioredis');
 const { proto } = require('@whiskeysockets/baileys');
+const { isNonHumanContent } = require('../lib/messageFilters');
+
+// Reserved row id for the account-level message-capping quota (v1.20.0, E5).
+// Real JIDs are always `something@domain`, so '@account' cannot collide.
+const ACCOUNT_CAPPING_JID = '@account';
 
 const MSG_TTL = 604800; // 7 days default
 
@@ -497,6 +502,48 @@ function makeRedisStore(url, logger, groupCache) {
         return { cap_value: Number(v), updated_at: Number(t) || 0 };
       } catch (e) {
         logger.warn({ err: e, jid }, 'getMessageCap failed');
+        return null;
+      }
+    },
+
+    /**
+     * Account-level "new chat" message quota (Baileys `message-capping.update`
+     * → NewChatMessageCapInfo). Stored under the reserved jid '@account'
+     * (real JIDs are `something@domain`, so no collision); the full JSON
+     * lives at its own key.
+     */
+    async setMessageCapInfo(info) {
+      try {
+        if (!info) return;
+        const used = Number(info.used_quota) || 0;
+        const pipe = client.pipeline();
+        pipe.hset(K + ':msg_cap', ACCOUNT_CAPPING_JID, String(used));
+        pipe.hset(K + ':msg_cap_ts', ACCOUNT_CAPPING_JID, String(Date.now()));
+        pipe.set(K + ':msg_cap_info', JSON.stringify(info));
+        await pipe.exec();
+      } catch (e) {
+        logger.warn({ err: e }, 'setMessageCapInfo failed');
+      }
+    },
+    async getMessageCapInfo() {
+      try {
+        const raw = await client.get(K + ':msg_cap_info');
+        if (raw == null) return null;
+        let info = null;
+        try {
+          info = JSON.parse(raw);
+        } catch {
+          info = null;
+        }
+        const v = await client.hget(K + ':msg_cap', ACCOUNT_CAPPING_JID);
+        const t = await client.hget(K + ':msg_cap_ts', ACCOUNT_CAPPING_JID);
+        return {
+          cap_value: Number(v) || 0,
+          updated_at: Number(t) || 0,
+          info,
+        };
+      } catch (e) {
+        logger.warn({ err: e }, 'getMessageCapInfo failed');
         return null;
       }
     },
@@ -1101,21 +1148,57 @@ function makeRedisStore(url, logger, groupCache) {
       }
     },
 
+    /**
+     * Persist raw WAMessage[] — SINGLE write path for live `messages.upsert`
+     * AND `messaging-history.set` backfill (v1.20.0, E1). Same filtering both
+     * ways: privacy exclusions + non-human content (protocol / key
+     * distribution / reactions / poll votes — see src/lib/messageFilters.js).
+     *
+     * @returns {Promise<number>} keys queued for write
+     */
+    async saveMessages(messages) {
+      if (!Array.isArray(messages) || !messages.length) return 0;
+      const storeBodies = config.privacy?.storeMessageBodies !== false;
+      const excluded = new Set(config.privacy?.excludeFromStore || []);
+      const retentionDays = config.privacy?.messageBodyRetentionDays || 0;
+      const ttl = retentionDays > 0 ? retentionDays * 86400 : MSG_TTL;
+      if (!storeBodies) return 0; // privacy: skip the entire write
+      const p = client.pipeline();
+      let n = 0;
+      for (const m of messages) {
+        if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
+        if (excluded.has(m.key.remoteJid)) continue;
+        if (isNonHumanContent(m.message)) continue;
+        const msgBuf = Buffer.from(proto.Message.encode(m.message).finish());
+        p.set(`msg:${m.key.remoteJid}:${m.key.id}`, msgBuf, 'EX', ttl);
+        n++;
+      }
+      if (n) await p.exec();
+      return n;
+    },
+
+    /**
+     * Persist a Chat object (chats.upsert / messaging-history.set) into the
+     * chat hash + index set. Defined fields only (updateChat skips nulls).
+     */
+    async saveChat(chat) {
+      if (!chat?.id) return false;
+      await this.updateChat(chat.id, {
+        name: chat.name,
+        unread: chat.unreadCount != null ? Number(chat.unreadCount) || 0 : undefined,
+        ts: chat.conversationTimestamp != null ? Number(chat.conversationTimestamp) : undefined,
+        pinned: chat.pinned,
+        muted_until: chat.mute,
+        archived: chat.archived,
+      });
+      return true;
+    },
+
     bind(ev) {
-      ev.on('messages.upsert', async ({ messages }) => {
-        const storeBodies = config.privacy?.storeMessageBodies !== false;
-        const excluded = new Set(config.privacy?.excludeFromStore || []);
-        const retentionDays = config.privacy?.messageBodyRetentionDays || 0;
-        const ttl = retentionDays > 0 ? retentionDays * 86400 : MSG_TTL;
-        if (!storeBodies) return; // privacy: skip the entire write
-        const p = client.pipeline();
-        for (const m of messages) {
-          if (!m?.key?.id || !m?.key?.remoteJid || !m?.message) continue;
-          if (excluded.has(m.key.remoteJid)) continue;
-          const msgBuf = Buffer.from(proto.Message.encode(m.message).finish());
-          p.set(`msg:${m.key.remoteJid}:${m.key.id}`, msgBuf, 'EX', ttl);
-        }
-        p.exec().catch(() => {});
+      ev.on('messages.upsert', ({ messages }) => {
+        this.saveMessages(messages).catch((e) =>
+          logger.warn({ err: e }, 'store: saveMessages failed'),
+        );
       });
 
       ev.on('groups.upsert', (groups) => {

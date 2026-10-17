@@ -4,12 +4,13 @@
  * Licensed under the GNU AGPL-3.0-or-later. See LICENSE.
  */
 
-import { useEffect, useState } from "react";
-import { getStats } from "../lib/api";
-import { TopCommandsChart } from "../components/Chart/TopCommandsChart";
-import { MessageTrendChart } from "../components/Chart/MessageTrendChart";
-import { SoakStatus } from "../components/SoakStatus";
-import { Loading, ErrorMessage } from "../components/LoadingError";
+import { useEffect, useState } from 'react';
+import { getStats } from '../lib/api';
+import { TopCommandsChart } from '../components/Chart/TopCommandsChart';
+import { MessageTrendChart } from '../components/Chart/MessageTrendChart';
+import { SoakStatus } from '../components/SoakStatus';
+import { NewChatQuota } from '../components/NewChatQuota';
+import { Loading, ErrorMessage } from '../components/LoadingError';
 
 function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
@@ -35,7 +36,7 @@ export function Overview() {
       setData(result);
       setError(null);
     } catch {
-      setError("Failed to fetch dashboard data");
+      setError('Failed to fetch dashboard data');
     } finally {
       setLoading(false);
     }
@@ -52,20 +53,20 @@ export function Overview() {
   if (!data) return null;
 
   const topCommands = Object.entries(data.counters || {})
-    .filter(([key]) => key.startsWith("commands_per_name__"))
+    .filter(([key]) => key.startsWith('commands_per_name__'))
     .map(([key, value]) => ({
-      name: key.replace("commands_per_name__", ""),
+      name: key.replace('commands_per_name__', ''),
       count: Number(value),
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
 
   const messageTrend = [
-    { time: "00:00", sent: 120, received: 340 },
-    { time: "06:00", sent: 280, received: 410 },
-    { time: "12:00", sent: 450, received: 620 },
-    { time: "18:00", sent: 390, received: 580 },
-    { time: "23:59", sent: 210, received: 310 },
+    { time: '00:00', sent: 120, received: 340 },
+    { time: '06:00', sent: 280, received: 410 },
+    { time: '12:00', sent: 450, received: 620 },
+    { time: '18:00', sent: 390, received: 580 },
+    { time: '23:59', sent: 210, received: 310 },
   ];
 
   return (
@@ -79,7 +80,10 @@ export function Overview() {
       </div>
 
       <div className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 p-4 xl:col-span-3">
-        <h2 className="mb-1 text-sm font-semibold text-slate-100"> Message volume — last 24 hours </h2>
+        <h2 className="mb-1 text-sm font-semibold text-slate-100">
+          {' '}
+          Message volume — last 24 hours{' '}
+        </h2>
         <p className="mb-4 text-xs text-slate-400">Message activity over time </p>
         <div className="min-w-0">
           <MessageTrendChart data={messageTrend} />
@@ -99,6 +103,9 @@ export function Overview() {
           <h2 className="mb-4 text-sm font-semibold text-slate-100">System status</h2>
           <SoakStatus />
         </section>
+        <div className="min-w-0 xl:col-span-3">
+          <NewChatQuota />
+        </div>
       </div>
     </div>
   );

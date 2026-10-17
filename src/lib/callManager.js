@@ -5,7 +5,6 @@
  */
 'use strict';
 
-const dc = require('node-datachannel');
 const logger = require('../core/logger').child({ mod: 'call-manager' });
 
 class CallManager {
@@ -14,64 +13,11 @@ class CallManager {
     this.activeCalls = new Map(); // callId -> { peer, from, state }
   }
 
-  // ==================== HANDLE INCOMING OFFER ====================
-  async handleOffer(callId, from, offer) {
-    logger.info({ from, callId }, 'Received call offer');
-
-    const peer = new dc.PeerConnection(`call-${callId}`, {
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-    });
-
-    this.activeCalls.set(callId, { peer, from, state: 'connecting' });
-
-    // Handle incoming media tracks
-    peer.onTrack = (track) => {
-      logger.info({ callId, kind: track.kind }, 'Received media track');
-
-      if (track.kind === 'audio') {
-        this.handleAudioTrack(track, callId);
-      }
-
-      if (track.kind === 'video') {
-        this.handleVideoTrack(track, callId);
-      }
-    };
-
-    // Send ICE candidates to the remote peer
-    peer.onIceCandidate = (candidate) => {
-      this.sendSignalingMessage(from, {
-        type: 'ice-candidate',
-        callId,
-        candidate,
-      });
-    };
-
-    try {
-      // Set remote description (offer)
-      await peer.setRemoteDescription(offer, 'offer');
-
-      // Create answer
-      const answer = await peer.createAnswer();
-      await peer.setLocalDescription(answer);
-
-      // Send answer back to caller
-      this.sendSignalingMessage(from, {
-        type: 'answer',
-        callId,
-        answer,
-      });
-
-      this.activeCalls.get(callId).state = 'connected';
-      logger.info({ callId, from }, 'Call accepted and answer sent');
-    } catch (err) {
-      logger.error({ err, callId }, 'Failed to handle offer');
-      this.endCall(callId);
-    }
-
-    return peer;
-  }
-
   // ==================== REJECT CALL ====================
+  // v1.20.2 (E7): EchoFox auto-declines every call (product decision). The
+  // previous handleOffer() accept path — which called setRemoteDescription
+  // with a non-existent `ev.offer` and therefore always threw — has been
+  // removed. Only the working reject path is used (src/events/call.js).
   async rejectCall(callId, from) {
     try {
       await this.sock.rejectCall(callId, from);

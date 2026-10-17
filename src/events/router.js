@@ -41,6 +41,12 @@ const onPresenceUpdate = require('./presence.update');
 const onLabelsAssociation = require('./labels.association');
 const onLabelsEdit = require('./labels.edit');
 const onMessageCappingUpdate = require('./message-capping.update');
+// v1.20.2 (E9): bind the five previously-unobserved events.
+const onGroupJoinRequest = require('./group.join-request');
+const onGroupMemberTagUpdate = require('./group.member-tag.update');
+const onChatsLock = require('./chats.lock');
+const onSettingsUpdate = require('./settings.update');
+const onMessagesMediaUpdate = require('./messages.media-update');
 
 const bus = new EventEmitter();
 bus.setMaxListeners(50);
@@ -77,6 +83,14 @@ bus.on('presence.update', (p) => Promise.resolve(onPresenceUpdate(p)).catch(() =
 bus.on('labels.association', (p) => Promise.resolve(onLabelsAssociation(p)).catch(() => {}));
 bus.on('labels.edit', (p) => Promise.resolve(onLabelsEdit(p)).catch(() => {}));
 bus.on('message-capping.update', (p) => Promise.resolve(onMessageCappingUpdate(p)).catch(() => {}));
+// v1.20.2 (E9)
+bus.on('group.join-request', (p) => Promise.resolve(onGroupJoinRequest(p)).catch(() => {}));
+bus.on('group.member-tag.update', (p) =>
+  Promise.resolve(onGroupMemberTagUpdate(p)).catch(() => {}),
+);
+bus.on('chats.lock', (p) => Promise.resolve(onChatsLock(p)).catch(() => {}));
+bus.on('settings.update', (p) => Promise.resolve(onSettingsUpdate(p)).catch(() => {}));
+bus.on('messages.media-update', (p) => Promise.resolve(onMessagesMediaUpdate(p)).catch(() => {}));
 
 module.exports = {
   handleMessage,

@@ -383,6 +383,23 @@ function makePostgresStore(url, logger, groupCache) {
         logger.warn({ err: e, newsletterId, messageId }, 'incrementNewsletterView failed');
       }
     },
+    // v1.20.2 (E8): set-with-max — the server's view counter value replaces
+    // the tally, monotonically (idempotent under dup/out-of-order notices).
+    async setNewsletterViewCount(newsletterId, messageId, count) {
+      try {
+        const n = Math.max(0, Math.floor(Number(count) || 0));
+        await pool.query(
+          `INSERT INTO newsletter_views (newsletter_id, message_id, view_count, updated_at)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (newsletter_id, message_id) DO UPDATE SET
+             view_count = GREATEST(newsletter_views.view_count, EXCLUDED.view_count),
+             updated_at = EXCLUDED.updated_at`,
+          [newsletterId, messageId, n, Date.now()],
+        );
+      } catch (e) {
+        logger.warn({ err: e, newsletterId, messageId }, 'setNewsletterViewCount failed');
+      }
+    },
     async getNewsletterViews(newsletterId, messageId, limit = 100) {
       try {
         if (messageId) {
@@ -1801,9 +1818,31 @@ function makePostgresStore(url, logger, groupCache) {
         return 0;
       }
     },
-    async countAdminAudit() {
+    // v1.20.2 (M1): accepts the same filters as the list queries
+    // ({sinceSec, actor, cmd}); no args = global count (back-compat).
+    async countAdminAudit(opts = {}) {
       try {
-        const r = await pool.query(`SELECT COUNT(*)::bigint AS n FROM admin_audit`);
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const actor = opts.actor ? String(opts.actor) : null;
+        const cmd = opts.cmd ? String(opts.cmd) : null;
+        let r;
+        if (actor) {
+          r = await pool.query(
+            `SELECT COUNT(*)::bigint AS n FROM admin_audit WHERE actor_jid = $1 AND ts >= $2`,
+            [actor, sinceSec],
+          );
+        } else if (cmd) {
+          r = await pool.query(
+            `SELECT COUNT(*)::bigint AS n FROM admin_audit WHERE cmd_name = $1 AND ts >= $2`,
+            [cmd, sinceSec],
+          );
+        } else if (sinceSec > 0) {
+          r = await pool.query(`SELECT COUNT(*)::bigint AS n FROM admin_audit WHERE ts >= $1`, [
+            sinceSec,
+          ]);
+        } else {
+          r = await pool.query(`SELECT COUNT(*)::bigint AS n FROM admin_audit`);
+        }
         return r.rows[0] ? Number(r.rows[0].n) || 0 : 0;
       } catch (e) {
         logger.debug({ err: e }, 'countAdminAudit failed');

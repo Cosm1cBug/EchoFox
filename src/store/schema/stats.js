@@ -102,6 +102,7 @@ const GAUGES = Object.freeze([
   'level_decay_last_run_at', // unix seconds
   'level_decay_last_run_affected', // last sweep's affected count
   'admin_audit_rows', // current row count in admin_audit
+  'last_inbound_msg_at', // unix seconds of last inbound messages.upsert (v1.20.2 / M3)
 ]);
 
 /**

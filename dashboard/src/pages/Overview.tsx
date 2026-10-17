@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { getStats } from '../lib/api';
 import { TopCommandsChart } from '../components/Chart/TopCommandsChart';
-import { MessageTrendChart } from '../components/Chart/MessageTrendChart';
+import { MostChangedGroups } from '../components/MostChangedGroups';
 import { SoakStatus } from '../components/SoakStatus';
 import { NewChatQuota } from '../components/NewChatQuota';
 import { Loading, ErrorMessage } from '../components/LoadingError';
@@ -61,40 +61,58 @@ export function Overview() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
 
-  const messageTrend = [
-    { time: '00:00', sent: 120, received: 340 },
-    { time: '06:00', sent: 280, received: 410 },
-    { time: '12:00', sent: 450, received: 620 },
-    { time: '18:00', sent: 390, received: 580 },
-    { time: '23:59', sent: 210, received: 310 },
-  ];
+  // v1.20.2 (H3): wire the cards to the real /api/stats payload (the old
+  // version rendered literal "—" placeholders and a hardcoded fake trend).
+  // Counters are cumulative since bot start; gauges are current values.
+  const counters = (data.counters || {}) as Record<string, unknown>;
+  const gauges = (data.gauges || {}) as Record<string, unknown>;
+  const num = (v: unknown) => Number(v) || 0;
+  const received = num(counters.messages_received_total);
+  const sent = num(counters.messages_sent_total);
+  const cmdsOk = num(counters.commands_success_total);
+  const cmdsFailed = num(counters.commands_failed_total);
 
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard label="Messages processed" value="—" detail="Total messages" />
-        <MetricCard label="Commands run (24h)" value="—" detail="Command activity" />
-        <MetricCard label="Active groups" value="—" detail="Currently tracked groups" />
-        <MetricCard label="AI cost today" value="—" detail="AI usage statistics" />
-        <MetricCard label="Rate-limit hits" value="—" detail="Recorded events" />
+        <MetricCard
+          label="Messages processed"
+          value={String(received + sent)}
+          detail={`${received} in · ${sent} out`}
+        />
+        <MetricCard
+          label="Commands run"
+          value={String(num(counters.commands_total))}
+          detail={`${cmdsOk} ok · ${cmdsFailed} failed`}
+        />
+        <MetricCard
+          label="Active groups"
+          value={String(num(gauges.groups_count))}
+          detail="Currently tracked groups"
+        />
+        <MetricCard
+          label="AI cost today"
+          value={`$${num(gauges.ai_cost_usd_today).toFixed(2)}`}
+          detail="AI usage statistics"
+        />
+        <MetricCard
+          label="Rate-limit hits"
+          value={String(num(counters.rate_limit_hits_total))}
+          detail="Recorded events"
+        />
       </div>
 
-      <div className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 p-4 xl:col-span-3">
-        <h2 className="mb-1 text-sm font-semibold text-slate-100">
-          {' '}
-          Message volume — last 24 hours{' '}
-        </h2>
-        <p className="mb-4 text-xs text-slate-400">Message activity over time </p>
-        <div className="min-w-0">
-          <MessageTrendChart data={messageTrend} />
+      <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-5">
+        <div className="min-w-0 xl:col-span-3">
+          <MostChangedGroups />
         </div>
-      </div>
 
-      <div className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 p-4 xl:col-span-2">
-        <h2 className="mb-1 text-sm font-semibold text-slate-100">Top commands (24h)</h2>
-        <p className="mb-4 text-xs text-slate-400">By invocation count</p>
-        <div className="min-w-0">
-          <TopCommandsChart data={topCommands} />
+        <div className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 p-4 xl:col-span-2">
+          <h2 className="mb-1 text-sm font-semibold text-slate-100">Top commands</h2>
+          <p className="mb-4 text-xs text-slate-400">By invocation count (since bot start)</p>
+          <div className="min-w-0">
+            <TopCommandsChart data={topCommands} />
+          </div>
         </div>
       </div>
 

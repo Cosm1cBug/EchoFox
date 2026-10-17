@@ -14,6 +14,36 @@ export function clearAuth() {
   authHeader = null;
 }
 
+// v1.20.1 (C3): fired whenever a request fails with HTTP 401 so the app can
+// drop the dead session and return to the Login screen (e.g. the password
+// changed on the server, or the browser's cached Basic credentials are
+// wrong). Registered by App.tsx; cleared on unmount.
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
+// v1.20.1 (C2): non-2xx responses used to throw a bare Error whose message
+// skimmed only `body.error` and discarded the rest of the payload. But
+// /api/health and /api/diagnostics answer 503 WITH a rich JSON report
+// exactly when the UI needs it (the "Degraded" views). ApiError keeps the
+// status and the parsed body so consumers can render them.
+export class ApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(status: number, message: string, body: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+    // Keep `instanceof ApiError` reliable even if the build target is ever
+    // downleveled (TypeScript's recommended pattern for Error subclasses).
+    Object.setPrototypeOf(this, ApiError.prototype);
+  }
+}
+
 // `init` lets callers issue non-GET requests. Before v1.19.0 this helper
 // accepted no second argument, so a caller passing { method: 'POST' } silently
 // issued a GET instead — the request "succeeded" with the wrong verb.
@@ -26,15 +56,23 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...init, headers, credentials: 'include' });
   if (!res.ok) {
     // Surface the server's error code when there is one (e.g. not_connected,
-    // text_too_long) instead of a bare status number.
+    // text_too_long) instead of a bare status number — and KEEP the parsed
+    // body on the thrown error (C2). The body survives even when it has no
+    // `error` code: a 503 from /api/health or /api/diagnostics carries the
+    // full report the UI is supposed to show.
+    let body: unknown = null;
     let detail = '';
     try {
-      const body = await res.clone().json();
-      detail = body?.error ? ` (${body.error})` : '';
+      body = await res.json();
+      const code = (body as { error?: unknown } | null)?.error;
+      if (typeof code === 'string' && code) detail = ` (${code})`;
     } catch {
       /* non-JSON error body */
     }
-    throw new Error(`API Error: ${res.status}${detail}`);
+    // 401 = the session is dead (bad/revoked credentials) → notify the app
+    // before rejecting, so it can clear auth and show the Login screen.
+    if (res.status === 401) onUnauthorized?.();
+    throw new ApiError(res.status, `API Error: ${res.status}${detail}`, body);
   }
   return res.json();
 }
@@ -60,8 +98,6 @@ export const getBlocklist = () => fetchJson('/api/blocklist');
 export const getContacts = (limit = 100, offset = 0) =>
   fetchJson(`/api/contacts?limit=${limit}&offset=${offset}`);
 
-export const getContact = (jid: string) => fetchJson(`/api/contacts/${encodeURIComponent(jid)}`);
-
 export const getConversation = (jid: string, limit = 100) =>
   fetchJson(`/api/conversations/${encodeURIComponent(jid)}/messages?limit=${limit}`);
 
@@ -84,22 +120,25 @@ export const getChats = (params?: { limit?: number; offset?: number }) => {
   return fetchJson('/api/chats' + query);
 };
 
-export const getChat = (jid: string) => fetchJson(`/api/chats/${encodeURIComponent(jid)}`);
+// v1.20.2 (M4): full drill-down details for one chat — wired to the
+// ChatDetail component from the Chats tab (endpoint predates the client).
+export const getChatFull = (jid: string) =>
+  fetchJson<{
+    jid: string;
+    contact: Record<string, unknown> | null;
+    presence: Record<string, unknown> | null;
+    stats: { sent?: number; received?: number; byType?: Record<string, number> } | null;
+    seen: Record<string, unknown> | null;
+    commands: unknown[];
+    enrichment: Record<string, unknown> | null;
+  }>(`/api/chats/${encodeURIComponent(jid)}/full`);
 
 export const getRecentPresence = (limit = 50) => fetchJson(`/api/presence?limit=${limit}`);
-
-export const getPresence = (jid: string) => fetchJson(`/api/presence/${encodeURIComponent(jid)}`);
-
-export const getChatPresence = (jid: string) =>
-  fetchJson(`/api/chats/${encodeURIComponent(jid)}/presence`);
 
 export const getLabels = () => fetchJson('/api/labels');
 
 export const getLabelAssociations = (id: string) =>
   fetchJson(`/api/labels/${encodeURIComponent(id)}/associations`);
-
-export const getChatLabels = (jid: string) =>
-  fetchJson(`/api/chats/${encodeURIComponent(jid)}/labels`);
 
 export const getNewsletters = () => fetchJson('/api/newsletters');
 
@@ -108,12 +147,6 @@ export const getNewsletter = (id: string) =>
 
 export const getNewsletterViews = (id: string, limit = 100) =>
   fetchJson(`/api/newsletters/${encodeURIComponent(id)}/views?limit=${limit}`);
-
-export const getNewsletterReactions = (id: string, msgId: string) =>
-  fetchJson(`/api/newsletters/${encodeURIComponent(id)}/${encodeURIComponent(msgId)}/reactions`);
-
-export const getLidMapping = (lid: string) =>
-  fetchJson(`/api/lid-mapping/${encodeURIComponent(lid)}`);
 
 export const getAiStats = (days = 30) => fetchJson(`/api/ai/stats?days=${days}`);
 
@@ -138,28 +171,6 @@ export const getMostChangedGroups = (days = 7, limit = 5) =>
     generatedAt: number;
     groups: Array<{ jid: string; count: number; subject: string | null }>;
   }>(`/api/stats/most-changed-groups?days=${days}&limit=${limit}`);
-
-// v1.16.0 — field-scoped settings history filter (when `field` is omitted, returns ALL)
-export const getGroupSettingsHistoryFiltered = (
-  jid: string,
-  opts: { field?: string | null; limit?: number } = {},
-) => {
-  const qs = new URLSearchParams();
-  if (opts.field) qs.set('field', opts.field);
-  qs.set('limit', String(opts.limit ?? 200));
-  return fetchJson<{
-    jid: string;
-    field: string | null;
-    events: Array<{
-      id: number | string;
-      field: string;
-      old_value: string | null;
-      new_value: string | null;
-      actor: string | null;
-      ts: number;
-    }>;
-  }>(`/api/groups/${encodeURIComponent(jid)}/settings/history?${qs.toString()}`);
-};
 
 // v1.17.0 — admin audit log
 export interface AuditEvent {

@@ -19,8 +19,37 @@
 // dedicated endpoint (the store keeps the protobuf, and decryption is async and
 // can fail on expired media), so it is deliberately out of scope here.
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { getChats, getConversation, sendMessage } from "../lib/api";
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { getChats, getConversation, sendMessage, ApiError } from '../lib/api';
+
+// v1.20.2 (H2): mirror of the send endpoint's JID_RE (src/dashboard/server.js).
+// The composer may only offer chats the endpoint accepts — `@newsletter` and
+// `status@broadcast` rows from getChats() are not sendable and used to fail
+// with a bare `API Error: 400 (invalid_jid)`. Device-qualified JIDs
+// (`123:2@s.whatsapp.net`) normalise to their bare form first.
+const SENDABLE_RE = /^\d+@(s\.whatsapp\.net|g\.us|lid)$/;
+
+function toSendableJid(jid: string): string | null {
+  const bare = jid.replace(/:\d+(?=@)/, '');
+  return SENDABLE_RE.test(bare) ? bare : null;
+}
+
+function sendErrorMessage(err: unknown): string {
+  const code =
+    err instanceof ApiError && err.body && typeof err.body === 'object'
+      ? (err.body as { error?: unknown }).error
+      : null;
+  switch (code) {
+    case 'invalid_jid':
+      return "This contact can't receive messages (unsupported chat type).";
+    case 'not_connected':
+      return 'WhatsApp is not connected — try again shortly.';
+    case 'text_too_long':
+      return 'Message too long.';
+    default:
+      return err instanceof Error ? err.message : 'Send failed';
+  }
+}
 
 type Chat = {
   jid: string;
@@ -43,26 +72,26 @@ type Msg = {
 };
 
 const TYPE_ICON: Record<string, string> = {
-  text: "",
-  image: "🖼️",
-  video: "🎬",
-  audio: "🎵",
-  document: "📄",
-  sticker: "🩹",
-  system: "⚙️",
-  unavailable: "🚫",
-  unknown: "❓",
+  text: '',
+  image: '🖼️',
+  video: '🎬',
+  audio: '🎵',
+  document: '📄',
+  sticker: '🩹',
+  system: '⚙️',
+  unavailable: '🚫',
+  unknown: '❓',
 };
 
 function shortJid(jid: string | null | undefined): string {
-  if (!jid) return "unknown";
-  return jid.split("@")[0] || jid;
+  if (!jid) return 'unknown';
+  return jid.split('@')[0] || jid;
 }
 
 function clockTime(tsSec: number): string {
   return new Date(tsSec * 1000).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
@@ -72,11 +101,11 @@ function dayKey(tsSec: number): string {
 
 export function Chat() {
   const [chats, setChats] = useState<Chat[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
   const [active, setActive] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -112,7 +141,7 @@ export function Chat() {
           }
         })
         .catch((e: Error) => {
-          if (!cancelled) setError(e.message || "Failed to load conversation");
+          if (!cancelled) setError(e.message || 'Failed to load conversation');
         })
         .finally(() => {
           if (!cancelled) setLoadingMsgs(false);
@@ -126,13 +155,15 @@ export function Chat() {
   }, [active]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, active]);
 
   const visibleChats = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return chats;
-    return chats.filter((c) =>
+    // v1.20.2 (H2): only offer chats the send endpoint accepts.
+    const sendable = chats.filter((c) => toSendableJid(c.jid) !== null);
+    if (!q) return sendable;
+    return sendable.filter((c) =>
       [c.savedName, c.pushName, c.phoneJid, c.lid, c.jid]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q)),
@@ -145,15 +176,22 @@ export function Chat() {
     e.preventDefault();
     const text = draft.trim();
     if (!text || !active || sending) return;
+    const jid = toSendableJid(active);
+    if (!jid) {
+      setError("This contact can't receive messages (unsupported chat type).");
+      return;
+    }
     setSending(true);
     try {
-      await sendMessage(active, text);
-      setDraft("");
+      await sendMessage(jid, text);
+      setDraft('');
       const r: any = await getConversation(active, 200);
       setMessages(r?.items || []);
       setError(null);
-    } catch (err: any) {
-      setError(err?.message || "Send failed");
+    } catch (err: unknown) {
+      // v1.20.2 (H2): surface the server's error body (invalid_jid,
+      // not_connected, text_too_long, …) instead of a bare status line.
+      setError(sendErrorMessage(err));
     } finally {
       setSending(false);
     }
@@ -185,7 +223,7 @@ export function Chat() {
                     type="button"
                     onClick={() => setActive(c.jid)}
                     className={`w-full px-3 py-2.5 text-left transition-colors ${
-                      isActive ? "bg-white/10" : "hover:bg-slate-900/70"
+                      isActive ? 'bg-white/10' : 'hover:bg-slate-900/70'
                     }`}
                   >
                     <div className="flex items-baseline justify-between gap-2">
@@ -238,8 +276,7 @@ export function Chat() {
                   </p>
                 )}
                 {messages.map((m, i) => {
-                  const showDay =
-                    i === 0 || dayKey(m.ts) !== dayKey(messages[i - 1].ts);
+                  const showDay = i === 0 || dayKey(m.ts) !== dayKey(messages[i - 1].ts);
                   return (
                     <div key={m.id}>
                       {showDay && (
@@ -247,12 +284,12 @@ export function Chat() {
                           {dayKey(m.ts)}
                         </div>
                       )}
-                      <div className={`flex ${m.fromMe ? "justify-end" : "justify-start"}`}>
+                      <div className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
                         <div
                           className={`max-w-[75%] rounded-xl px-3 py-2 text-sm ${
                             m.fromMe
-                              ? "bg-emerald-600/20 text-emerald-50"
-                              : "bg-slate-800/70 text-slate-100"
+                              ? 'bg-emerald-600/20 text-emerald-50'
+                              : 'bg-slate-800/70 text-slate-100'
                           }`}
                           title={new Date(m.ts * 1000).toLocaleString()}
                         >
@@ -264,10 +301,10 @@ export function Chat() {
                           {TYPE_ICON[m.type] && <span className="mr-1">{TYPE_ICON[m.type]}</span>}
                           <span className="whitespace-pre-wrap break-words">
                             {m.text ||
-                              (m.type === "text"
-                                ? ""
-                                : m.type === "system"
-                                  ? "(system message)"
+                              (m.type === 'text'
+                                ? ''
+                                : m.type === 'system'
+                                  ? '(system message)'
                                   : `(${m.type})`)}
                           </span>
                           <div className="mt-0.5 text-right font-mono text-[10px] text-slate-500">
@@ -297,7 +334,7 @@ export function Chat() {
                     disabled={sending || !draft.trim()}
                     className="rounded-lg bg-emerald-600/80 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    {sending ? "…" : "Send"}
+                    {sending ? '…' : 'Send'}
                   </button>
                 </div>
                 <p className="mt-1.5 text-[10px] text-slate-500">

@@ -368,6 +368,20 @@ function makeRedisStore(url, logger, groupCache) {
         logger.warn({ err: e, newsletterId, messageId }, 'incrementNewsletterView failed');
       }
     },
+    // v1.20.2 (E8): set-with-max — the server's view counter value replaces
+    // the tally, monotonically. Read-modify-write on the hash (redis has no
+    // native hash-MAX); a rare race can only under-count by a notice.
+    async setNewsletterViewCount(newsletterId, messageId, count) {
+      try {
+        const n = Math.max(0, Math.floor(Number(count) || 0));
+        const key = K + ':nl_views:' + newsletterId;
+        const cur = Number(await client.hget(key, messageId)) || 0;
+        if (n > cur) await client.hset(key, { [messageId]: String(n) });
+        await client.hset(K + ':nl_views_ts:' + newsletterId, { [messageId]: String(Date.now()) });
+      } catch (e) {
+        logger.warn({ err: e, newsletterId, messageId }, 'setNewsletterViewCount failed');
+      }
+    },
     async getNewsletterViews(newsletterId, messageId, limit = 100) {
       try {
         if (messageId) {
@@ -1759,9 +1773,35 @@ function makeRedisStore(url, logger, groupCache) {
         return 0;
       }
     },
-    async countAdminAudit() {
+    // v1.20.2 (M1): accepts the same filters as the list queries
+    // ({sinceSec, actor, cmd}); no args = global count (back-compat).
+    // Filtered counts scan the same capped lists the list queries read
+    // (main log ≤10k, per-actor/per-cmd ≤1k), so list and count always agree.
+    async countAdminAudit(opts = {}) {
       try {
-        return Number(await client.llen('admin_audit:log')) || 0;
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const actor = opts.actor ? String(opts.actor) : null;
+        const cmd = opts.cmd ? String(opts.cmd) : null;
+        if (!actor && !cmd && sinceSec <= 0) {
+          return Number(await client.llen('admin_audit:log')) || 0;
+        }
+        const key = actor
+          ? `admin_audit:by:${actor}`
+          : cmd
+            ? `admin_audit:cmd:${cmd}`
+            : 'admin_audit:log';
+        const raw = await client.lrange(key, 0, -1);
+        let n = 0;
+        for (let i = 0; i < raw.length; i++) {
+          try {
+            const o = JSON.parse(raw[i]);
+            if (sinceSec > 0 && Number(o.ts) < sinceSec) continue;
+            n++;
+          } catch (_) {
+            /* skip malformed */
+          }
+        }
+        return n;
       } catch (e) {
         logger.debug({ err: e }, 'countAdminAudit failed');
         return 0;

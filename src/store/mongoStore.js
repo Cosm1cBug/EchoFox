@@ -448,6 +448,22 @@ function makeMongoStore(uri, logger, groupCache) {
         logger.warn({ err: e, newsletterId, messageId }, 'incrementNewsletterView failed');
       }
     },
+    // v1.20.2 (E8): set-with-max — the server's view counter value replaces
+    // the tally, monotonically (mongo `$max` only writes when greater).
+    async setNewsletterViewCount(newsletterId, messageId, count) {
+      try {
+        const n = Math.max(0, Math.floor(Number(count) || 0));
+        await conn
+          .collection('newsletter_views')
+          .updateOne(
+            { newsletter_id: newsletterId, message_id: messageId },
+            { $max: { view_count: n }, $set: { updated_at: Date.now() } },
+            { upsert: true },
+          );
+      } catch (e) {
+        logger.warn({ err: e, newsletterId, messageId }, 'setNewsletterViewCount failed');
+      }
+    },
     async getNewsletterViews(newsletterId, messageId, limit = 100) {
       try {
         const q = messageId
@@ -1796,9 +1812,18 @@ function makeMongoStore(uri, logger, groupCache) {
         return 0;
       }
     },
-    async countAdminAudit() {
+    // v1.20.2 (M1): accepts the same filters as the list queries
+    // ({sinceSec, actor, cmd}); no args = global count (back-compat).
+    async countAdminAudit(opts = {}) {
       try {
-        return await conn.collection('admin_audit').countDocuments();
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const actor = opts.actor ? String(opts.actor) : null;
+        const cmd = opts.cmd ? String(opts.cmd) : null;
+        const q = {};
+        if (actor) q.actor_jid = actor;
+        else if (cmd) q.cmd_name = cmd;
+        if (sinceSec > 0) q.ts = { $gte: sinceSec };
+        return await conn.collection('admin_audit').countDocuments(q);
       } catch (e) {
         logger.debug({ err: e }, 'countAdminAudit failed');
         return 0;

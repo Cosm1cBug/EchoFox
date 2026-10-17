@@ -534,6 +534,15 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     ),
     auditPrune: db.prepare(`DELETE FROM admin_audit WHERE ts < ?`),
     auditRowCount: db.prepare(`SELECT COUNT(*) AS n FROM admin_audit`),
+    // v1.20.2 (M1): filtered counts so GET /api/audit's `total` honours the
+    // same actor/cmd/window filters as the event list (was a global count).
+    auditCountWindow: db.prepare(`SELECT COUNT(*) AS n FROM admin_audit WHERE ts >= ?`),
+    auditCountByActor: db.prepare(
+      `SELECT COUNT(*) AS n FROM admin_audit WHERE actor_jid = ? AND ts >= ?`,
+    ),
+    auditCountByCmd: db.prepare(
+      `SELECT COUNT(*) AS n FROM admin_audit WHERE cmd_name = ? AND ts >= ?`,
+    ),
 
     // v1.13.0 — last human (non-bot) message timestamp per group
     // ts is normalised to seconds on write (see the messages.upsert bind), so
@@ -663,6 +672,11 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     ),
     newsletterViewInc: db.prepare(
       `INSERT INTO newsletter_views (newsletter_id, message_id, view_count, updated_at) VALUES (?, ?, 1, ?) ON CONFLICT(newsletter_id, message_id) DO UPDATE SET view_count = view_count + 1, updated_at = excluded.updated_at`,
+    ),
+    // v1.20.2 (E8): set-with-max — the server's view counter value replaces
+    // the tally, monotonically (idempotent under dup/out-of-order notices).
+    newsletterViewSet: db.prepare(
+      `INSERT INTO newsletter_views (newsletter_id, message_id, view_count, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(newsletter_id, message_id) DO UPDATE SET view_count = MAX(view_count, excluded.view_count), updated_at = excluded.updated_at`,
     ),
     newsletterViewGet: db.prepare(
       `SELECT message_id, view_count, updated_at FROM newsletter_views WHERE newsletter_id = ? AND message_id = ?`,
@@ -1132,6 +1146,16 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         stmts.newsletterViewInc.run(newsletterId, messageId, Math.floor(Date.now() / 1000));
       } catch (e) {
         logger.warn({ err: e, newsletterId, messageId }, 'incrementNewsletterView failed');
+      }
+    },
+    // v1.20.2 (E8): record the server's absolute view-counter value with a
+    // monotonic guard (see stmts.newsletterViewSet).
+    async setNewsletterViewCount(newsletterId, messageId, count) {
+      try {
+        const n = Math.max(0, Math.floor(Number(count) || 0));
+        stmts.newsletterViewSet.run(newsletterId, messageId, n, Math.floor(Date.now() / 1000));
+      } catch (e) {
+        logger.warn({ err: e, newsletterId, messageId }, 'setNewsletterViewCount failed');
       }
     },
     async getNewsletterViews(newsletterId, messageId, limit = 100) {
@@ -2466,9 +2490,18 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         return 0;
       }
     },
-    async countAdminAudit() {
+    // v1.20.2 (M1): accepts the same filters as the list queries
+    // ({sinceSec, actor, cmd}); no args = global count (back-compat).
+    async countAdminAudit(opts = {}) {
       try {
-        const r = stmts.auditRowCount.get();
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const actor = opts.actor ? String(opts.actor) : null;
+        const cmd = opts.cmd ? String(opts.cmd) : null;
+        let r;
+        if (actor) r = stmts.auditCountByActor.get(actor, sinceSec);
+        else if (cmd) r = stmts.auditCountByCmd.get(cmd, sinceSec);
+        else if (sinceSec > 0) r = stmts.auditCountWindow.get(sinceSec);
+        else r = stmts.auditRowCount.get();
         return r ? Number(r.n) || 0 : 0;
       } catch (e) {
         logger.debug({ err: e }, 'countAdminAudit failed');

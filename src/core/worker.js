@@ -269,6 +269,21 @@ async function start(retry = 0) {
     leakDetector.start();
   }
 
+  // v1.20.2 (H4): start the dashboard at BOOT, not inside the WhatsApp
+  // connection handler. It only needs store + config (sock-dependent routes
+  // guard getRuntimeContext()?.sock themselves) and it must be reachable
+  // precisely when the WA connection is down — that's the debugging window.
+  // Reconnects re-enter start(), so a failed bind is retried naturally.
+  if (config.dashboard.enabled && !dashboardStarted) {
+    try {
+      startDashboard(config.dashboard.port, store, config);
+      dashboardStarted = true;
+      log.info({ phase: 'dashboard', port: config.dashboard.port }, 'Dashboard started');
+    } catch (e) {
+      log.error({ err: e }, 'dashboard failed to start');
+    }
+  }
+
   if (!commands) {
     commands = new CommandRegistry({
       dir: path.join(__dirname, '..', 'commands'),
@@ -438,16 +453,6 @@ async function start(retry = 0) {
         .sendPresenceUpdate(initialPresence)
         .then(() => log.info({ presence: initialPresence }, 'sent initial presence'))
         .catch((e) => log.debug({ err: e }, 'sendPresenceUpdate at connect failed'));
-
-      if (config.dashboard.enabled && !dashboardStarted) {
-        try {
-          startDashboard(config.dashboard.port, store, config);
-          dashboardStarted = true;
-          log.info({ phase: 'dashboard', port: config.dashboard.port }, 'Dashboard started');
-        } catch (e) {
-          log.error({ err: e }, 'dashboard failed to start');
-        }
-      }
 
       try {
         const groups = await sock.groupFetchAllParticipating();
@@ -697,11 +702,24 @@ async function start(retry = 0) {
   sock.ev.on('newsletter.reaction', (u) => eventRouter.emit('newsletter.reaction', { sock, u }));
   sock.ev.on('newsletter.view', (u) => eventRouter.emit('newsletter.view', { sock, u }));
   sock.ev.on('presence.update', (u) => eventRouter.emit('presence.update', { sock, u }));
+  // v1.20.2 (E9): bind the five previously-unobserved events.
+  sock.ev.on('group.join-request', (u) => eventRouter.emit('group.join-request', { sock, u }));
+  sock.ev.on('group.member-tag.update', (u) =>
+    eventRouter.emit('group.member-tag.update', { sock, u }),
+  );
+  sock.ev.on('chats.lock', (u) => eventRouter.emit('chats.lock', { sock, u }));
+  sock.ev.on('settings.update', (u) => eventRouter.emit('settings.update', { sock, u }));
+  sock.ev.on('messages.media-update', (u) =>
+    eventRouter.emit('messages.media-update', { sock, u }),
+  );
 
   sock.ev.on('messages.upsert', (payload) => {
     if (!payload?.messages?.length) return;
 
     metrics.incReceived(payload.messages.length);
+    // v1.20.2 (M3): real last-inbound timestamp for GET /api/health's
+    // `lastMsgAgoSec` (was a dead placeholder that always reported null).
+    metrics.setGauge('last_inbound_msg_at', Math.floor(Date.now() / 1000));
 
     for (const m of payload.messages) {
       // v1.12.0 fix: in-band call-signaling envelope (answer / ice-candidate)

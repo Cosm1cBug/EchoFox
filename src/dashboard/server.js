@@ -178,20 +178,24 @@ function startDashboard(port, store, config) {
       // 'pending' counts as not-yet-ready but not failed — don't 503 during boot
       if (csInfo.connection === 'close') degraded = true;
     } catch (_) {
-      checks.loginConnected = true;
+      // v1.20.2 (M3): if we cannot verify the login state, do NOT claim it is
+      // connected — report unknown-but-failing and degrade.
+      checks.loginConnected = false;
+      checks.connectionPhase = 'unknown';
+      degraded = true;
     }
 
-    // Last inbound message age: warns if no traffic for >10 min in a chat.
+    // Last inbound message age (v1.20.2 / M3): real value from the
+    // `last_inbound_msg_at` gauge maintained on every messages.upsert
+    // (worker.js). null = nothing received yet / gauge unavailable.
     try {
       if (typeof store?.getGauges === 'function') {
         const g = await store.getGauges();
-        // No dedicated last_msg gauge; use uptime as a coarse proxy.
-        // (Could wire a `last_inbound_msg_ts` gauge in a follow-up.)
-        const u = Number(g.bot_uptime_seconds) || Math.floor(process.uptime());
-        checks.lastMsgAgoSec = u < 60 ? null : null; // placeholder
+        const last = Number(g.last_inbound_msg_at) || 0;
+        checks.lastMsgAgoSec = last > 0 ? Math.max(0, Math.floor(Date.now() / 1000) - last) : null;
       }
     } catch (_) {
-      /* ignore */
+      /* leave null — unknown */
     }
 
     const body = {
@@ -803,7 +807,10 @@ function startDashboard(port, store, config) {
           prefix: '',
           args: text.slice(0, 180),
           kind: 'admin',
-          outcome: 'ok',
+          // v1.20.2 (H1): must be one of the audit contract's outcomes
+          // ('success' | 'failure' | 'timeout' | 'denied') — 'ok' was outside
+          // the union and rendered as an unstyled chip in AuditLog.tsx.
+          outcome: 'success',
         });
       } catch (_) {
         /* audit failure must never fail the send */
@@ -896,7 +903,10 @@ function startDashboard(port, store, config) {
       if (typeof store.getStatusViewers !== 'function') {
         return res.json({ success: true, viewers: [] });
       }
-      const viewers = store.getStatusViewers(req.params.id, 500);
+      // v1.20.2 (M2): await unconditionally — the sqlite store is synchronous
+      // today, but any async implementation (or a thenable wrapper) would
+      // otherwise serialize a Promise as `{}` and report count: undefined.
+      const viewers = await Promise.resolve(store.getStatusViewers(req.params.id, 500));
       res.json({ success: true, id: req.params.id, viewers, count: viewers.length });
     } catch (e) {
       next(e);
@@ -947,8 +957,12 @@ function startDashboard(port, store, config) {
       } else if (typeof store.listAdminAudit === 'function') {
         events = await store.listAdminAudit({ sinceSec, limit, offset });
       }
+      // v1.20.2 (M1): total must honour the active filters (actor/cmd/window),
+      // otherwise AuditLog's pagination math breaks the moment a filter is set.
       const total =
-        typeof store.countAdminAudit === 'function' ? await store.countAdminAudit() : events.length;
+        typeof store.countAdminAudit === 'function'
+          ? await store.countAdminAudit({ sinceSec, actor, cmd })
+          : events.length;
       res.json({ days, limit, offset, actor, cmd, total, events });
     } catch (e) {
       next(e);
@@ -1086,12 +1100,32 @@ function startDashboard(port, store, config) {
     res.status(500).json({ error: 'internal', errId });
   });
 
-  app.listen(port, () => {
-    logger.info(
-      { port, auth: !!config.dashboard.username, react: reactReady },
-      'dashboard listening',
-    );
-  });
+  // ── v1.20.2 (H4): attach an 'error' listener — a bind failure (EADDRINUSE
+  // etc.) otherwise surfaces as an unhandled 'error' event that can take the
+  // whole worker down into a supervisor restart loop. Log loudly and retry a
+  // few times instead of crashing; never silently die.
+  let listenAttempt = 0;
+  const listen = () => {
+    const server = app.listen(port, () => {
+      logger.info(
+        { port, auth: !!config.dashboard.username, react: reactReady },
+        'dashboard listening',
+      );
+    });
+    server.on('error', (e) => {
+      listenAttempt++;
+      logger.error(
+        { err: e, port, attempt: listenAttempt },
+        'dashboard listen failed — will retry (max 3)',
+      );
+      if (listenAttempt < 3) {
+        const t = setTimeout(listen, 5000);
+        if (t.unref) t.unref();
+      }
+    });
+    return server;
+  };
+  return listen();
 }
 
 module.exports = { startDashboard };

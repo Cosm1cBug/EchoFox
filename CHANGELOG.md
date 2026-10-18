@@ -12,6 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.20.0] — 2026-10-19
+
+### Added
+
+- Persistent change timelines in SQLite, PostgreSQL, MongoDB, and Redis, with
+  history-query APIs and database migrations where applicable.
+- Dashboard history panels on every page except Overview, covering chat,
+  contact, group, newsletter, label, blocklist, presence, call, connection,
+  subscription, AI, alert, XP, and metric activity.
+
+### Fixed
+
+- Upgrade legacy SQLite message-capping tables with the missing `info` column
+  before preparing queries, preventing the associated startup failure.
+
 ## [1.17.0] — 2026-06-26
 
 > **Observability batch:** Prometheus metrics for leveling/decay/mute/OCR

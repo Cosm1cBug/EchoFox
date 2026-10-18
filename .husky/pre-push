@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Pre-push: fast local gate (full suite runs in CI and via `npm run verify`).
+# Bypass with --no-verify — CI still runs everything and is authoritative.
+npm run verify:quick --silent

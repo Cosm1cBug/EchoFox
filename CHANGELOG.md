@@ -21,11 +21,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard history panels on every page except Overview, covering chat,
   contact, group, newsletter, label, blocklist, presence, call, connection,
   subscription, AI, alert, XP, and metric activity.
+- `npm run verify` / `npm run verify:quick` — a local pre-push verification
+  suite (`scripts/verify.sh`) that runs the same gates as CI: lockfile sync,
+  dashboard typecheck, ESLint, Prettier, AGPL headers, tests + contract
+  tests, dashboard production build, production-dependency audit, a secret
+  scan of the outgoing diff, and git hygiene checks (whitespace, conflict
+  markers, tracked sensitive files). A husky `pre-push` hook runs the quick
+  variant automatically. Documented in `CONTRIBUTING.md`.
 
 ### Fixed
 
 - Upgrade legacy SQLite message-capping tables with the missing `info` column
   before preparing queries, preventing the associated startup failure.
+- Root `package-lock.json` was out of sync with `package.json` (the
+  `undici-types` and `vitepress/node_modules/@types/node` entries had been
+  dropped), which broke `npm ci` and with it every GitHub Actions workflow
+  that installs dependencies (CI, Release, npm publish, Deploy Documentation).
+  The lockfile is regenerated and in sync again.
+- Dashboard lockfile updated: `nanoid` 3.3.16 → 3.3.20 and `source-map-js`
+  1.2.1 → 1.2.2, clearing both high-severity `npm audit` findings.
+
+### Changed
+
+- `lint-staged` 15.5.2 → 17.6.0 (dev dependency), removing the vulnerable
+  `braces`/`micromatch` chain from the dependency tree.
+
+### Security
+
+- Third-party GitHub Actions (`docker/*`, `softprops/action-gh-release`,
+  `trufflesecurity/trufflehog`) are now pinned to reviewed commit SHAs
+  instead of mutable major version tags.
 
 ## [1.17.0] — 2026-06-26
 

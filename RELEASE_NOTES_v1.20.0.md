@@ -9,6 +9,10 @@
   presence, call, connection, subscription, AI, alert, XP, and metric activity.
 - Legacy SQLite message-capping upgrade fixes the missing `info` column startup
   failure.
+- Release-pipeline repair: the root lockfile is back in sync with
+  `package.json` (a hand-edit had broken `npm ci` and every workflow that
+  installs dependencies), and a new `npm run verify` pre-push suite now runs
+  the same checks as CI before you push.
 
 ## Upgrade
 

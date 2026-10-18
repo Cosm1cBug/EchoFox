@@ -12,10 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.20.0] — 2026-10-19
+
+### Added
+
+- Persistent change timelines in SQLite, PostgreSQL, MongoDB, and Redis, with
+  history-query APIs and database migrations where applicable.
+- Dashboard history panels on every page except Overview, covering chat,
+  contact, group, newsletter, label, blocklist, presence, call, connection,
+  subscription, AI, alert, XP, and metric activity.
+- `npm run verify` / `npm run verify:quick` — a local pre-push verification
+  suite (`scripts/verify.sh`) that runs the same gates as CI: lockfile sync,
+  dashboard typecheck, ESLint, Prettier, AGPL headers, tests + contract
+  tests, dashboard production build, production-dependency audit, a secret
+  scan of the outgoing diff, and git hygiene checks (whitespace, conflict
+  markers, tracked sensitive files). A husky `pre-push` hook runs the quick
+  variant automatically. Documented in `CONTRIBUTING.md`.
 
 ### Fixed
 
+- Upgrade legacy SQLite message-capping tables with the missing `info` column
+  before preparing queries, preventing the associated startup failure.
 - Root `package-lock.json` was out of sync with `package.json` (the
   `undici-types` and `vitepress/node_modules/@types/node` entries had been
   dropped), which broke `npm ci` and with it every GitHub Actions workflow
@@ -34,31 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Third-party GitHub Actions (`docker/*`, `softprops/action-gh-release`,
   `trufflesecurity/trufflehog`) are now pinned to reviewed commit SHAs
   instead of mutable major version tags.
-
-### Added
-
-- `npm run verify` / `npm run verify:quick` — a local pre-push verification
-  suite (`scripts/verify.sh`) that runs the same gates as CI: lockfile sync,
-  dashboard typecheck, ESLint, Prettier, AGPL headers, tests + contract
-  tests, dashboard production build, production-dependency audit, a secret
-  scan of the outgoing diff, and git hygiene checks (whitespace, conflict
-  markers, tracked sensitive files). A husky `pre-push` hook runs the quick
-  variant automatically. Documented in `CONTRIBUTING.md`.
-
-## [1.20.0] — 2026-10-19
-
-### Added
-
-- Persistent change timelines in SQLite, PostgreSQL, MongoDB, and Redis, with
-  history-query APIs and database migrations where applicable.
-- Dashboard history panels on every page except Overview, covering chat,
-  contact, group, newsletter, label, blocklist, presence, call, connection,
-  subscription, AI, alert, XP, and metric activity.
-
-### Fixed
-
-- Upgrade legacy SQLite message-capping tables with the missing `info` column
-  before preparing queries, preventing the associated startup failure.
 
 ## [1.17.0] — 2026-06-26
 

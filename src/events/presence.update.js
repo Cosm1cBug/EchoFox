@@ -7,12 +7,18 @@
 const { LRUCache } = require('lru-cache');
 const logger = require('../core/logger').child({ mod: 'presence.update' });
 const { getStore } = require('../store/instance');
+const { recordTimeline } = require('../lib/timelineLog');
 
 // In-memory cache for real-time presence (5 minute TTL)
 const presenceCache = new LRUCache({
   max: 10_000,
   ttl: 1000 * 60 * 5, // 5 minutes
 });
+
+// v1.21.0 — last state we wrote to the timeline per jid, so the presence
+// history records TRANSITIONS (available ⇄ unavailable) instead of a row
+// per repeated heartbeat.
+const lastTimelineState = new LRUCache({ max: 50_000, ttl: 1000 * 60 * 60 * 6 });
 
 module.exports = async ({ u }) => {
   if (!u) return;
@@ -54,6 +60,20 @@ module.exports = async ({ u }) => {
         // dashboard can scope presence to a conversation when it wants to.
         if (meaningfulStates.includes(state)) {
           await store.recordPresence(participantJid, state, lastSeen, p.id || null);
+          // v1.21.0 — presence history (dashboard HistoryPanel, domain
+          // 'presence'). One row per state TRANSITION, not per heartbeat.
+          const prevLogged = lastTimelineState.get(participantJid) || null;
+          if (prevLogged !== state) {
+            lastTimelineState.set(participantJid, state);
+            await recordTimeline(store, {
+              domain: 'presence',
+              entityId: participantJid,
+              field: 'state',
+              oldValue: prevLogged,
+              newValue: state,
+              source: p.id || null,
+            });
+          }
         }
       } catch (err) {
         logger.debug({ err, jid: participantJid }, 'presence update failed');

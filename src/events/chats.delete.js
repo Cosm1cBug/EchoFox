@@ -14,6 +14,7 @@
  */
 
 const logger = require('../core/logger').child({ mod: 'chats.delete' });
+const { recordTimeline } = require('../lib/timelineLog');
 
 module.exports = async ({ store, u }) => {
   if (!Array.isArray(u) || !u.length || !store) return;
@@ -21,6 +22,15 @@ module.exports = async ({ store, u }) => {
     if (!jid) continue;
     try {
       await store.markChatDeleted?.(jid);
+      // v1.21.0 — chat history (dashboard HistoryPanel, domain 'chat').
+      await recordTimeline(store, {
+        domain: 'chat',
+        entityId: jid,
+        field: 'deleted',
+        oldValue: jid,
+        newValue: 'true',
+        source: 'chats.delete',
+      });
     } catch (err) {
       logger.debug({ err, jid }, 'markChatDeleted failed');
     }

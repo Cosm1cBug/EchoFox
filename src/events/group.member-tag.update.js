@@ -6,6 +6,7 @@
 'use strict';
 
 const logger = require('../core/logger').child({ mod: 'group.member-tag.update' });
+const { recordTimeline, safeGetStore } = require('../lib/timelineLog');
 
 /**
  * group.member-tag.update — participant label (member-tagging) change.
@@ -34,5 +35,13 @@ module.exports = async ({ u }) => {
       },
       'group member-tag updated',
     );
+    // v1.21.0 — group history (dashboard Groups page panel, domain 'group').
+    await recordTimeline(safeGetStore(), {
+      domain: 'group',
+      entityId: ev.groupId,
+      field: 'member-tag',
+      newValue: `${ev.participant} → ${ev.label ?? '(untagged)'}`,
+      source: 'group.member-tag.update',
+    });
   }
 };

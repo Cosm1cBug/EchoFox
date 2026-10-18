@@ -1850,6 +1850,91 @@ function makePostgresStore(url, logger, groupCache) {
       }
     },
 
+    // ─── v1.21.0 generic change timeline (dashboard history views) ────
+    async recordTimelineEvent(ev) {
+      try {
+        const domain = String(ev?.domain || '').trim();
+        if (!domain) return null;
+        const ts = Math.floor(Number(ev?.ts) || Date.now() / 1000);
+        const s = (v, max) => (v == null ? null : String(v).slice(0, max));
+        const r = await pool.query(
+          `INSERT INTO timeline_events (domain, entity_id, field, old_value, new_value, actor, source, ts)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+          [
+            domain,
+            s(ev?.entityId ?? ev?.entity_id, 255),
+            s(ev?.field, 100),
+            s(ev?.oldValue ?? ev?.old_value, 1000),
+            s(ev?.newValue ?? ev?.new_value, 1000),
+            s(ev?.actor, 255),
+            s(ev?.source, 100),
+            ts,
+          ],
+        );
+        return r.rows[0] ? Number(r.rows[0].id) : null;
+      } catch (e) {
+        logger.debug({ err: e }, 'recordTimelineEvent failed');
+        return null;
+      }
+    },
+    async getTimelineEvents(opts = {}) {
+      try {
+        const domain = String(opts.domain || '').trim();
+        if (!domain) return [];
+        const entityId = opts.entityId ?? opts.entity_id ?? null;
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.min(Math.max(1, Math.floor(Number(opts.limit) || 100)), 1000);
+        const offset = Math.max(0, Math.floor(Number(opts.offset) || 0));
+        const where = ['domain = $1'];
+        const params = [domain];
+        if (entityId) {
+          params.push(String(entityId));
+          where.push(`entity_id = $${params.length}`);
+        }
+        if (sinceSec > 0) {
+          params.push(sinceSec);
+          where.push(`ts >= $${params.length}`);
+        }
+        params.push(limit, offset);
+        const r = await pool.query(
+          `SELECT id, domain, entity_id, field, old_value, new_value, actor, source, ts
+           FROM timeline_events WHERE ${where.join(' AND ')}
+           ORDER BY ts DESC, id DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+          params,
+        );
+        return r.rows || [];
+      } catch (e) {
+        logger.debug({ err: e }, 'getTimelineEvents failed');
+        return [];
+      }
+    },
+    async countTimelineEvents(opts = {}) {
+      try {
+        const domain = String(opts.domain || '').trim();
+        if (!domain) return 0;
+        const entityId = opts.entityId ?? opts.entity_id ?? null;
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const where = ['domain = $1'];
+        const params = [domain];
+        if (entityId) {
+          params.push(String(entityId));
+          where.push(`entity_id = $${params.length}`);
+        }
+        if (sinceSec > 0) {
+          params.push(sinceSec);
+          where.push(`ts >= $${params.length}`);
+        }
+        const r = await pool.query(
+          `SELECT COUNT(*)::bigint AS n FROM timeline_events WHERE ${where.join(' AND ')}`,
+          params,
+        );
+        return r.rows[0] ? Number(r.rows[0].n) || 0 : 0;
+      } catch (e) {
+        logger.debug({ err: e }, 'countTimelineEvents failed');
+        return 0;
+      }
+    },
+
     // v1.13.0 — groups dashboard helper
     async getLastHumanMessageTs(jid) {
       try {

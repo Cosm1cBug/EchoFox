@@ -31,6 +31,7 @@
 
 const logger = require('../core/logger').child({ mod: 'newsletter-participants.update' });
 const { getStore } = require('../store/instance');
+const { recordTimeline, snap } = require('../lib/timelineLog');
 
 /** Channels refresh at most once per hour — the event is chatty. */
 const REFRESH_TTL_MS = 60 * 60 * 1000;
@@ -46,6 +47,17 @@ module.exports = async ({ sock, u }) => {
     if (!id) continue;
 
     logger.debug({ id, action: ev?.action, role: ev?.new_role }, 'channel membership change');
+
+    // v1.21.0 — newsletter history (dashboard HistoryPanel, domain
+    // 'newsletter'). Recorded BEFORE the throttled metadata refresh below so
+    // every membership event lands even when the refresh is skipped.
+    await recordTimeline(store, {
+      domain: 'newsletter',
+      entityId: id,
+      field: 'participants',
+      newValue: snap({ action: ev?.action, role: ev?.new_role, participant: ev?.participant }),
+      source: 'newsletter-participants.update',
+    });
 
     // Trigger a metadata refresh, throttled per channel.
     const last = _lastRefresh.get(id) || 0;

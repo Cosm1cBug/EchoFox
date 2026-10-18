@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getGroups } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+import { HistoryPanel } from "../components/HistoryPanel";
 import { GroupTile } from "../components/groups/GroupTile";
 import { GroupDetail } from "../components/groups/GroupDetail";
 
@@ -150,6 +151,8 @@ export function Groups() {
       <p className="mt-6 text-center text-xs text-slate-500">
         Auto-refreshing every {POLL_MS / 1000}s
       </p>
+
+      <HistoryPanel domain="group" title="📜 Group events" />
     </div>
   );
 }

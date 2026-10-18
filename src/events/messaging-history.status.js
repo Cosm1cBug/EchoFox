@@ -11,4 +11,14 @@ const log = logger.child({ mod: 'messaging-history.status' });
 
 module.exports = async (payload) => {
   log.info({ payload }, 'messaging-history.status received');
+  // v1.21.0 — history-sync milestones land in the connection timeline
+  // (dashboard Diagnostics page, domain 'connection').
+  const { recordTimeline, snap, safeGetStore } = require('../lib/timelineLog');
+  await recordTimeline(safeGetStore(), {
+    domain: 'connection',
+    entityId: 'history-sync',
+    field: 'history-sync',
+    newValue: snap({ status: payload?.status ?? payload?.u?.status ?? null }),
+    source: 'messaging-history.status',
+  });
 };

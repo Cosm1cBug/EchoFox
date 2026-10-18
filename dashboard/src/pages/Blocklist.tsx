@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { getBlocklist } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+import { HistoryPanel } from "../components/HistoryPanel";
 
 type BlockEntry = {
   jid: string;
@@ -92,6 +93,8 @@ export function Blocklist() {
         <code className="mx-1 rounded bg-white/10 px-1 py-0.5">blocklist.set</code>
         or <code className="mx-1 rounded bg-white/10 px-1 py-0.5">blocklist.update</code> events.
       </div>
+
+      <HistoryPanel domain="blocklist" title="📜 Blocklist history" />
     </div>
   );
 }

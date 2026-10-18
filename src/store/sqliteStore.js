@@ -297,7 +297,22 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     CREATE INDEX IF NOT EXISTS idx_mutes_chat ON mutes (chat_jid, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_mutes_user ON mutes (user_jid, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_mutes_active ON mutes (expires_at) WHERE unmuted_at IS NULL;
-    
+
+    -- v1.21.0 generic change timeline (dashboard history views) ───────
+    CREATE TABLE IF NOT EXISTS timeline_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      domain     TEXT NOT NULL,
+      entity_id  TEXT,
+      field      TEXT,
+      old_value  TEXT,
+      new_value  TEXT,
+      actor      TEXT,
+      source     TEXT,
+      ts         INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_timeline_domain_ts ON timeline_events (domain, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_timeline_entity_ts ON timeline_events (domain, entity_id, ts DESC);
+
   `);
 
   applyMessagesMigration_sqlite(db);
@@ -356,6 +371,23 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       db.exec(`ALTER TABLE contacts ADD COLUMN verified_name TEXT`);
   } catch (e) {
     logger.warn({ err: e }, 'contacts v1.1.0 column upgrade failed');
+  }
+
+  try {
+    const _mcCols = db
+      .prepare(`PRAGMA table_info(message_capping)`)
+      .all()
+      .map((c) => c.name);
+    // v1.20.0 (E5): NewChatMessageCapInfo JSON column. Migration
+    // migrations/sqlite/011 does this too, but the migration runner only runs
+    // AFTER makeSQLiteStore() returns (lifecycle.selectStore) — while the
+    // messageCappingInfo* statements below are prepared eagerly during init.
+    // Without this inline ensure, a pre-E5 database crashes right at
+    // prepare() ("table message_capping has no column named info") and
+    // migration 011 never gets the chance to run.
+    if (!_mcCols.includes('info')) db.exec(`ALTER TABLE message_capping ADD COLUMN info TEXT`);
+  } catch (e) {
+    logger.warn({ err: e }, 'message_capping v1.20.0 column upgrade failed');
   }
 
   const stmts = {
@@ -542,6 +574,12 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     ),
     auditCountByCmd: db.prepare(
       `SELECT COUNT(*) AS n FROM admin_audit WHERE cmd_name = ? AND ts >= ?`,
+    ),
+
+    // v1.21.0 — generic change timeline (dashboard history views)
+    timelineInsert: db.prepare(
+      `INSERT INTO timeline_events (domain, entity_id, field, old_value, new_value, actor, source, ts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
 
     // v1.13.0 — last human (non-bot) message timestamp per group
@@ -2505,6 +2543,94 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         return r ? Number(r.n) || 0 : 0;
       } catch (e) {
         logger.debug({ err: e }, 'countAdminAudit failed');
+        return 0;
+      }
+    },
+
+    // ─── v1.21.0 generic change timeline (dashboard history views) ────
+    /**
+     * Append one change/event row to the timeline. `domain` is required
+     * (presence, contact, chat, blocklist, label, newsletter, subscription,
+     * ai, alert, xp, metric, connection, call, status, …); everything else
+     * is optional. Returns the new row id or null.
+     */
+    async recordTimelineEvent(ev) {
+      try {
+        const domain = String(ev?.domain || '').trim();
+        if (!domain) return null;
+        const ts = Math.floor(Number(ev?.ts) || Date.now() / 1000);
+        const s = (v, max) => (v == null ? null : String(v).slice(0, max));
+        const result = stmts.timelineInsert.run(
+          domain,
+          s(ev?.entityId ?? ev?.entity_id, 255),
+          s(ev?.field, 100),
+          s(ev?.oldValue ?? ev?.old_value, 1000),
+          s(ev?.newValue ?? ev?.new_value, 1000),
+          s(ev?.actor, 255),
+          s(ev?.source, 100),
+          ts,
+        );
+        return Number(result.lastInsertRowid);
+      } catch (e) {
+        logger.debug({ err: e }, 'recordTimelineEvent failed');
+        return null;
+      }
+    },
+    /** Newest-first page of timeline rows. Filters: {domain, entityId, sinceSec, limit, offset}. */
+    async getTimelineEvents(opts = {}) {
+      try {
+        const domain = String(opts.domain || '').trim();
+        if (!domain) return [];
+        const entityId = opts.entityId ?? opts.entity_id ?? null;
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.min(Math.max(1, Math.floor(Number(opts.limit) || 100)), 1000);
+        const offset = Math.max(0, Math.floor(Number(opts.offset) || 0));
+        const where = ['domain = ?'];
+        const params = [domain];
+        if (entityId) {
+          where.push('entity_id = ?');
+          params.push(String(entityId));
+        }
+        if (sinceSec > 0) {
+          where.push('ts >= ?');
+          params.push(sinceSec);
+        }
+        return db
+          .prepare(
+            `SELECT id, domain, entity_id, field, old_value, new_value, actor, source, ts
+             FROM timeline_events WHERE ${where.join(' AND ')}
+             ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?`,
+          )
+          .all(...params, limit, offset);
+      } catch (e) {
+        logger.debug({ err: e }, 'getTimelineEvents failed');
+        return [];
+      }
+    },
+    // Filter-aware count (same filters as getTimelineEvents) — keeps
+    // pagination math honest, the M1 lesson from /api/audit.
+    async countTimelineEvents(opts = {}) {
+      try {
+        const domain = String(opts.domain || '').trim();
+        if (!domain) return 0;
+        const entityId = opts.entityId ?? opts.entity_id ?? null;
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const where = ['domain = ?'];
+        const params = [domain];
+        if (entityId) {
+          where.push('entity_id = ?');
+          params.push(String(entityId));
+        }
+        if (sinceSec > 0) {
+          where.push('ts >= ?');
+          params.push(sinceSec);
+        }
+        const r = db
+          .prepare(`SELECT COUNT(*) AS n FROM timeline_events WHERE ${where.join(' AND ')}`)
+          .get(...params);
+        return r ? Number(r.n) || 0 : 0;
+      } catch (e) {
+        logger.debug({ err: e }, 'countTimelineEvents failed');
         return 0;
       }
     },

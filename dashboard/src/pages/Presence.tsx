@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { getRecentPresence } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+import { HistoryPanel } from "../components/HistoryPanel";
 
 type PresenceEntry = {
   jid: string;
@@ -150,6 +151,7 @@ export function Presence() {
           </table>
         </div>
       )}
+      <HistoryPanel domain="presence" title="📜 Presence history" />
     </div>
   );
 }

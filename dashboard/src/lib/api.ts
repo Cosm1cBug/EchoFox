@@ -235,3 +235,38 @@ export const getMessageCapping = () =>
     info: NewChatQuotaInfo | null;
     updatedAt: number | null;
   }>('/api/message-capping');
+
+// v1.21.0 — generic change timeline (dashboard history views). One call
+// powers every page's HistoryPanel.
+export interface TimelineEvent {
+  id: number | string | null;
+  domain: string;
+  entity_id: string | null;
+  field: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  actor: string | null;
+  source: string | null;
+  ts: number;
+}
+
+export const getHistory = (
+  domain: string,
+  opts: { entity?: string; limit?: number; offset?: number; days?: number } = {},
+) => {
+  const qs = new URLSearchParams();
+  if (opts.entity) qs.set('entity', opts.entity);
+  if (opts.limit) qs.set('limit', String(opts.limit));
+  if (opts.offset) qs.set('offset', String(opts.offset));
+  if (opts.days) qs.set('days', String(opts.days));
+  const query = qs.toString();
+  return fetchJson<{
+    domain: string;
+    entity: string | null;
+    days: number;
+    limit: number;
+    offset: number;
+    total: number;
+    items: TimelineEvent[];
+  }>(`/api/history/${encodeURIComponent(domain)}${query ? `?${query}` : ''}`);
+};

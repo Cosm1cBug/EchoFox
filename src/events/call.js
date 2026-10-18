@@ -28,8 +28,21 @@ const { config } = require('../lib/configLoader');
 module.exports = async function onCall({ sock, u, callManager }) {
   if (!Array.isArray(u)) return;
 
+  const { recordTimeline, safeGetStore } = require('../lib/timelineLog');
+
   for (const ev of u) {
     if (ev.status !== 'offer') continue;
+
+    // v1.21.0 — call history (queryable via GET /api/history/call; shown on
+    // the Diagnostics page). Every offer is recorded — accepted, declined or
+    // errored — so missed-call attempts are auditable.
+    await recordTimeline(safeGetStore(), {
+      domain: 'call',
+      entityId: ev.from,
+      field: 'offer',
+      newValue: `${ev.isVideo ? 'video' : 'voice'}${ev.isGroup ? ' group' : ''}`,
+      source: 'call',
+    });
 
     logger.info(
       { from: ev.from, isVideo: ev.isVideo, id: ev.id },

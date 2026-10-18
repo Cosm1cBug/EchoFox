@@ -1830,6 +1830,79 @@ function makeMongoStore(uri, logger, groupCache) {
       }
     },
 
+    // ─── v1.21.0 generic change timeline (dashboard history views) ────
+    async recordTimelineEvent(ev) {
+      try {
+        const domain = String(ev?.domain || '').trim();
+        if (!domain) return null;
+        const ts = Math.floor(Number(ev?.ts) || Date.now() / 1000);
+        const s = (v, max) => (v == null ? null : String(v).slice(0, max));
+        const r = await conn.collection('timeline_events').insertOne({
+          domain,
+          entity_id: s(ev?.entityId ?? ev?.entity_id, 255),
+          field: s(ev?.field, 100),
+          old_value: s(ev?.oldValue ?? ev?.old_value, 1000),
+          new_value: s(ev?.newValue ?? ev?.new_value, 1000),
+          actor: s(ev?.actor, 255),
+          source: s(ev?.source, 100),
+          ts,
+        });
+        return r.insertedId ? String(r.insertedId) : null;
+      } catch (e) {
+        logger.debug({ err: e }, 'recordTimelineEvent failed');
+        return null;
+      }
+    },
+    async getTimelineEvents(opts = {}) {
+      try {
+        const domain = String(opts.domain || '').trim();
+        if (!domain) return [];
+        const entityId = opts.entityId ?? opts.entity_id ?? null;
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.min(Math.max(1, Math.floor(Number(opts.limit) || 100)), 1000);
+        const offset = Math.max(0, Math.floor(Number(opts.offset) || 0));
+        const q = { domain };
+        if (entityId) q.entity_id = String(entityId);
+        if (sinceSec > 0) q.ts = { $gte: sinceSec };
+        const rows = await conn
+          .collection('timeline_events')
+          .find(q)
+          .sort({ ts: -1, _id: -1 })
+          .skip(offset)
+          .limit(limit)
+          .toArray();
+        return rows.map((r) => ({
+          id: r._id ? String(r._id) : null,
+          domain: r.domain,
+          entity_id: r.entity_id ?? null,
+          field: r.field ?? null,
+          old_value: r.old_value ?? null,
+          new_value: r.new_value ?? null,
+          actor: r.actor ?? null,
+          source: r.source ?? null,
+          ts: r.ts,
+        }));
+      } catch (e) {
+        logger.debug({ err: e }, 'getTimelineEvents failed');
+        return [];
+      }
+    },
+    async countTimelineEvents(opts = {}) {
+      try {
+        const domain = String(opts.domain || '').trim();
+        if (!domain) return 0;
+        const entityId = opts.entityId ?? opts.entity_id ?? null;
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const q = { domain };
+        if (entityId) q.entity_id = String(entityId);
+        if (sinceSec > 0) q.ts = { $gte: sinceSec };
+        return await conn.collection('timeline_events').countDocuments(q);
+      } catch (e) {
+        logger.debug({ err: e }, 'countTimelineEvents failed');
+        return 0;
+      }
+    },
+
     // v1.13.0 — groups dashboard helper
     async getLastHumanMessageTs(jid) {
       try {

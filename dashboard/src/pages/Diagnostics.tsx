@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { getDiagnostics, ApiError } from '../lib/api';
 import { Loading, ErrorMessage } from '../components/LoadingError';
+import { HistoryPanel } from '../components/HistoryPanel';
 
 type DiagnosticCheck = {
   ok: boolean;
@@ -110,6 +111,9 @@ export function Diagnostics() {
           </tbody>
         </table>
       </div>
+
+      <HistoryPanel domain="connection" title="📜 Connection history" />
+      <HistoryPanel domain="call" title="📜 Call history" />
     </div>
   );
 }

@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getChats, getChatFull, ApiError } from '../lib/api';
 import { ChatDetail } from '../components/chats/ChatDetail';
+import { HistoryPanel } from '../components/HistoryPanel';
 
 type ChatEntry = {
   jid: string;
@@ -477,6 +478,8 @@ export function Chats() {
         Showing {visible.length.toLocaleString()} of {chats.length.toLocaleString()} contacts.
         Presence may be unavailable when WhatsApp has not supplied a recent presence update.
       </p>
+
+      <HistoryPanel domain="chat" title="📜 Chat changes history" />
     </section>
   );
 }

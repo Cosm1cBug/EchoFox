@@ -38,6 +38,7 @@ const CommandRegistry = require('./commandRegistry');
 const eventRouter = require('../events/router');
 const { startDashboard } = require('../dashboard/server');
 const { startGC } = require('../lib/tempManager');
+const { recordTimeline } = require('../lib/timelineLog');
 const { wrapSocketSend } = require('../middleware/sendQueue');
 const { wrapWithPresence } = require('../middleware/presence');
 const sentMessageTracker = require('../services/sentMessageTracker');
@@ -116,6 +117,7 @@ process.on('message', async (msg) => {
 });
 
 function startGaugeRefresh() {
+  let _samplerTick = 0;
   setInterval(async () => {
     try {
       const [groupsCount, uniqueUsersSeen] = await Promise.all([
@@ -123,6 +125,26 @@ function startGaugeRefresh() {
         store.countUniqueUsers?.(),
       ]);
       metrics.refreshDerivedGauges({ groupsCount, uniqueUsersSeen });
+      // v1.21.0 — metrics history (dashboard Metrics page, domain 'metric').
+      // Snapshot key gauges every 15 min (30th 30s tick) so the history view
+      // has a real time series to chart.
+      _samplerTick += 1;
+      if (_samplerTick % 30 === 0 && typeof store?.getGauges === 'function') {
+        try {
+          const gauges = (await store.getGauges()) || {};
+          for (const [key, value] of Object.entries(gauges)) {
+            await recordTimeline(store, {
+              domain: 'metric',
+              entityId: key,
+              field: 'gauge',
+              newValue: String(value),
+              source: 'sampler',
+            });
+          }
+        } catch (e) {
+          log.debug({ err: e }, 'metrics timeline sampler failed');
+        }
+      }
     } catch (e) {
       log.debug({ err: e }, 'gauge refresh failed');
     }
@@ -259,6 +281,14 @@ async function start(retry = 0) {
     store = await lifecycle.selectStore();
     lifecycle.initMetrics(store);
     startGaugeRefresh();
+    // v1.21.0 — connection history: boot marker (dashboard Diagnostics page).
+    await recordTimeline(store, {
+      domain: 'connection',
+      entityId: 'worker',
+      field: 'boot',
+      newValue: `worker start${retry ? ` (retry ${retry})` : ''}`,
+      source: 'worker',
+    });
 
     alertEngine.init({
       windowMinutes: config.alerts.windowMinutes,
@@ -424,6 +454,14 @@ async function start(retry = 0) {
       log.info({ phase: 'ready', status: 'ok', user: sock.user?.id }, 'EchoFox Ready');
       process.send?.('ready');
       reconnectAttempts = 0;
+      // v1.21.0 — connection history (dashboard Diagnostics page).
+      await recordTimeline(store, {
+        domain: 'connection',
+        entityId: 'socket',
+        field: 'connection',
+        newValue: 'open',
+        source: 'connection.update',
+      });
       try {
         connectionState.set({ connection: 'open', reconnectAttempts: 0 });
       } catch (_) {
@@ -528,6 +566,16 @@ async function start(retry = 0) {
       const cls = classifyDisconnect(code);
       const baileysReason =
         Object.entries(DisconnectReason).find(([, v]) => v === code)?.[0] || null;
+
+      // v1.21.0 — connection history (dashboard Diagnostics page).
+      await recordTimeline(store, {
+        domain: 'connection',
+        entityId: 'socket',
+        field: 'connection',
+        oldValue: 'open',
+        newValue: `close ${cls.code ?? code ?? ''} (${cls.reason || baileysReason || 'unknown'})`,
+        source: 'connection.update',
+      });
 
       log.warn(
         {

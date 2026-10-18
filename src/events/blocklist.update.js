@@ -14,6 +14,7 @@
 
 const logger = require('../core/logger').child({ mod: 'blocklist.update' });
 const { getStore } = require('../store/instance');
+const { recordTimeline } = require('../lib/timelineLog');
 
 module.exports = async ({ u }) => {
   const list = u?.blocklist;
@@ -27,6 +28,15 @@ module.exports = async ({ u }) => {
     try {
       if (type === 'add') await store.addToBlocklist(jid);
       else if (type === 'remove') await store.removeFromBlocklist(jid);
+      // v1.21.0 — blocklist history (dashboard HistoryPanel).
+      await recordTimeline(store, {
+        domain: 'blocklist',
+        entityId: jid,
+        field: 'blocked',
+        oldValue: type === 'remove' ? 'true' : null,
+        newValue: type === 'remove' ? 'false' : 'true',
+        source: 'blocklist.update',
+      });
     } catch (err) {
       logger.debug({ err, jid, type }, 'blocklist mutation failed');
     }

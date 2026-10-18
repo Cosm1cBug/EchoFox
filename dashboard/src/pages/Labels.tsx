@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { getLabels, getLabelAssociations } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+import { HistoryPanel } from "../components/HistoryPanel";
 
 type Label = {
   label_id: string;
@@ -181,6 +182,7 @@ export function Labels() {
           </div>
         </div>
       )}
+      <HistoryPanel domain="label" title="📜 Label history" />
     </div>
   );
 }

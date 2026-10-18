@@ -19,6 +19,7 @@
 
 const logger = require('../core/logger').child({ mod: 'contacts.upsert' });
 const { getStore } = require('../store/instance');
+const { recordTimeline, snap } = require('../lib/timelineLog');
 
 module.exports = async ({ u }) => {
   if (!Array.isArray(u) || !u.length) return;
@@ -33,6 +34,22 @@ module.exports = async ({ u }) => {
   try {
     const n = await store.bulkUpsertContacts(withExtended);
     logger.debug({ extended: n, total: u.length }, 'contacts extended fields persisted');
+    // v1.21.0 — contact history (dashboard HistoryPanel, domain 'contact'):
+    // one row per contact whose extended fields landed.
+    for (const c of withExtended) {
+      await recordTimeline(store, {
+        domain: 'contact',
+        entityId: c.id,
+        field: 'upsert',
+        newValue: snap({
+          name: c.name,
+          notify: c.notify,
+          status: c.status,
+          verifiedName: c.verifiedName,
+        }),
+        source: 'contacts.upsert',
+      });
+    }
   } catch (err) {
     logger.warn({ err, count: withExtended.length }, 'bulkUpsertContacts failed');
   }

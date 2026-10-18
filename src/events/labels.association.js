@@ -7,6 +7,7 @@
 
 const logger = require('../core/logger').child({ mod: 'labels.association' });
 const { getStore } = require('../store/instance');
+const { recordTimeline } = require('../lib/timelineLog');
 
 /**
  * labels.association — a label was attached to / removed from a chat or a
@@ -61,6 +62,14 @@ async function processOne(store, ev) {
   } else {
     await store.disassociateLabel(labelId, targetType, targetJid, targetMsgId);
   }
+  // v1.21.0 — label history (dashboard HistoryPanel, domain 'label').
+  await recordTimeline(store, {
+    domain: 'label',
+    entityId: targetJid,
+    field: ev.type === 'add' ? 'association' : 'disassociation',
+    newValue: `${labelId} → ${targetType}${targetMsgId ? ` ${targetMsgId}` : ''}`,
+    source: 'labels.association',
+  });
 }
 
 module.exports = async ({ u }) => {

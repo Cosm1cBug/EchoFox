@@ -6,6 +6,7 @@
 'use strict';
 
 const logger = require('../core/logger').child({ mod: 'chats.lock' });
+const { recordTimeline, safeGetStore } = require('../lib/timelineLog');
 
 /**
  * chats.lock — a chat was locked/unlocked (WhatsApp's chat-lock feature).
@@ -25,5 +26,13 @@ module.exports = async ({ u }) => {
   for (const ev of list) {
     if (!ev?.id) continue;
     logger.info({ chat: ev.id, locked: !!ev.locked }, 'chat lock state changed');
+    // v1.21.0 — chat history (dashboard HistoryPanel, domain 'chat').
+    await recordTimeline(safeGetStore(), {
+      domain: 'chat',
+      entityId: ev.id,
+      field: 'locked',
+      newValue: String(!!ev.locked),
+      source: 'chats.lock',
+    });
   }
 };

@@ -39,6 +39,10 @@
  *   setGauge(key, value)                   → gauge :=
  *   async getGauges()                      → { key: number, … }
  *
+ *   async recordTimelineEvent(ev)          → generic change-timeline row id
+ *   async getTimelineEvents(opts)          → [{domain, entity_id, field, old_value, …}]
+ *   async countTimelineEvents(opts)        → number (same filters as the list)
+ *
  *   async countGroups()                    → number
  *   async countUniqueUsers()               → number
  *   async listGroups()                     → [{jid, subject, participantCount}]

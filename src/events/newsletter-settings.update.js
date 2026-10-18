@@ -16,6 +16,7 @@
 
 const logger = require('../core/logger').child({ mod: 'newsletter-settings.update' });
 const { getStore } = require('../store/instance');
+const { recordTimeline, snap } = require('../lib/timelineLog');
 
 module.exports = async ({ u }) => {
   if (!u) return;
@@ -34,6 +35,14 @@ module.exports = async ({ u }) => {
     try {
       await store.updateNewsletterSettings(newsletterId, settings);
       count++;
+      // v1.21.0 — newsletter history (dashboard HistoryPanel, domain 'newsletter').
+      await recordTimeline(store, {
+        domain: 'newsletter',
+        entityId: newsletterId,
+        field: 'settings',
+        newValue: snap(settings),
+        source: 'newsletter-settings.update',
+      });
     } catch (err) {
       logger.debug({ err, newsletterId }, 'updateNewsletterSettings failed');
     }

@@ -7,6 +7,7 @@
 
 const logger = require('../core/logger').child({ mod: 'message-capping.update' });
 const { getStore } = require('../store/instance');
+const { recordTimeline } = require('../lib/timelineLog');
 
 /**
  * message-capping.update — WhatsApp's "new chat" messaging quota.
@@ -63,6 +64,15 @@ module.exports = async ({ u }) => {
     };
     try {
       await store.setMessageCapInfo(info);
+      // v1.21.0 — quota history (queryable via GET /api/history/quota).
+      await recordTimeline(store, {
+        domain: 'quota',
+        entityId: '@account',
+        field: 'used_quota',
+        newValue:
+          `${info.used_quota ?? '?'}/${info.total_quota ?? '?'} ${info.capping_status || ''}`.trim(),
+        source: 'message-capping.update',
+      });
       logger.info(
         {
           used: info.used_quota,

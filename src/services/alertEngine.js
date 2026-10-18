@@ -372,6 +372,24 @@ function _notify(kind, command, info) {
   const st = _state;
   if (!st) return;
 
+  // v1.21.0 — alert history (dashboard Alerts page, domain 'alert').
+  try {
+    const store = getStore();
+    if (store?.recordTimelineEvent) {
+      store
+        .recordTimelineEvent({
+          domain: 'alert',
+          entityId: command,
+          field: kind,
+          newValue: info?.invocations != null ? `invocations=${info.invocations}` : null,
+          source: 'alertEngine',
+        })
+        .catch(() => {});
+    }
+  } catch {
+    /* never block */
+  }
+
   // 1. subscribers (in-process listeners, e.g. dashboard SSE in the future)
   for (const fn of st.subscribers) {
     try {

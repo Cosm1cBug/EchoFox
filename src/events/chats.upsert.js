@@ -16,6 +16,7 @@
  */
 
 const logger = require('../core/logger').child({ mod: 'chats.upsert' });
+const { recordTimeline, snap } = require('../lib/timelineLog');
 
 module.exports = async ({ store, u }) => {
   if (!Array.isArray(u) || !u.length || !store) return;
@@ -29,6 +30,35 @@ module.exports = async ({ store, u }) => {
         archived: c.archived,
       });
       count++;
+      // v1.21.0 — chat history for extended fields carried by history sync
+      // (same per-field rows as chats.update).
+      if (c.pinned !== undefined) {
+        await recordTimeline(store, {
+          domain: 'chat',
+          entityId: c.id,
+          field: 'pinned',
+          newValue: snap(c.pinned),
+          source: 'chats.upsert',
+        });
+      }
+      if (c.mute !== undefined) {
+        await recordTimeline(store, {
+          domain: 'chat',
+          entityId: c.id,
+          field: 'muted_until',
+          newValue: snap(c.mute),
+          source: 'chats.upsert',
+        });
+      }
+      if (c.archived !== undefined) {
+        await recordTimeline(store, {
+          domain: 'chat',
+          entityId: c.id,
+          field: 'archived',
+          newValue: snap(c.archived),
+          source: 'chats.upsert',
+        });
+      }
     } catch (err) {
       logger.debug({ err, jid: c.id }, 'chat extended-fields update failed');
     }

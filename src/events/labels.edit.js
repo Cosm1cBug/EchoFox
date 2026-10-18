@@ -7,6 +7,7 @@
 
 const logger = require('../core/logger').child({ mod: 'labels.edit' });
 const { getStore } = require('../store/instance');
+const { recordTimeline } = require('../lib/timelineLog');
 
 /**
  * labels.edit — a WhatsApp Business label was created / renamed / recoloured
@@ -40,6 +41,16 @@ module.exports = async ({ u }) => {
         await store.upsertLabel(lbl.id, lbl.name || '(unnamed)', lbl.color);
       }
       count++;
+      // v1.21.0 — label history (dashboard HistoryPanel, domain 'label').
+      await recordTimeline(store, {
+        domain: 'label',
+        entityId: lbl.id,
+        field: 'label',
+        newValue: lbl.deleted
+          ? 'deleted'
+          : `${lbl.name || '(unnamed)'}${lbl.color != null ? ` #${lbl.color}` : ''}`,
+        source: 'labels.edit',
+      });
     } catch (err) {
       logger.debug({ err, labelId: lbl.id }, 'label edit propagation failed');
     }

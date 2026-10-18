@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { getNewsletters, getNewsletter, getNewsletterViews } from '../lib/api';
 import { Loading, ErrorMessage } from '../components/LoadingError';
+import { HistoryPanel } from '../components/HistoryPanel';
 
 type Newsletter = {
   newsletter_id: string;
@@ -232,6 +233,7 @@ export function Newsletters() {
           </div>
         </div>
       )}
+      <HistoryPanel domain="newsletter" title="📜 Channel history" />
     </div>
   );
 }

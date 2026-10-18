@@ -980,6 +980,41 @@ function startDashboard(port, store, config) {
     }
   });
 
+  // v1.21.0 — generic change timeline (dashboard history views). One
+  // endpoint powers every page's HistoryPanel: /api/history/:domain with
+  // optional entity/limit/offset/days filters. `total` honours the same
+  // filters as the list (the M1 lesson from /api/audit).
+  app.get('/api/history/:domain', async (req, res, next) => {
+    try {
+      const domain = String(req.params.domain || '').trim();
+      if (!/^[a-z][a-z0-9-]{0,32}$/.test(domain)) {
+        return res.status(400).json({ error: 'invalid_domain' });
+      }
+      const days = Math.max(1, Math.min(3650, Number(req.query.days) || 30));
+      const limit = Math.max(1, Math.min(1000, Number(req.query.limit) || 100));
+      const offset = Math.max(0, Math.min(100000, Number(req.query.offset) || 0));
+      const entity = req.query.entity ? String(req.query.entity) : null;
+      const sinceSec = Math.floor(Date.now() / 1000) - days * 86400;
+      let items = [];
+      if (typeof store.getTimelineEvents === 'function') {
+        items = await store.getTimelineEvents({
+          domain,
+          entityId: entity,
+          sinceSec,
+          limit,
+          offset,
+        });
+      }
+      const total =
+        typeof store.countTimelineEvents === 'function'
+          ? await store.countTimelineEvents({ domain, entityId: entity, sinceSec })
+          : items.length;
+      res.json({ domain, entity, days, limit, offset, total, items });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // v1.16.0 — leaderboard (top users by XP earned, active since)
   app.get('/api/leaderboard', async (req, res, next) => {
     try {

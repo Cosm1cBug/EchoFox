@@ -60,6 +60,7 @@ const { getStore } = require('../store/instance');
 const logger = require('../core/logger').child({ mod: 'leveling' });
 const { config } = require('../lib/configLoader');
 const metrics = require('./metrics');
+const { recordTimeline } = require('../lib/timelineLog');
 
 const BASE_THRESHOLD = 100;
 const GROWTH_FACTOR = 1.5;
@@ -273,6 +274,20 @@ async function awardForCommand(userJid, cmd, sock = null) {
     newTotal = await store.addUserXp(userJid, xp);
     newLevel = describe(newTotal).level;
     leveledUp = newLevel > oldLevel;
+    // v1.21.0 — XP history (dashboard Leaderboard page, domain 'xp').
+    try {
+      await recordTimeline(store, {
+        domain: 'xp',
+        entityId: userJid,
+        field: 'xp',
+        oldValue: String(newTotal - xp),
+        newValue: `${newTotal}${leveledUp ? ` (level ${oldLevel}→${newLevel})` : ''}`,
+        actor: typeof cmd === 'string' ? cmd : cmd?.name || null,
+        source: 'leveling',
+      });
+    } catch (_) {
+      /* never block XP awarding */
+    }
     // v1.17.0 — observability
     try {
       metrics.incXpAwarded(xp);

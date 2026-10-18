@@ -15,6 +15,7 @@
  */
 
 const logger = require('../core/logger').child({ mod: 'chats.update' });
+const { recordTimeline, snap } = require('../lib/timelineLog');
 
 module.exports = async ({ store, u }) => {
   if (!Array.isArray(u) || !u.length || !store) return;
@@ -26,6 +27,36 @@ module.exports = async ({ store, u }) => {
         muted_until: c.mute,
         archived: c.archived,
       });
+      // v1.21.0 — chat history (dashboard HistoryPanel, domain 'chat').
+      // One row per field actually present in the update; the timeline's
+      // previous row for that field is the old state.
+      if (c.pinned !== undefined) {
+        await recordTimeline(store, {
+          domain: 'chat',
+          entityId: c.id,
+          field: 'pinned',
+          newValue: snap(c.pinned),
+          source: 'chats.update',
+        });
+      }
+      if (c.mute !== undefined) {
+        await recordTimeline(store, {
+          domain: 'chat',
+          entityId: c.id,
+          field: 'muted_until',
+          newValue: snap(c.mute),
+          source: 'chats.update',
+        });
+      }
+      if (c.archived !== undefined) {
+        await recordTimeline(store, {
+          domain: 'chat',
+          entityId: c.id,
+          field: 'archived',
+          newValue: snap(c.archived),
+          source: 'chats.update',
+        });
+      }
     } catch (err) {
       logger.trace({ err, jid: c.id }, 'chat update propagation failed');
     }

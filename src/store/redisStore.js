@@ -1808,6 +1808,90 @@ function makeRedisStore(url, logger, groupCache) {
       }
     },
 
+    // ─── v1.21.0 generic change timeline (dashboard history views) ────
+    // Capped LPUSH lists (same shape as admin_audit): newest-first, bounded.
+    async recordTimelineEvent(ev) {
+      try {
+        const domain = String(ev?.domain || '').trim();
+        if (!domain) return null;
+        const ts = Math.floor(Number(ev?.ts) || Date.now() / 1000);
+        const s = (v, max) => (v == null ? null : String(v).slice(0, max));
+        const obj = {
+          id: `t${ts}-${Math.random().toString(36).slice(2, 8)}`,
+          domain,
+          entity_id: s(ev?.entityId ?? ev?.entity_id, 255),
+          field: s(ev?.field, 100),
+          old_value: s(ev?.oldValue ?? ev?.old_value, 1000),
+          new_value: s(ev?.newValue ?? ev?.new_value, 1000),
+          actor: s(ev?.actor, 255),
+          source: s(ev?.source, 100),
+          ts,
+        };
+        const json = JSON.stringify(obj);
+        await client.lpush(`timeline:log:${domain}`, json);
+        await client.ltrim(`timeline:log:${domain}`, 0, 4999);
+        if (obj.entity_id) {
+          await client.lpush(`timeline:log:${domain}:${obj.entity_id}`, json);
+          await client.ltrim(`timeline:log:${domain}:${obj.entity_id}`, 0, 999);
+        }
+        return obj.id;
+      } catch (e) {
+        logger.debug({ err: e }, 'recordTimelineEvent failed');
+        return null;
+      }
+    },
+    async getTimelineEvents(opts = {}) {
+      try {
+        const domain = String(opts.domain || '').trim();
+        if (!domain) return [];
+        const entityId = opts.entityId ?? opts.entity_id ?? null;
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const limit = Math.min(Math.max(1, Math.floor(Number(opts.limit) || 100)), 1000);
+        const offset = Math.max(0, Math.floor(Number(opts.offset) || 0));
+        const key = entityId
+          ? `timeline:log:${domain}:${String(entityId)}`
+          : `timeline:log:${domain}`;
+        const raw = await client.lrange(key, 0, offset + limit + (sinceSec > 0 ? 500 : 0) - 1);
+        let rows = raw.map((r) => {
+          try {
+            return JSON.parse(r);
+          } catch {
+            return null;
+          }
+        });
+        if (sinceSec > 0) rows = rows.filter((r) => r && r.ts >= sinceSec);
+        return rows.slice(offset, offset + limit);
+      } catch (e) {
+        logger.debug({ err: e }, 'getTimelineEvents failed');
+        return [];
+      }
+    },
+    async countTimelineEvents(opts = {}) {
+      try {
+        const domain = String(opts.domain || '').trim();
+        if (!domain) return 0;
+        const entityId = opts.entityId ?? opts.entity_id ?? null;
+        const sinceSec = Math.max(0, Math.floor(Number(opts.sinceSec) || 0));
+        const key = entityId
+          ? `timeline:log:${domain}:${String(entityId)}`
+          : `timeline:log:${domain}`;
+        if (sinceSec === 0) return Number((await client.llen(key)) || 0);
+        const raw = await client.lrange(key, 0, 4999);
+        let n = 0;
+        for (const r of raw) {
+          try {
+            if (JSON.parse(r).ts >= sinceSec) n += 1;
+          } catch {
+            /* skip */
+          }
+        }
+        return n;
+      } catch (e) {
+        logger.debug({ err: e }, 'countTimelineEvents failed');
+        return 0;
+      }
+    },
+
     // v1.13.0 — groups dashboard helper
     // Redis store doesn't have a queryable messages table — return null
     // so the server falls back to 'unknown' (active=null in API output).

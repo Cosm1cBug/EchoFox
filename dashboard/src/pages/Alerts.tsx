@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { getAlerts } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+import { HistoryPanel } from "../components/HistoryPanel";
 
 
 type ActiveAlert = {
@@ -77,6 +78,8 @@ export function Alerts() {
           </tbody>
         </table>
       </div>
+
+      <HistoryPanel domain="alert" title="📜 Alert history" />
     </div>
   );
 }

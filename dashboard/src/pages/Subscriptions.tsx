@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { getSubscriptions } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+import { HistoryPanel } from "../components/HistoryPanel";
 
 type Subscriber = {
   jid: string;
@@ -132,6 +133,8 @@ export function Subscriptions() {
           </div>
         );
       })}
+
+      <HistoryPanel domain="subscription" title="📜 Subscription history" />
     </div>
   );
 }

@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { getStats } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+import { HistoryPanel } from "../components/HistoryPanel";
 
 export function Metrics() {
   const [data, setData] = useState<any>(null);
@@ -60,6 +61,8 @@ export function Metrics() {
           )}
         </div>
       </div>
+
+      <HistoryPanel domain="metric" title="📜 Gauge history (15-min samples)" />
     </div>
   );
 }

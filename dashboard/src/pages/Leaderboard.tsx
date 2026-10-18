@@ -17,6 +17,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getLeaderboard } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+import { HistoryPanel } from "../components/HistoryPanel";
 
 interface LeaderboardUser {
   jid: string;
@@ -229,6 +230,8 @@ export function Leaderboard() {
         <code className="text-slate-400">config.leveling</code> or{" "}
         <code className="text-slate-400">$leveling</code> admin command.
       </div>
+
+      <HistoryPanel domain="xp" title="📜 XP activity" />
     </div>
   );
 }

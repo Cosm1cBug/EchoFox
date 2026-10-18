@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { getAiStats, getAiChats, getAiConfig } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+import { HistoryPanel } from "../components/HistoryPanel";
 
 type UsageRow = {
   day: string;
@@ -299,6 +300,8 @@ export function Ai() {
           )}
         </section>
       )}
+
+      <HistoryPanel domain="ai" title="📜 AI config history" />
     </div>
   );
 }

@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getContacts } from "../lib/api";
 import { Loading, ErrorMessage } from "../components/LoadingError";
+import { HistoryPanel } from "../components/HistoryPanel";
 
 type Contact = {
   jid: string;
@@ -154,6 +155,8 @@ export function Contacts() {
           </div>
         </>
       )}
+
+      <HistoryPanel domain="contact" title="📜 Contact history" />
     </div>
   );
 }

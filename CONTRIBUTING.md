@@ -28,9 +28,58 @@ npm run dev
 
 You'll need:
 
-- **Node ≥ 20**
+- **Node ≥ 22.12** (the `engines` field in `package.json` is authoritative)
 - **Python 3** and a C compiler (for `better-sqlite3`)
 - A spare WhatsApp number for testing
+
+---
+
+## Before you push: the verification suite
+
+Every push to GitHub runs CI, Release-gates, docs deploy and secret scanning. Run the same
+checks locally first with **one command**:
+
+```bash
+npm run verify          # full suite (~1–2 min): deps sync, typecheck, lint,
+                        # format, headers, tests, dashboard build, audit,
+                        # secret scan of your diff, git hygiene
+npm run verify:quick    # fast subset (~15 s): lockfile sync, lint, format,
+                        # headers, secrets, git hygiene
+```
+
+The suite is what CI runs — if `npm run verify` passes locally, the CI
+_Lint_ and _Test_ jobs will pass on GitHub. The most common CI breaker is a
+`package-lock.json` that is out of sync with `package.json` (CI's
+`Install dependencies` step fails with `Missing: … from lock file`).
+`npm run verify` catches this in seconds via `npm ci --dry-run`. If it fires:
+
+```bash
+npm install --package-lock-only   # re-sync the lockfile
+git add package-lock.json
+npm run verify                    # confirm green, then commit
+```
+
+A `pre-push` hook (husky) runs `verify:quick` automatically. It can be bypassed
+with `git push --no-verify` — CI remains the authoritative gate either way.
+
+Full commit → push → CI-review loop:
+
+```bash
+npm run verify                     # 1. all local checks
+git add -A && git status --short   # 2. review exactly what will be committed
+git commit -m "fix(scope): what changed"
+git push origin <branch>           # 3. push
+gh run list --limit 5              # 4. watch the workflow results
+gh run watch                       #    (or follow the most recent run live)
+```
+
+Diagnosing a failed run:
+
+```bash
+gh run list --limit 10                        # find the failing run id
+gh run view <id>                              # which job/step failed
+gh run view <id> --log-failed                 # step-level error output
+```
 
 ---
 
@@ -130,6 +179,7 @@ async start(sock, m, ctx) { … }
 
 Before opening a PR:
 
+- [ ] `npm run verify` passes end-to-end (covers lint, headers, format, tests, contract tests, build)
 - [ ] `npm run lint` passes (or `npx eslint src --max-warnings 0`)
 - [ ] `npm run headers:check` produces no diff
 - [ ] `npm run test:contract` passes (no duplicate command names / alias collisions)

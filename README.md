@@ -464,6 +464,8 @@ docker compose --profile observability up -d
 Tag-driven, fully automated:
 
 ```bash
+# 0. Run the full local verification suite (same gates as CI)
+npm run verify
 # 1. Bump version
 npm version patch              # or minor / major
 # 2. Update CHANGELOG.md + write RELEASE_NOTES_v<v>.md

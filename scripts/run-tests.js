@@ -69,7 +69,7 @@ if (files.length === 0) {
 
 console.log(`run-tests.js: running ${files.length} test file(s)`);
 
-const nodeArgs = ['--test', ...files];
+const nodeArgs = ['--test', '--test-timeout=60000', ...files];
 const child = spawn(process.execPath, nodeArgs, {
   stdio: 'inherit',
   cwd: ROOT,

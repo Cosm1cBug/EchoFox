@@ -19,6 +19,7 @@
  *     configured timezone.
  */
 const pino = require('pino');
+const { makeSanitizer } = require('../lib/logSanitizer');
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -28,6 +29,10 @@ try {
 } catch {
   /* config not ready — defaults to off */
 }
+
+const sanitize = makeSanitizer(
+  () => require('../lib/configLoader').__getCurrent?.() || _config || {},
+);
 
 const _privacyOn = !!_config?.privacy?.minimiseLogs;
 const _logFileEnabled = !!_config?.runtime?.logFile?.enabled;
@@ -63,13 +68,22 @@ if (_logFileEnabled) {
     destination = pino.multistream([{ stream: process.stdout }, { stream: fileStream }]);
   } catch (err) {
     // Fall back to stdout-only if rotator fails to initialise
-    console.warn('[logger] log file rotator failed:', err.message);
+    console.warn('[logger] log file rotator failed:', sanitize(err));
   }
 }
 
 const baseOpts = {
   level: process.env.LOG_LEVEL || (isProd ? 'info' : 'debug'),
   base: { app: 'echofox' },
+  hooks: {
+    logMethod(args, method) {
+      method.apply(
+        this,
+        args.map((arg) => sanitize(arg)),
+      );
+    },
+  },
+  formatters: { bindings: (bindings) => sanitize(bindings) },
   timestamp: pino.stdTimeFunctions.isoTime,
   ...(REDACT_PATHS.length
     ? {
@@ -83,7 +97,9 @@ if (destination) {
   // multistream path — pretty-printing isn't supported by pino multistream
   // out of the box, so we go raw JSON when a file destination is used.
   logger = pino(baseOpts, destination);
-} else if (!isProd) {
+} else if (!isProd && process.stdout.isTTY) {
+  // Pretty output is for interactive terminals only. Piped/CI/test logs stay
+  // JSON and do not create a background transport worker/exit-flush barrier.
   logger = pino({
     ...baseOpts,
     transport: {
@@ -94,5 +110,12 @@ if (destination) {
 } else {
   logger = pino(baseOpts);
 }
+
+// Pino's bindings formatter is not applied to child bindings. Sanitize them
+// before Pino serializes/caches them; descendants inherit this wrapper.
+const rawChild = logger.child;
+logger.child = function safeChild(bindings, options) {
+  return rawChild.call(this, sanitize(bindings), options);
+};
 
 module.exports = logger;

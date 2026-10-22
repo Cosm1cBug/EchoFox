@@ -28,14 +28,33 @@
  * adapters (providers/openai.js, gemini.js, anthropic.js) translate
  * the spec into the exact shape that provider expects.
  *
- *   getActiveSpec()                 -> array of definitions enabled by
+ *   getActiveSpec(context)          -> array of definitions enabled by
  *                                      config.ai.toolWhitelist + key presence
- *   invoke(name, args)              -> Promise<{ ok: boolean, result?, error? }>
+ *   invoke(name, args, context)     -> Promise<{ ok: boolean, result?, error? }>
  */
 const logger = require('../../core/logger').child({ mod: 'ai/tools' });
 const { config } = require('../../lib/configLoader');
 const { getStore } = require('../../store/instance');
-const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
+const { axiosWithBreaker, publicGet, isOpenBreakerError } = require('../../lib/network');
+const { isPrivateHost } = require('../../lib/netGuard');
+const { isExcluded, canStoreMessageBodies } = require('../../lib/privacyPolicy');
+const { z } = require('zod');
+
+function get(name, url, options = {}) {
+  return axiosWithBreaker(name, { timeout: 10_000, ...options, method: 'GET', url });
+}
+function requestError(error) {
+  if (isOpenBreakerError(error)) return 'circuit_open';
+  if (Number.isInteger(error.response?.status)) return `http_${error.response.status}`;
+  if (error.code === 'EPRIVATE') return 'private_host_blocked';
+  if (
+    ['EDNS', 'EBADURL', 'EBADSCHEME', 'EBADCREDENTIALS', 'EREDIRECT', 'EUNSAFE_PROXY'].includes(
+      error.code,
+    )
+  )
+    return error.code;
+  return 'request_failed';
+}
 
 // ─── tool definitions ─────────────────────────────────────────────
 const DEFS = {
@@ -115,8 +134,11 @@ const DEFS = {
     requiresKey: null,
     handler: async ({ chat_jid, limit = 20 }) => {
       const store = getStore();
-      if (!store?.getRecentMessages) return { unavailable: true };
-      return { messages: await store.getRecentMessages(chat_jid, Number(limit)) };
+      if (typeof store?.getRecentMessages === 'function')
+        return { messages: await store.getRecentMessages(chat_jid, Number(limit)) };
+      if (typeof store?.listMessages === 'function')
+        return { messages: await store.listMessages(chat_jid, { limit: Number(limit) }) };
+      return { unavailable: true };
     },
   },
 
@@ -140,9 +162,9 @@ const DEFS = {
       const map = { file: 'files', url: 'urls', ip: 'ip_addresses', domain: 'domains' };
       const slug = map[k] || 'files';
       const ident = k === 'url' ? Buffer.from(String(ioc)).toString('base64url') : ioc;
-      const ax = axiosWithBreaker('vt-tool', { timeout: 10_000 });
       try {
-        const r = await ax.get(
+        const r = await get(
+          'vt-tool',
           `https://www.virustotal.com/api/v3/${slug}/${encodeURIComponent(ident)}`,
           {
             headers: { 'x-apikey': key },
@@ -151,8 +173,7 @@ const DEFS = {
         const stats = r.data?.data?.attributes?.last_analysis_stats || {};
         return { kind: k, stats, reputation: r.data?.data?.attributes?.reputation };
       } catch (e) {
-        if (isOpenBreakerError(e)) return { error: 'circuit_open' };
-        return { error: e.response?.status ? `http_${e.response.status}` : e.code || e.message };
+        return { error: requestError(e) };
       }
     },
   },
@@ -171,9 +192,9 @@ const DEFS = {
       if (!key) return { error: 'no_api_key' };
       const kind = _detectIoc(ioc);
       const kindMap = { file: 'file', url: 'url', ip: 'IPv4', domain: 'domain' };
-      const ax = axiosWithBreaker('otx-tool', { timeout: 10_000 });
       try {
-        const r = await ax.get(
+        const r = await get(
+          'otx-tool',
           `https://otx.alienvault.com/api/v1/indicators/${kindMap[kind] || 'file'}/${encodeURIComponent(ioc)}/general`,
           {
             headers: { 'X-OTX-API-KEY': key },
@@ -188,8 +209,7 @@ const DEFS = {
             .map((p) => ({ name: p.name, tlp: p.tlp, tags: (p.tags || []).slice(0, 5) })),
         };
       } catch (e) {
-        if (isOpenBreakerError(e)) return { error: 'circuit_open' };
-        return { error: e.response?.status ? `http_${e.response.status}` : e.code || e.message };
+        return { error: requestError(e) };
       }
     },
   },
@@ -203,17 +223,15 @@ const DEFS = {
     },
     requiresKey: null,
     handler: async ({ limit = 5 }) => {
-      const ax = axiosWithBreaker('thn-tool', { timeout: 10_000 });
       try {
-        const r = await ax.get('https://feeds.feedburner.com/TheHackersNews', {
+        const r = await get('thn-tool', 'https://feeds.feedburner.com/TheHackersNews', {
           headers: { 'User-Agent': config.network?.userAgent || 'EchoFox/1.2 (+intel)' },
           responseType: 'text',
         });
         const items = _quickRssItems(r.data, Number(limit));
         return { count: items.length, items };
       } catch (e) {
-        if (isOpenBreakerError(e)) return { error: 'circuit_open' };
-        return { error: e.code || e.message };
+        return { error: requestError(e) };
       }
     },
   },
@@ -231,11 +249,11 @@ const DEFS = {
     },
     requiresKey: null,
     handler: async ({ repo, limit = 5 }) => {
-      const ax = axiosWithBreaker('gh-rel-tool', { timeout: 10_000 });
       const headers = { Accept: 'application/vnd.github+json' };
       if (config.apis?.github?.token) headers.Authorization = `Bearer ${config.apis.github.token}`;
       try {
-        const r = await ax.get(
+        const r = await get(
+          'gh-rel-tool',
           `https://api.github.com/repos/${encodeURIComponent(repo).replace('%2F', '/')}/releases?per_page=${Number(limit)}`,
           { headers },
         );
@@ -249,8 +267,7 @@ const DEFS = {
           })),
         };
       } catch (e) {
-        if (isOpenBreakerError(e)) return { error: 'circuit_open' };
-        return { error: e.response?.status ? `http_${e.response.status}` : e.code || e.message };
+        return { error: requestError(e) };
       }
     },
   },
@@ -269,12 +286,11 @@ const DEFS = {
     },
     requiresKey: null,
     handler: async ({ query, limit = 5 }) => {
-      const ax = axiosWithBreaker('gh-adv-tool', { timeout: 10_000 });
       const headers = { Accept: 'application/vnd.github+json' };
       if (config.apis?.github?.token) headers.Authorization = `Bearer ${config.apis.github.token}`;
       try {
         const url = `https://api.github.com/advisories?per_page=${Number(limit)}&type=reviewed&sort=published&direction=desc&query=${encodeURIComponent(query)}`;
-        const r = await ax.get(url, { headers });
+        const r = await get('gh-adv-tool', url, { headers });
         return {
           query,
           advisories: (r.data || []).map((a) => ({
@@ -287,8 +303,7 @@ const DEFS = {
           })),
         };
       } catch (e) {
-        if (isOpenBreakerError(e)) return { error: 'circuit_open' };
-        return { error: e.response?.status ? `http_${e.response.status}` : e.code || e.message };
+        return { error: requestError(e) };
       }
     },
   },
@@ -303,9 +318,9 @@ const DEFS = {
     },
     requiresKey: null,
     handler: async ({ query }) => {
-      const ax = axiosWithBreaker('wiki-tool', { timeout: 8_000 });
       try {
-        const r = await ax.get(
+        const r = await get(
+          'wiki-tool',
           `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`,
           {
             headers: { 'User-Agent': config.network?.userAgent || 'EchoFox/1.2 (+intel)' },
@@ -318,8 +333,7 @@ const DEFS = {
           disambig: r.data?.type === 'disambiguation',
         };
       } catch (e) {
-        if (isOpenBreakerError(e)) return { error: 'circuit_open' };
-        return { error: e.response?.status ? `http_${e.response.status}` : e.code || e.message };
+        return { error: requestError(e) };
       }
     },
   },
@@ -335,47 +349,21 @@ const DEFS = {
     },
     requiresKey: null,
     handler: async ({ url }) => {
-      let u;
       try {
-        u = new URL(url);
-      } catch {
-        return { error: 'bad_url' };
-      }
-      if (!/^https?:$/.test(u.protocol)) return { error: 'bad_scheme' };
-      // First line of defence: literal hostname check (fast, catches obvious cases)
-      if (_isPrivateHost(u.hostname)) return { error: 'private_host_blocked' };
-
-      // Second line of defence: actually resolve the hostname. Prevents
-      // DNS-rebinding (attacker.com resolves to 8.8.8.8 at the literal
-      // check, then 127.0.0.1 at fetch time).
-      const resolved = await _resolveAndCheck(u.hostname);
-      if (resolved.blocked) {
-        return {
-          error: 'private_host_blocked',
-          detail: resolved.reason,
-          address: resolved.address,
-        };
-      }
-
-      const ax = axiosWithBreaker('fetch-url-tool', {
-        timeout: 10_000,
-        maxContentLength: 200_000,
-        maxBodyLength: 200_000, // v1.5.0: also cap request body just in case
-      });
-      try {
-        const r = await ax.get(u.toString(), {
-          headers: { 'User-Agent': config.network?.userAgent || 'EchoFox/1.2 (+intel)' },
+        const r = await publicGet('fetch-url-tool', url, {
+          timeout: 10_000,
+          maxContentLength: 200_000,
+          maxBodyLength: 200_000,
           responseType: 'text',
-          maxRedirects: 3,
+          maxRedirects: 0,
         });
-        const body =
-          typeof r.data === 'string'
-            ? r.data.slice(0, 200_000)
-            : JSON.stringify(r.data).slice(0, 200_000);
+        const body = (typeof r.data === 'string' ? r.data : JSON.stringify(r.data)).slice(
+          0,
+          200_000,
+        );
         return { status: r.status, content_type: r.headers?.['content-type'], body };
       } catch (e) {
-        if (isOpenBreakerError(e)) return { error: 'circuit_open' };
-        return { error: e.response?.status ? `http_${e.response.status}` : e.code || e.message };
+        return { error: requestError(e) };
       }
     },
   },
@@ -388,72 +376,6 @@ function _detectIoc(s) {
   if (/^https?:\/\//i.test(v)) return 'url';
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(v)) return 'ip';
   return 'domain';
-}
-
-// v1.5.0 security: comprehensive SSRF deny-list. Beyond RFC 1918 we also block:
-//   - 100.64.0.0/10   CGNAT space (AWS ECS task-metadata uses 169.254. but
-//                     some cloud setups use 100.64. for inter-VPC routing)
-//   - All IPv6 loopback (::1) + unique local (fc00::/7) + link-local (fe80::/10)
-//   - Cloud metadata hostnames (metadata.google.internal, etc.)
-//   - .internal, .corp, .lan (common local DNS suffixes)
-function _isPrivateHost(host) {
-  const h = String(host || '')
-    .toLowerCase()
-    .trim();
-  if (!h) return true;
-
-  // Hostname-based deny list
-  if (h === 'localhost' || h === 'ip6-localhost' || h === 'ip6-loopback') return true;
-  if (h.endsWith('.local') || h.endsWith('.internal') || h.endsWith('.corp') || h.endsWith('.lan'))
-    return true;
-  if (h === 'metadata.google.internal') return true;
-
-  // IPv4 ranges (RFC 1918 + extras)
-  if (/^127\./.test(h)) return true; // loopback
-  if (/^10\./.test(h)) return true; // RFC 1918 /8
-  if (/^192\.168\./.test(h)) return true; // RFC 1918 /16
-  if (/^169\.254\./.test(h)) return true; // link-local (incl. AWS metadata 169.254.169.254)
-  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(h)) return true; // RFC 1918 /12
-  if (/^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])\./.test(h)) return true; // CGNAT /10
-  if (h === '0.0.0.0') return true; // wildcard
-  if (/^0\./.test(h)) return true; // 0.0.0.0/8
-
-  // IPv6 — anything with a colon needs careful handling
-  if (h.includes(':')) {
-    if (h === '::1' || h === '::') return true;
-    // strip brackets if URL-form
-    const ip = h.replace(/^\[/, '').replace(/\]$/, '');
-    // ::ffff:127.0.0.1 (IPv4-mapped IPv6)
-    if (/^::ffff:[\d.]+/.test(ip)) {
-      const v4 = ip.split(':').pop();
-      return _isPrivateHost(v4);
-    }
-    if (/^fe[89ab][0-9a-f]:/.test(ip)) return true; // fe80::/10 link-local
-    if (/^f[cd][0-9a-f]{2}:/.test(ip)) return true; // fc00::/7 unique local
-    if (/^2001:db8:/.test(ip)) return true; // documentation prefix
-  }
-
-  return false;
-}
-
-// v1.5.0: actually RESOLVE the hostname before fetching. The hostname-only
-// check above can be bypassed by a DNS-rebinding attack: attacker.com
-// resolves to 8.8.8.8 at check time, then 127.0.0.1 at fetch time. So
-// we resolve first and bail if any of the returned A/AAAA records is private.
-async function _resolveAndCheck(hostname) {
-  const dns = require('node:dns').promises;
-  try {
-    // Resolve BOTH A and AAAA; lookup with all:true returns every record
-    const addrs = await dns.lookup(hostname, { all: true, verbatim: true });
-    for (const a of addrs) {
-      if (_isPrivateHost(a.address)) {
-        return { blocked: true, reason: 'resolved_to_private', address: a.address };
-      }
-    }
-    return { blocked: false };
-  } catch (e) {
-    return { blocked: true, reason: 'dns_resolution_failed', error: e.code || e.message };
-  }
 }
 
 // Very-small RSS shim — enough for THN.
@@ -476,31 +398,86 @@ function _quickRssItems(xml, limit) {
 
 // ─── public API ───────────────────────────────────────────────────
 
-function getActiveSpec() {
-  const allowed = new Set(config.ai?.toolWhitelist || []);
-  const out = [];
-  for (const [name, def] of Object.entries(DEFS)) {
-    if (!allowed.has(name)) continue;
-    if (typeof def.requiresKey === 'function' && !def.requiresKey()) continue;
-    out.push({
-      name,
-      description: def.description,
-      parameters: def.parameters,
-    });
-  }
-  return out;
+const JID = /^(?:\d+(?:-\d+)?@g\.us|\d+@(?:s\.whatsapp\.net|lid))$/;
+const GLOBAL_TOOLS = new Set(['get_blocklist', 'list_newsletters']);
+const CHAT_ARGUMENTS = {
+  get_presence_in_chat: 'chat_jid',
+  get_labels_for_chat: 'target_jid',
+  get_recent_messages: 'chat_jid',
+};
+
+function accessError(name, context) {
+  if (!config.ai?.enabled || !config.ai?.enableToolCalling) return 'tools_disabled';
+  if (!(config.ai.toolWhitelist || []).includes(name)) return 'tool_not_allowed';
+  if (!context || !JID.test(context.chatJid) || !JID.test(context.userJid))
+    return 'missing_caller_context';
+  if (isExcluded(context.chatJid)) return 'chat_excluded';
+  if (GLOBAL_TOOLS.has(name) && context.isAdmin !== true) return 'admin_required';
+  if (name === 'get_recent_messages' && !canStoreMessageBodies(context.chatJid))
+    return 'message_bodies_disabled';
+  const def = DEFS[name];
+  if (typeof def.requiresKey === 'function' && !def.requiresKey()) return 'missing_api_key';
+  return null;
 }
 
-async function invoke(name, args) {
-  const def = DEFS[name];
-  if (!def) return { ok: false, error: 'unknown_tool' };
+function argumentSchema(parameters) {
+  const fields = {};
+  for (const [key, field] of Object.entries(parameters.properties || {})) {
+    let rule;
+    if (field.type === 'integer') {
+      rule = z
+        .number()
+        .int()
+        .min(field.minimum ?? 0)
+        .max(field.maximum ?? 200);
+    } else {
+      rule = field.enum ? z.enum(field.enum) : z.string().trim().min(1).max(4096);
+    }
+    if (field.default !== undefined) rule = rule.default(field.default);
+    else if (!(parameters.required || []).includes(key)) rule = rule.optional();
+    fields[key] = rule;
+  }
+  return z.object(fields).strict();
+}
+const ARGUMENT_SCHEMAS = Object.fromEntries(
+  Object.entries(DEFS).map(([name, def]) => [name, argumentSchema(def.parameters)]),
+);
+
+/** context is derived by the server from the incoming message, NEVER tool args. */
+function getActiveSpec(context) {
+  return Object.entries(DEFS)
+    .filter(([name]) => !accessError(name, context))
+    .map(([name, def]) => ({ name, description: def.description, parameters: def.parameters }));
+}
+
+async function invoke(name, args, context) {
+  if (typeof name !== 'string' || !Object.hasOwn(DEFS, name))
+    return { ok: false, error: 'unknown_tool' };
+  const denied = accessError(name, context);
+  if (denied) return { ok: false, error: denied };
+  args = args ?? {};
+  if (
+    typeof args !== 'object' ||
+    Array.isArray(args) ||
+    ![Object.prototype, null].includes(Object.getPrototypeOf(args))
+  ) {
+    return { ok: false, error: 'invalid_arguments' };
+  }
+  const parsed = ARGUMENT_SCHEMAS[name].safeParse(args);
+  if (!parsed.success) return { ok: false, error: 'invalid_arguments' };
+  const scopeKey = CHAT_ARGUMENTS[name];
+  // Even administrators' model sessions may not jump into another chat.
+  if (scopeKey && parsed.data[scopeKey] !== context.chatJid)
+    return { ok: false, error: 'chat_scope_denied' };
   try {
-    const result = await def.handler(args || {});
+    const result = await DEFS[name].handler(parsed.data);
+    if (result?.error) return { ok: false, error: result.error };
     return { ok: true, result };
   } catch (e) {
-    logger.warn({ err: e, name }, 'tool invocation failed');
-    return { ok: false, error: e.message || String(e) };
+    // Axios errors can include headers, URLs and API keys. Never serialize them.
+    logger.warn({ name, code: requestError(e) }, 'tool invocation failed');
+    return { ok: false, error: 'tool_failed' };
   }
 }
 
-module.exports = { DEFS, getActiveSpec, invoke, _isPrivateHost, _detectIoc };
+module.exports = { DEFS, getActiveSpec, invoke, _isPrivateHost: isPrivateHost, _detectIoc };

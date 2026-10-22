@@ -1,7 +1,8 @@
 # Dashboard
 
-EchoFox ships with a React-based dashboard for observability + subscription
-management.
+> **Unreleased hardening:** use the [operator runbook](../HARDENING_RUNBOOK.md) for current secret mounts, authentication, artifact/release gates and known limitations; older examples below are not proof of production readiness.
+> EchoFox ships with a React-based dashboard for observability + subscription
+> management.
 
 ## Starting the dashboard
 

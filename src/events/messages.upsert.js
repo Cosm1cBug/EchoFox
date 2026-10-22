@@ -305,6 +305,8 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
   const isAdminCall = !!adminMatch;
 
   if (!matched) {
+    const isAiAdmin = await isConfiguredAdmin(sock, store, ctx.sender, config.admins, ctx.senderPn);
+    if (!config.bot.public && !isAiAdmin) return;
     if (/^(echofox|buggy)$/i.test(text.trim())) {
       await ctx.reply(`🦊 EchoFox online. Type \`${config.bot.prefix}menu\` for commands.`);
       return;
@@ -318,6 +320,7 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
           userJid: ctx.sender,
           text,
           isDM: ctx.isPrivate,
+          isAdmin: isAiAdmin,
         });
         if (decision.respond) {
           // Typing indicator while we generate (UX choice: typing_indicator)
@@ -336,6 +339,8 @@ module.exports = async function handleMessage({ sock, m, commands, store, logger
             const out = await ai.chat({
               chatJid: ctx.chat,
               userJid: ctx.sender,
+              userPn: ctx.senderPn,
+              sock,
               text,
               optIn: decision.optIn,
             });

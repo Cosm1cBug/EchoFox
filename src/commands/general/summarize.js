@@ -13,7 +13,7 @@
  *   .summarize  (reply-to)      → summarise the quoted message instead
  *
  * Differences from `.ai`:
- *   • Bypasses the per-chat opt-in (no need for `.ai on`).
+ *   • No ambient opt-in needed, but explicit `.ai off` is always honored.
  *   • Does NOT pollute conversation memory (calls the provider directly,
  *     never goes through ai.chat()).
  *   • Respects the global daily cost cap (cost.isOverCap()) and reserves
@@ -77,10 +77,14 @@ module.exports = {
 
     // ─── Path 1: reply-to mode — summarise the quoted message text ───
     if (ctx.quoted?.text && ctx.quoted.text.length > 200) {
-      return await summariseText(ctx, ctx.quoted.text, {
+      return await summariseText(sock, ctx, ctx.quoted.text, {
         kind: 'message',
         source: `quoted message (${ctx.quoted.text.length} chars)`,
       });
+    }
+
+    if (!require('../../lib/privacyPolicy').canStoreMessageBodies(ctx.chat)) {
+      return ctx.reply('🔒 Stored message bodies are disabled for this chat.');
     }
 
     // ─── Path 2: chat-history mode ───────────────────────────────────
@@ -93,6 +97,8 @@ module.exports = {
       // by backend. Try the canonical method first; fall back gracefully.
       if (typeof store.getRecentMessages === 'function') {
         rows = await store.getRecentMessages(ctx.chat, requestedN);
+      } else if (typeof store.listMessages === 'function') {
+        rows = await store.listMessages(ctx.chat, { limit: requestedN });
       } else if (typeof store.getMessages === 'function') {
         rows = await store.getMessages(ctx.chat, { limit: requestedN });
       } else {
@@ -125,7 +131,7 @@ module.exports = {
     }
 
     const transcript = lines.join('\n');
-    return await summariseText(ctx, transcript, {
+    return await summariseText(sock, ctx, transcript, {
       kind: 'transcript',
       source: `last ${lines.length} messages`,
     });
@@ -137,27 +143,10 @@ module.exports = {
  * conversation memory is NOT mutated. Honours the v1.5.0 cost-cap +
  * reservation pattern.
  */
-async function summariseText(ctx, payload, { kind, source }) {
+async function summariseText(sock, ctx, payload, { kind, source }) {
   if (Buffer.byteLength(payload, 'utf8') > MAX_PROMPT_BYTES) {
     return ctx.reply(`❌ Prompt too large (max ${MAX_PROMPT_BYTES / 1024} KB). Try a smaller N.`);
   }
-
-  const cost = ai.cost;
-  if (await cost.isOverCap()) {
-    return ctx.reply('💸 Daily AI cost cap reached. Try again tomorrow.');
-  }
-
-  const aiCfg = require('../../lib/configLoader').config.ai || {};
-  const providerName = aiCfg.defaultProvider || 'openai';
-  const model = aiCfg.model || 'gpt-4o-mini';
-  const provider = ai.providers[providerName];
-  if (!provider) {
-    return ctx.reply(`❌ Unknown AI provider: ${providerName}`);
-  }
-
-  const reservationId = cost.reserve(cost.estimateMaxCostUsd(providerName, model));
-
-  await ctx.react('🧠');
 
   const systemPrompt =
     kind === 'transcript'
@@ -173,26 +162,14 @@ async function summariseText(ctx, payload, { kind, source }) {
       ? `Summarise the following chat transcript:\n\n${payload}`
       : `Summarise the following message:\n\n${payload}`;
 
-  try {
-    const resp = await provider.chat({
-      system: systemPrompt,
-      history: [{ role: 'user', content: userTurn }],
-      tools: [],
-      model,
-      maxTokens: Math.min(aiCfg.maxTokens || 1024, 1024),
-      temperature: 0.3,
-    });
-
-    await cost.record(
-      providerName,
-      resp.model || model,
-      resp.usage?.promptTokens || 0,
-      resp.usage?.completionTokens || 0,
-    );
-
-    const summary = (resp.content || '').trim() || '_(empty response)_';
-    return ctx.reply(`🧠 *Summary — ${source}*\n\n${summary}`);
-  } finally {
-    cost.release(reservationId);
-  }
+  const resp = await ai.oneShot({
+    sock,
+    ctx,
+    system: systemPrompt,
+    prompt: userTurn,
+    maxTokens: 1024,
+    temperature: 0.3,
+  });
+  const summary = (resp.content || '').trim() || '_(empty response)_';
+  return ctx.reply(`🧠 *Summary — ${source}*\n\n${summary}`);
 }

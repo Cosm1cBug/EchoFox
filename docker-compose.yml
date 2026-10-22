@@ -33,6 +33,7 @@ services:
     volumes:
       - echofox-session:/app/src/@session
       - echofox-store:/app/src/store/runtime
+      - echofox-data:/app/data # preserves fresh-source data/sessions without moving legacy pairings
       # OPTIONAL: mount your own config.js read-only.
       # Leave commented to rely purely on ECHOFOX_* env vars.
       # - ./src/config.js:/app/src/config.js:ro
@@ -47,6 +48,7 @@ services:
       # authenticate to :3001/metrics (see docker/prometheus/prometheus.yml).
       # configSchema refuses to boot if the dashboard is enabled with a
       # template/empty password, so set a real one in .env.
+      ECHOFOX_DASHBOARD_HOST: '0.0.0.0' # inside container; published host port stays loopback-only
       ECHOFOX_DASHBOARD_USERNAME: ${ECHOFOX_DASHBOARD_USERNAME:-admin}
       ECHOFOX_DASHBOARD_PASSWORD: ${ECHOFOX_DASHBOARD_PASSWORD:-}
       # Examples — uncomment and set what you need:
@@ -85,11 +87,11 @@ services:
     restart: unless-stopped
     profiles: ['observability']
     user: '65534:65534'
-    # Same credentials the echofox container uses, so the :3001/metrics scrape
-    # authenticates instead of returning 401.
-    environment:
-      ECHOFOX_DASHBOARD_USERNAME: ${ECHOFOX_DASHBOARD_USERNAME:-admin}
-      ECHOFOX_DASHBOARD_PASSWORD: ${ECHOFOX_DASHBOARD_PASSWORD:-}
+    # Provision the same password used by the bot, outside Git. Local Compose
+    # bind-mounted secrets retain host permissions: UID 65534 must be able to
+    # read this file; do not make it world-readable to work around permissions.
+    secrets:
+      - metrics_dashboard_password
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
@@ -113,16 +115,18 @@ services:
     user: '472:472'
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-changeme}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
       GF_USERS_ALLOW_SIGN_UP: 'false'
       GF_ANALYTICS_REPORTING_ENABLED: 'false'
       GF_AUTH_ANONYMOUS_ENABLED: 'false'
     ports:
-      - '127.0.0.1:3001:3000'
+      - '127.0.0.1:3002:3000' # avoid colliding with the bot dashboard
     volumes:
       - grafana-data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    secrets:
+      - grafana_admin_password
     depends_on:
       - prometheus
     networks:
@@ -133,6 +137,8 @@ volumes:
     driver: local
   echofox-store:
     driver: local
+  echofox-data:
+    driver: local
   prometheus-data:
     driver: local
   grafana-data:
@@ -141,3 +147,9 @@ volumes:
 networks:
   echofox:
     driver: bridge
+
+secrets:
+  metrics_dashboard_password:
+    file: ${METRICS_DASHBOARD_PASSWORD_FILE:-./secrets/dashboard-metrics-password}
+  grafana_admin_password:
+    file: ${GRAFANA_ADMIN_PASSWORD_FILE:-./secrets/grafana-admin-password}

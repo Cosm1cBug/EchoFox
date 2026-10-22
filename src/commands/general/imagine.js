@@ -18,7 +18,7 @@
  *
  * Cost-cap awareness:
  *   • Each image is billed at a fixed per-image price (see PRICE_USD
- *     below — current as of 2026-Q2 for gpt-image-1).
+ *     below — fixed-price DALL-E models; operator must verify current rates).
  *   • Before generating, we check `cost.isOverCap()`. After generating,
  *     we record the price via `cost.record(...)` so it counts toward the
  *     daily cap exactly like chat-mode usage.
@@ -36,6 +36,9 @@
 const { config } = require('../../lib/configLoader');
 const ai = require('../../services/ai');
 const logger = require('../../core/logger').child({ mod: 'imagine' });
+const { isConfiguredAdmin } = require('../../lib/jidResolve');
+const { getStore } = require('../../store/instance');
+const { publicGet } = require('../../lib/network');
 
 const MAX_PROMPT_LEN = 1000;
 const VALID_SIZES = new Set(['256', '512', '1024', '1792']);
@@ -43,7 +46,13 @@ const VALID_QUALITY = new Set(['standard', 'hd']);
 
 // Approximate per-image price in USD for cost-cap bookkeeping.
 // Conservative — overestimates rather than under so the cap holds.
-function priceForImage(size, quality) {
+function priceForImage(model, size, quality) {
+  if (!['dall-e-2', 'dall-e-3'].includes(model))
+    throw new Error('Image model has no fixed-price policy; configure dall-e-2 or dall-e-3');
+  if (model === 'dall-e-3' && !['1024', '1792'].includes(size))
+    throw new Error('dall-e-3 requires size 1024 or 1792');
+  if (model === 'dall-e-2' && (size === '1792' || quality !== 'standard'))
+    throw new Error('dall-e-2 requires standard quality and size 256, 512 or 1024');
   const s = parseInt(size, 10) || 1024;
   const hd = quality === 'hd';
   if (s <= 256) return hd ? 0.02 : 0.016;
@@ -126,17 +135,21 @@ module.exports = {
       return ctx.reply(`❌ Prompt too long (max ${MAX_PROMPT_LEN} chars).`);
     }
 
-    // ─── Cost cap pre-check + reservation ────────────────────────────
     const cost = ai.cost;
-    if (await cost.isOverCap()) {
-      return ctx.reply('💸 Daily AI cost cap reached. Try again tomorrow.');
-    }
-    const price = priceForImage(size, quality);
-    const reservationId = cost.reserve(price);
-
-    await ctx.react('🎨');
-
+    const model = config.ai.imageModel;
+    const price = priceForImage(model, size, quality);
+    const reservationId = await ai.router.admitRequest(
+      {
+        chatJid: ctx.chat,
+        userJid: ctx.sender,
+        isAdmin: await isConfiguredAdmin(sock, getStore(), ctx.sender, config.admins, ctx.senderPn),
+      },
+      price,
+    );
+    let attempted = false;
+    let accounted = false;
     try {
+      await ctx.react('🎨');
       const OpenAI = require('openai').default || require('openai');
       const client = new OpenAI({
         apiKey,
@@ -145,13 +158,17 @@ module.exports = {
 
       const apiSize = size === '1792' ? '1792x1024' : `${size}x${size}`;
 
+      attempted = true;
       const resp = await client.images.generate({
-        model: config.ai?.imageModel || 'gpt-image-1',
+        model,
         prompt,
         size: apiSize,
         quality,
         n: 1,
       });
+
+      await cost.recordRaw('openai', model, price);
+      accounted = true;
 
       // OpenAI returns either `url` or `b64_json` — handle both.
       const imgData = resp?.data?.[0];
@@ -163,8 +180,7 @@ module.exports = {
       if (imgData.b64_json) {
         buf = Buffer.from(imgData.b64_json, 'base64');
       } else if (imgData.url) {
-        const axios = require('axios');
-        const dl = await axios.get(imgData.url, {
+        const dl = await publicGet('ai-image-download', imgData.url, {
           responseType: 'arraybuffer',
           timeout: 30_000,
           maxContentLength: 10 * 1024 * 1024,
@@ -173,19 +189,6 @@ module.exports = {
         buf = Buffer.from(dl.data);
       } else {
         throw new Error('OpenAI response had neither b64_json nor url');
-      }
-
-      // Book the actual price against the daily cap.
-      // We don't get token usage here, so pass 0/0 tokens and use `costUsd`
-      // override via a synthetic entry — record() accepts (provider, model,
-      // promptTokens, completionTokens). We approximate by recording
-      // proportional "tokens" that yield the known image price. Cleaner:
-      // costTracker exposes an addRaw() — fall back to direct add if so.
-      if (typeof cost.recordRaw === 'function') {
-        await cost.recordRaw('openai', 'gpt-image-1', price);
-      } else {
-        // Best-effort: record nominal — the reservation already gates the cap.
-        await cost.record('openai', 'gpt-image-1', 0, 0).catch(() => {});
       }
 
       await sock.sendMessage(
@@ -201,10 +204,15 @@ module.exports = {
         { quoted: m.raw || m },
       );
     } catch (err) {
-      logger.warn({ err, prompt }, 'image generation failed');
+      logger.warn({ code: 'IMAGE_REQUEST_FAILED' }, 'image generation failed');
       return ctx.reply('❌ Image generation failed. Please try again shortly.');
     } finally {
-      cost.release(reservationId);
+      try {
+        if (attempted && !accounted)
+          await cost.recordRaw('openai', `${model}:unconfirmed-estimate`, price);
+      } finally {
+        cost.release(reservationId);
+      }
     }
   },
 };

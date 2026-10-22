@@ -17,18 +17,19 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       pull-requests: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -36,8 +37,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests (gate the release)
-        run: npm test
+      - name: Required local quality gates
+        run: |
+          npm run lint
+          npm run format:check
+          npm run headers:check
+          npm run license:check
+          npm test
+          npm run test:contract
+          npm run secrets:check
 
       - name: Check AGPL headers (gate the release)
         run: npm run headers:check
@@ -50,6 +58,11 @@ jobs:
             TAG="${GITHUB_REF_NAME}"
             VERSION="${TAG#v}"
             SOURCE="tag"
+            PACKAGE_VERSION=$(node -p "require('./package.json').version")
+            if [[ "$VERSION" != "$PACKAGE_VERSION" ]]; then
+              echo "::error::Tag version does not match package.json"
+              exit 1
+            fi
           else
             VERSION=$(node -p "require('./package.json').version")
             TAG="v${VERSION}"
@@ -65,9 +78,9 @@ jobs:
         if: steps.target.outputs.source == 'package'
         run: |
           CURRENT="${{ steps.target.outputs.version }}"
-          PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null \
-            | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).version||'0.0.0')}catch{console.log('0.0.0')}})" \
-            || echo '0.0.0')
+          # Missing history/invalid JSON is a failure, not an invented 0.0.0.
+          git show HEAD~1:package.json > "$RUNNER_TEMP/echofox-previous-package.json"
+          PREVIOUS=$(node -e "const fs=require('node:fs'); const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); if(typeof p.version!=='string'||!p.version) throw new Error('Previous package version missing'); console.log(p.version)" "$RUNNER_TEMP/echofox-previous-package.json")
           if [ "$CURRENT" != "$PREVIOUS" ]; then
             echo "changed=true"  >> $GITHUB_OUTPUT
           else
@@ -89,9 +102,10 @@ jobs:
       - name: Build dashboard
         if: steps.decide.outputs.release == 'true'
         run: |
-          cd dashboard
-          npm ci
-          npm run build || npx vite build || echo "no dashboard build script — skipping"
+          npm run build:dashboard
+          npm run audit:production
+          npm pack --pack-destination "$RUNNER_TEMP"
+          node scripts/check-package.js "$RUNNER_TEMP/echofox-${{ steps.target.outputs.version }}.tgz"
 
       - name: Prepare release notes body
         id: notes
@@ -110,16 +124,15 @@ jobs:
         if: steps.decide.outputs.release == 'true'
         run: |
           TARBALL="echofox-${{ steps.target.outputs.version }}.tar.gz"
-          tar --exclude='node_modules' \
-              --exclude='.git' \
-              --exclude='.github' \
-              --exclude='*.tar.gz' \
-              -czf "$TARBALL" \
-              src scripts ecosystem.config.js LICENSE NOTICE README.md \
-              CHANGELOG.md DISCLAIMER.md SECURITY.md package.json \
-              dashboard/src dashboard/index.html dashboard/package.json \
-              dashboard/vite.config.ts dashboard/tsconfig.json \
-              docs Dockerfile docker-compose.yml || true
+          git ls-files -z > "$RUNNER_TEMP/echofox-release-files"
+          tar --exclude='src/config.js' --exclude='src/@session' \
+              --exclude='data' --exclude='*.db' --exclude='*.db-*' \
+              --null -czf "$TARBALL" -T "$RUNNER_TEMP/echofox-release-files" src/dashboard/react
+          # Both lockfiles and ALL frontend build inputs are tracked and included.
+          tar -tzf "$TARBALL" > "$RUNNER_TEMP/echofox-release-manifest"
+          for required in package-lock.json dashboard/package-lock.json dashboard/tsconfig.app.json dashboard/tsconfig.node.json src/dashboard/react/index.html; do
+            grep -Fx "$required" "$RUNNER_TEMP/echofox-release-manifest"
+          done
           ls -lh "$TARBALL"
 
       - name: Create GitHub Release

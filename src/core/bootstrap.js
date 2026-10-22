@@ -23,8 +23,11 @@ const path = require('node:path');
 const express = require('express');
 const client = require('prom-client');
 const CFonts = require('cfonts');
+const { config } = require('../lib/configLoader');
+const { isWorkerAlive } = require('../lib/workerHealth');
+const logger = require('./logger');
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || config.runtime.port;
 const MAX_BACKOFF_MS = 60_000;
 const MIN_BACKOFF_MS = 2_000;
 
@@ -71,7 +74,10 @@ function spawnWorker() {
   const workerPath = path.join(__dirname, 'worker.js');
   worker = fork(workerPath, [], {
     stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
-    env: { ...process.env, NODE_OPTIONS: '--enable-source-maps' },
+    env: {
+      ...process.env,
+      NODE_OPTIONS: [process.env.NODE_OPTIONS, '--enable-source-maps'].filter(Boolean).join(' '),
+    },
   });
   workerUp.set(1);
 
@@ -102,8 +108,9 @@ function spawnWorker() {
 // ─── Health server ────────────────────────────────────────────────────────
 const app = express();
 app.get('/healthz', (_req, res) => {
-  res.status(worker && !worker.killed ? 200 : 503).json({
-    status: worker && !worker.killed ? 'ok' : 'down',
+  const alive = isWorkerAlive(worker);
+  res.status(alive ? 200 : 503).json({
+    status: alive ? 'ok' : 'down',
     uptime: process.uptime(),
     pid: worker?.pid ?? null,
   });
@@ -132,8 +139,10 @@ function shutdown(signal) {
   }
 }
 ['SIGINT', 'SIGTERM'].forEach((s) => process.on(s, () => shutdown(s)));
-process.on('uncaughtException', (e) => console.error('[supervisor] uncaught:', e));
-process.on('unhandledRejection', (e) => console.error('[supervisor] unhandled:', e));
+process.on('uncaughtException', (e) => logger.fatal({ err: e }, '[supervisor] uncaught exception'));
+process.on('unhandledRejection', (e) =>
+  logger.error({ err: e }, '[supervisor] unhandled rejection'),
+);
 
 // Go!
 spawnWorker();

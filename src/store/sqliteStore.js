@@ -5,6 +5,8 @@
  */
 'use strict';
 
+const { withPrivacyPolicy } = require('../lib/privacyPolicy');
+
 function _parseMeta(raw) {
   if (raw == null || raw === '') return null;
   try {
@@ -968,7 +970,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     60 * 60 * 1000,
   ).unref();
 
-  return {
+  return withPrivacyPolicy({
     db,
 
     async hasContact(jid) {
@@ -1791,7 +1793,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         return Number(stmts.aiUsageDayTotal.get(String(day))?.total || 0);
       } catch (e) {
         logger.warn({ err: e }, 'getAiUsageDayTotal failed');
-        return 0;
+        throw e;
       }
     },
     async getAiUsageSince(day) {
@@ -1836,7 +1838,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         };
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed');
-        return null;
+        throw e;
       }
     },
     async listAiOptedInChats(limit = 100) {
@@ -1864,7 +1866,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         return Number(r?.count || 0);
       } catch (e) {
         logger.warn({ err: e, userJid }, 'incrAiRateUser failed');
-        return 0;
+        throw e;
       }
     },
     async getAiRateUser(userJid, hourBucket) {
@@ -1873,7 +1875,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         return Number(r?.count || 0);
       } catch (e) {
         logger.warn({ err: e, userJid }, 'getAiRateUser failed');
-        return 0;
+        throw e;
       }
     },
     async incrAiRateChat(chatJid, dayBucket) {
@@ -1884,7 +1886,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         return Number(r?.count || 0);
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'incrAiRateChat failed');
-        return 0;
+        throw e;
       }
     },
     async getAiRateChat(chatJid, dayBucket) {
@@ -1893,7 +1895,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
         return Number(r?.count || 0);
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'getAiRateChat failed');
-        return 0;
+        throw e;
       }
     },
     async pruneAiRate(now = Date.now()) {
@@ -2164,6 +2166,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
       try {
         const buf = Buffer.from(proto.Message.encode(message).finish());
         stmts.msgUpdateBody.run(buf, ts ?? Math.floor(Date.now() / 1000), jid, messageId);
+        msgHot.set(`${jid}|${messageId}`, message);
       } catch (e) {
         logger.warn({ err: e }, 'msgUpdateBody failed');
       }
@@ -2781,7 +2784,7 @@ function makeSQLiteStore({ dbPath, logger, groupCache }) {
     close() {
       db.close();
     },
-  };
+  });
 }
 
 module.exports = { makeSQLiteStore };

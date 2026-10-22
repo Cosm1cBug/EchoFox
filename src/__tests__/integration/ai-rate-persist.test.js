@@ -136,6 +136,7 @@ test('router: falls back to in-memory when store lacks methods', async () => {
   inst.setStore({
     /* no incrAiRateUser / getAiRateUser */
     getAiChatOptIn: async () => null,
+    getAiUsageDayTotal: async () => 0,
   });
   applyAiConfig({ rateLimitPerUserPerHour: 2 });
   const router = freshRouter();

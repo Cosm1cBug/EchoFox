@@ -5,6 +5,9 @@
  */
 'use strict';
 
+const { withPrivacyPolicy } = require('../lib/privacyPolicy');
+const { recordUsage, totalUsage } = require('../lib/redisAiLedger');
+
 function _decodeSubscriberValue(jid, v) {
   if (v == null || v === '') return { jid, last_seen_pulse_ts: null, meta: null };
   if (v.startsWith('{')) {
@@ -75,7 +78,7 @@ function makeRedisStore(url, logger, groupCache) {
   });
   client.on('error', (e) => logger.error({ err: e }, 'redis client error'));
 
-  return {
+  return withPrivacyPolicy({
     async hasContact(jid) {
       try {
         const exists = await this.client.exists(`${this.prefix}contact:${jid}`);
@@ -874,28 +877,14 @@ function makeRedisStore(url, logger, groupCache) {
       costUsd = 0,
     }) {
       try {
-        const field = `${provider || ''}:${model || ''}`;
-        const hk = `ai_usage:${day}`;
-        const prev = await client.hget(hk, field);
-        const cur = prev
-          ? (() => {
-              try {
-                return JSON.parse(prev);
-              } catch {
-                return {};
-              }
-            })()
-          : {};
-        const next = {
-          prompt_tokens: Number(cur.prompt_tokens || 0) + Number(promptTokens) || 0,
-          completion_tokens: Number(cur.completion_tokens || 0) + Number(completionTokens) || 0,
-          cost_usd: Number(cur.cost_usd || 0) + Number(costUsd) || 0,
-          calls: Number(cur.calls || 0) + 1,
-        };
-        await client.hset(hk, field, JSON.stringify(next));
-        // expire after 100 days — usage history beyond that is rarely useful
-        await client.expire(hk, 100 * 24 * 60 * 60);
-        return true;
+        return await recordUsage(client, {
+          day,
+          provider,
+          model,
+          promptTokens,
+          completionTokens,
+          costUsd,
+        });
       } catch (e) {
         logger.warn({ err: e }, 'recordAiUsage failed');
         return false;
@@ -904,18 +893,10 @@ function makeRedisStore(url, logger, groupCache) {
     async getAiUsageDayTotal(day) {
       try {
         const all = await client.hgetall(`ai_usage:${day}`);
-        let total = 0;
-        for (const v of Object.values(all || {})) {
-          try {
-            total += Number(JSON.parse(v).cost_usd || 0);
-          } catch {
-            /* ignore */
-          }
-        }
-        return total;
+        return totalUsage(all);
       } catch (e) {
         logger.warn({ err: e }, 'getAiUsageDayTotal failed');
-        return 0;
+        throw e;
       }
     },
     async getAiUsageSince(day) {
@@ -929,7 +910,9 @@ function makeRedisStore(url, logger, groupCache) {
           for (const [field, v] of Object.entries(all || {})) {
             try {
               const obj = JSON.parse(v);
-              const [provider, model] = field.split(':');
+              const separator = field.indexOf(':');
+              const provider = field.slice(0, separator);
+              const model = field.slice(separator + 1);
               out.push({ day: d, provider, model, ...obj });
             } catch {
               /* ignore */
@@ -1015,7 +998,7 @@ function makeRedisStore(url, logger, groupCache) {
         };
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed');
-        return null;
+        throw e;
       }
     },
     async listAiOptedInChats(limit = 100) {
@@ -1062,7 +1045,7 @@ function makeRedisStore(url, logger, groupCache) {
         return Number(n);
       } catch (e) {
         logger.warn({ err: e, userJid }, 'incrAiRateUser failed');
-        return 0;
+        throw e;
       }
     },
     async getAiRateUser(userJid, hourBucket) {
@@ -1071,7 +1054,7 @@ function makeRedisStore(url, logger, groupCache) {
         return Number(v || 0);
       } catch (e) {
         logger.warn({ err: e, userJid }, 'getAiRateUser failed');
-        return 0;
+        throw e;
       }
     },
     async incrAiRateChat(chatJid, dayBucket) {
@@ -1087,7 +1070,7 @@ function makeRedisStore(url, logger, groupCache) {
         return Number(n);
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'incrAiRateChat failed');
-        return 0;
+        throw e;
       }
     },
     async getAiRateChat(chatJid, dayBucket) {
@@ -1096,7 +1079,7 @@ function makeRedisStore(url, logger, groupCache) {
         return Number(v || 0);
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'getAiRateChat failed');
-        return 0;
+        throw e;
       }
     },
     async pruneAiRate(_now = Date.now()) {
@@ -2059,7 +2042,7 @@ function makeRedisStore(url, logger, groupCache) {
     close() {
       client.quit();
     },
-  };
+  });
 }
 
 module.exports = { makeRedisStore };

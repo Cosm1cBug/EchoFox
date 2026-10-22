@@ -1,6 +1,6 @@
 # 🦊 EchoFox
 
-> A production-grade WhatsApp bot built on **[Baileys 7.x](https://github.com/WhiskeySockets/Baileys)** — typed, observable, scalable, and friendly to extend.
+> A WhatsApp bot built on **[Baileys 7.x](https://github.com/WhiskeySockets/Baileys)** — configurable, observable, and friendly to extend.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Node ≥22.12](https://img.shields.io/badge/node-%3E%3D22.12.0-brightgreen)](https://nodejs.org/)
@@ -74,19 +74,24 @@
 
 ### Install
 
-EchoFox can be installed three ways — pick whichever fits your workflow.
+EchoFox can be installed three ways. **The hardening changes on this branch are unreleased**; older npm packages/images do not necessarily contain them. Review [remediation status](./docs/REMEDIATION_STATUS.md) and the [operator runbook](./docs/HARDENING_RUNBOOK.md). There is no measured production-capacity claim, and release remains blocked by the license inconsistency described there.
 
-#### ⚡ Option A — npm package _(easiest, recommended)_
+#### ⚡ Option A — npm package _(verify the release first)_
 
 ```bash
 mkdir my-echofox && cd my-echofox
 npm init -y
 npm install echofox
-# Copy the example config from the installed package:
-cp node_modules/echofox/src/config.example.js src/config.js   # Linux/macOS
-# Or on Windows PowerShell:
-# Copy-Item node_modules\echofox\src\config.example.js src\config.js
+# These CLI commands require a package containing this revision.
+# If unavailable in your installed release, use the source checkout instead.
+npx echofox --version
+cp node_modules/echofox/src/config.example.js ./echofox.config.cjs
+# Edit the external config, then validate without starting WhatsApp:
+npx echofox config:check --config ./echofox.config.cjs
+npx echofox start --config ./echofox.config.cjs
 ```
+
+Keep credential-bearing configuration outside version control and restrict its permissions.
 
 Latest published version: **[![npm version](https://img.shields.io/npm/v/echofox?logo=npm&label=)](https://www.npmjs.com/package/echofox)**
 
@@ -94,8 +99,8 @@ Latest published version: **[![npm version](https://img.shields.io/npm/v/echofox
 
 ```bash
 docker pull ghcr.io/cosm1cbug/echofox:latest
-# or pin a specific version:
-docker pull ghcr.io/cosm1cbug/echofox:1.11.3
+# For production, select a verified immutable digest containing your fixes.
+# An existing `latest` image is not evidence these unreleased changes are present.
 ```
 
 Then run with your config mounted in (see [Docker](#-docker) section below).
@@ -105,10 +110,10 @@ Then run with your config mounted in (see [Docker](#-docker) section below).
 ```bash
 git clone https://github.com/Cosm1cBug/EchoFox.git
 cd EchoFox
-npm install
+npm ci
 ```
 
-### Configure
+### Configure (source checkout)
 
 ```bash
 cp src/config.example.js src/config.js
@@ -120,11 +125,13 @@ At minimum set:
 - `admins[]` — your own JID (e.g. `1234567890@s.whatsapp.net`)
 - `bot.timezone` — your IANA timezone
 
-Everything else has sensible defaults. See [Configuration reference](#%EF%B8%8F-configuration-reference) below.
+Use an external private file via `ECHOFOX_CONFIG` when appropriate. Inspect the defaults before enabling features; flags now survive normalization and may activate previously dormant code. See [Configuration reference](#%EF%B8%8F-configuration-reference) below.
 
-### Run
+### Run (source checkout)
 
 ```bash
+npm run config:check
+npm run build:dashboard
 npm start
 ```
 
@@ -461,29 +468,9 @@ docker compose --profile observability up -d
 
 ## 🚀 Releasing a new version _(maintainers)_
 
-Tag-driven, fully automated:
+Tag workflows are **gated attempts, not guaranteed publications**. Run `npm run verify`, review the actual artifacts/checks, resolve the license/provenance blocker, and obtain owner authorization before a tag or publication. Do not force a retag, bypass a failing gate, weaken account security, or assume Docker/npm succeeded just because a GitHub Release exists.
 
-```bash
-# 0. Run the full local verification suite (same gates as CI)
-npm run verify
-# 1. Bump version
-npm version patch              # or minor / major
-# 2. Update CHANGELOG.md + write RELEASE_NOTES_v<v>.md
-git add . && git commit -m "chore(release): v$(node -p require\('./package.json'\).version)"
-git push origin main
-# 3. Tag — fires 4 workflows in parallel
-git tag v$(node -p "require('./package.json').version")
-git push origin --tags
-```
-
-Within ~5 minutes:
-
-- ✅ GitHub Release with `RELEASE_NOTES_v<v>.md` body + source tarball
-- ✅ Multi-arch Docker images on GHCR + Docker Hub
-- ✅ npm publish with provenance (SLSA attestation)
-- ✅ Docs site deploy to GitHub Pages
-
-Required secrets (all optional): `NPM_TOKEN`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`. See [docs/deploy/ci-cd.md](./docs/deploy/ci-cd.md).
+The [operator runbook](./docs/HARDENING_RUNBOOK.md) describes artifact checks, remaining environment-dependent acceptance and secret provisioning. [CI/CD details](./docs/deploy/ci-cd.md) are historical background; inspect the current workflow files and actual run results. No remote workflow enablement or release is performed by the remediation itself.
 
 ---
 
@@ -494,7 +481,7 @@ Pull requests welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md).
 CI gates every PR with:
 
 - ESLint + Prettier
-- 309 automated tests (CI: Node 22)
+- Automated integration/unit/contract tests (run `npm test` for the current count; CI: Node 22)
 - AGPL header check (every `.js` file must have one)
 - Dashboard TypeScript typecheck
 - TruffleHog secret scan
@@ -507,16 +494,7 @@ By participating, you agree to behave kindly and constructively.
 
 Found a vulnerability? Please report it privately — see [SECURITY.md](./SECURITY.md).
 
-Hardening summary:
-
-- 🔒 Per-chat AI opt-in — no surprise replies
-- 🔒 AI fetch_url SSRF guard — refuses RFC 1918 / link-local / loopback
-- 🔒 Telegram bridge is strictly outbound — no inbound command surface
-- 🔒 API keys never exposed via dashboard or `/api/ai/config`
-- 🔒 Dashboard `/api/*` routes Basic-auth gated
-- 🔒 npm published with `--provenance` for SLSA-style supply-chain attestation
-- 🔒 TruffleHog scans every push for leaked secrets
-- 🔒 Weekly Docker image rebuild for base-image security patches
+Hardening includes per-chat opt-out, actor-scoped tools, pinned public-URL fetching, budget admission, log redaction and authenticated dashboard mutation protection. Each has explicit limitations: single-process spending reservations, incomplete outbound/privacy inventories, pending lifecycle/cancellation/durable-delivery work and unverified live infrastructure. See [implementation status](./docs/REMEDIATION_STATUS.md); do not infer security, provenance or scheduled rebuild success solely from a badge.
 
 ---
 

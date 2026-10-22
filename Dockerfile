@@ -38,6 +38,7 @@ WORKDIR /build
 
 # Layer caching: only re-install when the lockfile changes
 COPY package.json package-lock.json* ./
+COPY scripts/prepare.js ./scripts/prepare.js
 
 # Production install only — devDeps (eslint, husky, prettier) are NOT shipped.
 #
@@ -47,8 +48,8 @@ COPY package.json package-lock.json* ./
 # the .node binary absent, and `new Database()` then throws
 # "Could not locate the bindings file" at boot — sqliteStore.js,
 # userDirectory.js, analytics.js and useSqliteAuth all construct a Database.
-# husky's prepare hook is already a no-op ("husky || true") and husky is
-# omitted along with the other devDependencies.
+# scripts/prepare.js explicitly skips Git-hook setup in non-Git/runtime
+# installations. Real development-hook errors are not suppressed.
 RUN npm ci --omit=dev --no-audit --no-fund \
   && npm cache clean --force
 
@@ -139,8 +140,9 @@ COPY --from=builder --chown=echofox:echofox /build/package.json /build/ecosystem
 
 # Pre-create the directories we expect to be volume-mounted, so a fresh
 # `docker run` with no volumes still boots (data ephemeral, but it boots).
-RUN mkdir -p /app/src/@session /app/src/store/runtime \
- && chown -R echofox:echofox /app/src/@session /app/src/store
+RUN mkdir -p /app/src/@session /app/src/store/runtime /app/data/sessions \
+ && chmod 0700 /app/src/@session /app/data/sessions \
+ && chown -R echofox:echofox /app/src/@session /app/src/store /app/data
 
 USER echofox
 

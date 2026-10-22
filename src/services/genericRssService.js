@@ -17,12 +17,11 @@
  *   <media:keywords> via OR-match (case-insensitive). Empty topics
  *   match every article.
  *
- *   Auth: none. URL fetched directly. Configure outbound proxy in
- *   config.network.* if you need to.
+ *   Public URL fetches use validated, pinned DNS and no automatic redirects.
+ *   Proxy-side DNS is rejected until an equivalent egress policy is supplied.
  */
 
-const { axiosWithBreaker, isOpenBreakerError } = require('../lib/network');
-const { assertPublicUrl } = require('../lib/netGuard');
+const { publicGet, isOpenBreakerError } = require('../lib/network');
 // v1.5.0 security: migrated from xml2js (prototype pollution risk per CVE-2023-0842)
 // to fast-xml-parser. Attribute prefix '@_' and text node '#text' replace
 // xml2js' $ and _ conventions; normaliseCategories + extractLink handle both.
@@ -85,15 +84,7 @@ function normaliseCategories(item) {
 
 async function fetchFeed(url) {
   try {
-    // SSRF gate. `url` comes straight from `.rss add <url>`, so without this
-    // any user who can DM the bot can make it fetch cloud metadata, the
-    // dashboard on 127.0.0.1, or any internal service — and, since parsed
-    // items are delivered back to the subscriber, read the response too.
-    await assertPublicUrl(url);
-
-    const { data } = await axiosWithBreaker(`rss:${new URL(url).hostname}`, {
-      method: 'GET',
-      url,
+    const { data } = await publicGet(`rss:${new URL(url).hostname}`, url, {
       timeout: 15000,
       responseType: 'text',
       headers: { 'User-Agent': 'EchoFox/1.0 (RSS subscription)' },
@@ -145,9 +136,11 @@ async function sendArticle(sock, jid, article, feedUrl) {
     await sock.sendMessage(jid, {
       text: `📰 *${article.title}*\n_via ${host}_\n\n${article.link}`,
     });
-    logger.info({ jid, host, title: article.title }, 'rss article sent');
+    logger.info({ jid, host }, 'rss article sent');
+    return true;
   } catch (err) {
-    logger.warn({ jid, err: err.message }, 'sendArticle failed');
+    logger.warn({ jid }, 'sendArticle failed; leaving article eligible for retry');
+    return false;
   }
 }
 
@@ -166,8 +159,8 @@ async function checkAndDeliver(sock) {
         for (const article of articles) {
           if (!matchesTopics(article, feed.topics)) continue;
           if (await store.hasSentItem(SERVICE, jid, article.link)) continue;
-          await sendArticle(sock, jid, article, feed.url);
-          await store.recordSentItem(SERVICE, jid, article.link);
+          const sent = await sendArticle(sock, jid, article, feed.url);
+          if (sent) await store.recordSentItem(SERVICE, jid, article.link);
         }
       }
     }

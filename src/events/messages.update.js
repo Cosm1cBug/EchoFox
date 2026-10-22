@@ -27,6 +27,8 @@
 
 const logger = require('../core/logger').child({ mod: 'msg.update' });
 
+const { isExcluded, canStoreMessageBodies } = require('../lib/privacyPolicy');
+
 const STUB_REVOKE = 68; // proto.WebMessageInfo.StubType.REVOKE in Baileys 7.x
 
 // Extract the text body from a (possibly edited) message payload.
@@ -51,6 +53,7 @@ module.exports = async function onMessagesUpdate({ sock: _sock, store, payload }
     if (!update?.key?.id || !update?.key?.remoteJid) continue;
 
     const jid = update.key.remoteJid;
+    if (isExcluded(jid)) continue;
     const id = update.key.id;
     const ts = Math.floor(Date.now() / 1000);
 
@@ -58,7 +61,7 @@ module.exports = async function onMessagesUpdate({ sock: _sock, store, payload }
     const newMessage = update.update?.message || update.message;
     const newBody = extractBody(newMessage);
 
-    if (newMessage && newBody) {
+    if (newMessage && newBody && canStoreMessageBodies(jid)) {
       try {
         const oldMsg = await store.getMessage(update.key);
         const oldBody = extractBody(oldMsg);

@@ -12,6 +12,8 @@
  * Rates updated 2026-06; check provider docs for changes.
  *
  *   record(provider, model, promptTokens, completionTokens)   -> { costUsd }
+ *   recordRaw(provider, model, costUsd)                       -> { costUsd }
+ *   admit(estimatedUsd)                                      -> reservation id
  *   todayTotalUsd()                                          -> Promise<number>
  *   isOverCap()                                              -> Promise<boolean>
  *   summary({ days })                                        -> Promise<array>
@@ -45,13 +47,17 @@ const PRICING = Object.freeze({
   'claude-3-5-sonnet-20241022': [3.0, 15.0],
   'claude-3-opus-latest': [15.0, 75.0],
 
-  // Fallback
-  __default: [0.15, 0.6],
+  'gpt-4o-mini-2024-07-18': [0.15, 0.6],
 });
 
 function priceFor(provider, model) {
   if (provider === 'local') return [0, 0];
-  return PRICING[model] || PRICING.__default;
+  const price = config.ai?.pricing?.[`${provider}:${model}`] || PRICING[model];
+  if (!price)
+    throw Object.assign(new Error('Unknown AI model price; configure ai.pricing before use'), {
+      code: 'EUNKNOWN_PRICE',
+    });
+  return price;
 }
 
 function todayUtc() {
@@ -68,32 +74,71 @@ async function record(provider, model, promptTokens = 0, completionTokens = 0) {
     ((Number(promptTokens) || 0) * pIn) / 1_000_000 +
     ((Number(completionTokens) || 0) * pOut) / 1_000_000;
 
+  return recordRaw(provider, model, costUsd, promptTokens, completionTokens);
+}
+
+let ledgerFault = false;
+function accountingError() {
+  return Object.assign(new Error('AI accounting unavailable; paid requests denied'), {
+    code: 'EACCOUNTING',
+  });
+}
+
+async function recordRaw(provider, model, costUsd, promptTokens = 0, completionTokens = 0) {
+  if (![costUsd, promptTokens, completionTokens].every((v) => Number.isFinite(v) && v >= 0))
+    throw accountingError();
   try {
     const store = getStore();
-    if (store && typeof store.recordAiUsage === 'function') {
-      await store.recordAiUsage({
-        day: todayUtc(),
-        provider,
-        model,
-        promptTokens,
-        completionTokens,
-        costUsd,
-      });
-    }
-  } catch (e) {
-    logger.warn({ err: e, provider, model }, 'recordAiUsage write failed (continuing)');
+    if (!store || typeof store.recordAiUsage !== 'function') throw accountingError();
+    const written = await store.recordAiUsage({
+      day: todayUtc(),
+      provider,
+      model,
+      promptTokens,
+      completionTokens,
+      costUsd,
+    });
+    if (written !== true) throw accountingError();
+  } catch {
+    // Do not allow a missing ledger write to turn spent money back into free
+    // capacity. Repair/reconcile the ledger before restarting this process.
+    ledgerFault = true;
+    logger.error({ provider, model }, 'AI ledger write failed; blocking further paid requests');
+    throw accountingError();
   }
   return { costUsd };
+}
+
+/** Missing/zero metering on a non-local call is not evidence the call was free.
+ * Keep a clearly labelled estimate in the ledger for later reconciliation.
+ */
+async function recordResponse(provider, model, usage, estimate) {
+  try {
+    priceFor(provider, model);
+  } catch (error) {
+    ledgerFault = true;
+    throw error;
+  }
+  const prompt = usage?.promptTokens;
+  const completion = usage?.completionTokens;
+  if (
+    provider !== 'local' &&
+    (!Number.isFinite(prompt) || !Number.isFinite(completion) || prompt + completion <= 0)
+  ) {
+    return recordRaw(provider, `${model}:unmetered-estimate`, estimate);
+  }
+  return record(provider, model, prompt || 0, completion || 0);
 }
 
 async function todayTotalUsd() {
   try {
     const store = getStore();
-    if (!store || typeof store.getAiUsageDayTotal !== 'function') return 0;
-    return await store.getAiUsageDayTotal(todayUtc());
-  } catch (e) {
-    logger.warn({ err: e }, 'todayTotalUsd failed');
-    return 0;
+    if (!store || typeof store.getAiUsageDayTotal !== 'function') throw accountingError();
+    const total = await store.getAiUsageDayTotal(todayUtc());
+    if (!Number.isFinite(total) || total < 0) throw accountingError();
+    return total;
+  } catch {
+    throw accountingError();
   }
 }
 
@@ -132,15 +177,47 @@ function release(id) {
 
 /** Estimate the upper-bound USD cost of a single chat call given the
  *  configured max_tokens and the most expensive whitelisted model. */
-function estimateMaxCostUsd(provider, model) {
-  const maxTok = Number(config.ai?.maxTokens) || 800;
+function estimateMaxCostUsd(
+  provider,
+  model,
+  {
+    inputBytes = config.ai?.maxInputBytes || 65536,
+    maxTokens = config.ai?.maxTokens || 800,
+    rounds = 1,
+  } = {},
+) {
   const [pIn, pOut] = priceFor(provider, model);
-  // Assume worst case: all tokens are completion tokens (the more expensive side).
-  // Add a 20% safety margin.
-  return (maxTok * Math.max(pIn, pOut) * 1.2) / 1_000_000;
+  // UTF-8 bytes conservatively bound ordinary input token counts; allow extra
+  // provider framing and all tool rounds. These remain configured price
+  // estimates, NOT a guarantee about a provider's invoice/pricing changes.
+  return (
+    (((Number(inputBytes) + 2048) * pIn + Number(maxTokens) * pOut) * Number(rounds) * 1.2) /
+    1_000_000
+  );
+}
+
+let admission = Promise.resolve();
+/** Serialize balance + in-flight + new-reservation admission in this process.
+ * Multi-replica deployments need a shared transactional reservation ledger.
+ */
+function admit(estimatedUsd) {
+  const result = admission.then(async () => {
+    if (ledgerFault || !Number.isFinite(estimatedUsd) || estimatedUsd < 0) throw accountingError();
+    const used = await todayTotalUsd();
+    const cap = Number(config.ai?.costCapPerDayUsd) || 0;
+    if (cap > 0 && used + _activeReservationsUsd() + estimatedUsd > cap) {
+      throw Object.assign(new Error('Daily AI budget has insufficient capacity'), {
+        code: 'ECOSTCAP',
+      });
+    }
+    return reserve(estimatedUsd);
+  });
+  admission = result.catch(() => {});
+  return result;
 }
 
 async function isOverCap() {
+  if (ledgerFault) throw accountingError();
   const cap = Number(config.ai?.costCapPerDayUsd) || 0;
   if (!cap) return false;
   const used = await todayTotalUsd();
@@ -152,6 +229,8 @@ async function isOverCap() {
 function _resetReservationsForTests() {
   _reservations.clear();
   _resCounter = 0;
+  ledgerFault = false;
+  admission = Promise.resolve();
 }
 
 async function summary({ days = 7 } = {}) {
@@ -169,6 +248,9 @@ module.exports = {
   PRICING,
   priceFor,
   record,
+  recordRaw,
+  recordResponse,
+  admit,
   todayTotalUsd,
   isOverCap,
   summary,
@@ -177,4 +259,5 @@ module.exports = {
   release,
   estimateMaxCostUsd,
   _resetReservationsForTests,
+  _reservedUsdForTests: _activeReservationsUsd,
 };

@@ -21,6 +21,7 @@
  *     the first antiBan.warmupDays days after first boot.
  */
 const { LRUCache } = require('lru-cache');
+const crypto = require('node:crypto');
 const logger = require('./logger').child({ mod: 'runner' });
 const { makeRateLimiter } = require('../middleware/rateLimit');
 const { config } = require('../lib/configLoader');
@@ -93,7 +94,7 @@ function withTimeout(promise, ms, cmdName) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
 }
 
-async function postCrashToChannel(sock, cmd, ctx, err) {
+async function postCrashToChannel(sock, cmd, ctx, errId) {
   const key = `crash:${cmd.name}`;
   const count = notificationRateLimit.get(key) || 0;
 
@@ -108,14 +109,11 @@ async function postCrashToChannel(sock, cmd, ctx, err) {
 
   if (!ch) return;
 
-  const txt =
-    `🔥 *Command crashed*\n` +
-    `*Cmd:* \`${cmd.name}\`  *Cat:* \`${cmd.category || '?'}\`\n` +
-    `*From:* ${ctx.sender}  *Chat:* ${ctx.chat}\n` +
-    `*Text:* ${(ctx.body || '').slice(0, 200)}\n\n` +
-    '```\n' +
-    (err.stack || err.message || String(err)).slice(0, 1500) +
-    '\n```';
+  // Never forward command bodies, raw stacks, SDK errors or connection strings
+  // to WhatsApp/Telegram. Correlate with the sanitized local error log instead.
+  const actor = config.privacy.minimiseLogs ? '[private]' : ctx.sender;
+  const chat = config.privacy.minimiseLogs ? '[private]' : ctx.chat;
+  const txt = `🔥 Command failed: ${cmd.name} (category: ${cmd.category || '?'})\nFrom: ${actor}; chat: ${chat}\nReference: ${errId}`;
   try {
     await sock.sendMessage(ch, { text: txt });
   } catch (_e) {
@@ -126,7 +124,7 @@ async function postCrashToChannel(sock, cmd, ctx, err) {
     telegram.forward('errLogs', {
       level: 'error',
       source: `cmd:${cmd.name}`,
-      text: `Command crashed: ${cmd.name} (cat:${cmd.category || '?'})\nFrom ${ctx.sender} in ${ctx.chat}\n\n${(err.stack || err.message || String(err)).slice(0, 2500)}`,
+      text: txt,
     });
   } catch (_e) {
     /* ignore — telegram bridge must never crash the runner */
@@ -211,9 +209,11 @@ async function run({ sock, cmd, m, ctx, handlerArgs, isAdminCall, isGroupAdmin, 
       return;
     }
 
+    const errId = crypto.randomUUID();
     logger.error(
       {
         err,
+        errId,
         cmd: cmd.name,
         sender: ctx.sender,
         ms: Date.now() - t0,
@@ -225,7 +225,7 @@ async function run({ sock, cmd, m, ctx, handlerArgs, isAdminCall, isGroupAdmin, 
 
     let userMsg;
     if (isTimeout) {
-      userMsg = `⏱️ *${cmd.name}* took too long and was aborted.`;
+      userMsg = `⏱️ *${cmd.name}* timed out. Underlying work may still be running.`;
     } else if (err.kind === 'upstream') {
       userMsg = `🌐 *${err.upstream || 'External service'}* is having issues. Try again shortly.`;
     } else if (err.kind === 'config') {
@@ -240,7 +240,7 @@ async function run({ sock, cmd, m, ctx, handlerArgs, isAdminCall, isGroupAdmin, 
     try {
       await ctx.reply(userMsg);
     } catch {}
-    if (countFailure) postCrashToChannel(sock, cmd, ctx, err).catch(() => {});
+    if (countFailure) postCrashToChannel(sock, cmd, ctx, errId).catch(() => {});
   }
 }
 

@@ -21,7 +21,7 @@
  *     • content-type sniffed for the send payload
  */
 
-const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
+const { publicGet, isOpenBreakerError } = require('../../lib/network');
 
 const MF_URL = /^https?:\/\/(www\.)?mediafire\.com\//i;
 const HREF_RE = /id=["']downloadButton["'][^>]*href=["']([^"']+)["']/i;
@@ -32,9 +32,7 @@ const SIZE_RE = /<li>\s*<span>File size:\s*<\/span>\s*([\d.]+)\s*(MB|KB|GB)\s*<\
 const MAX_BYTES = 95 * 1024 * 1024;
 
 async function resolveDirect(url) {
-  const r = await axiosWithBreaker('mediafire', {
-    method: 'GET',
-    url,
+  const r = await publicGet('mediafire', url, {
     timeout: 15_000,
     maxRedirects: 5,
     headers: { 'User-Agent': 'Mozilla/5.0 EchoFox/0.4' },
@@ -93,9 +91,7 @@ module.exports = {
     let payload;
 
     try {
-      const dl = await axiosWithBreaker('mediafire-download', {
-        method: 'GET',
-        url: info.direct,
+      const dl = await publicGet('mediafire-download', info.direct, {
         responseType: 'arraybuffer',
         timeout: 200_000,
         maxContentLength: MAX_BYTES,

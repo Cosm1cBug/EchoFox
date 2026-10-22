@@ -19,9 +19,10 @@
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * Resolution order:
- *   1. src/config.js              (user data)
- *   2. src/config.example.js      (committed template)
- *   3. schema defaults            (empty config still boots)
+ *   1. ECHOFOX_CONFIG             (explicit external configuration file)
+ *   2. src/config.js              (legacy user data location)
+ *   3. src/config.example.js      (committed template, never copied on load)
+ *   4. schema defaults            (empty config still boots)
  *
  * Override mechanism:
  *   ECHOFOX_<SECTION>_<CAMELCASE_KEY>=value
@@ -34,6 +35,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { schema } = require('./configSchema');
+const { translateLegacy, applyEnv, assertSafeKeys } = require('./configTransforms');
 
 const PATHS = {
   real: path.join(__dirname, '..', 'config.js'),
@@ -41,159 +43,22 @@ const PATHS = {
 };
 
 function loadRaw() {
-  if (fs.existsSync(PATHS.real)) {
-    delete require.cache[require.resolve(PATHS.real)];
-    try {
-      return { source: 'config.js', raw: require(PATHS.real) };
-    } catch (err) {
-      // v1.5.0: config.js has a JS syntax error or threw at require time.
-      // Emit a structured fatal log so users see a clear field-path
-      // instead of a cryptic Node parse stack trace (especially helpful
-      // in Docker where console output isn't visible by default).
-      const message =
-        '\n────────────────────────────────────────────────────────────\n' +
-        '  FATAL: src/config.js failed to load.\n' +
-        '  ' +
-        (err && err.message ? err.message : String(err)) +
-        '\n' +
-        '  File:    ' +
-        PATHS.real +
-        '\n' +
-        '  Action:  fix the syntax error in your config.js, or rename\n' +
-        '           it temporarily to fall back to config.example.js.\n' +
-        '────────────────────────────────────────────────────────────';
-      // Use both console.error (visible everywhere) AND throw a structured error
-      // that the supervisor can catch and pretty-print.
-      console.error(message);
-      const e = new Error(
-        'config.js load failed: ' + (err && err.message ? err.message : String(err)),
-      );
-      e.code = 'CONFIG_LOAD_FAILED';
-      e.cause = err;
-      throw e;
-    }
+  const specified = process.env.ECHOFOX_CONFIG;
+  const real = specified ? path.resolve(process.cwd(), specified) : PATHS.real;
+  if (specified && !fs.existsSync(real)) {
+    throw new Error('ECHOFOX_CONFIG does not point to an existing configuration file');
   }
-  if (fs.existsSync(PATHS.example)) {
-    delete require.cache[require.resolve(PATHS.example)];
-    try {
-      fs.copyFileSync(PATHS.example, PATHS.real);
-      console.warn(
-        '[config] no config.js found — initialised from config.example.js. Edit src/config.js with your values.',
-      );
-      delete require.cache[require.resolve(PATHS.real)];
-      return { source: 'config.js (newly initialised)', raw: require(PATHS.real) };
-    } catch {
-      return { source: 'config.example.js', raw: require(PATHS.example) };
-    }
+  const file = fs.existsSync(real) ? real : PATHS.example;
+  if (!fs.existsSync(file)) return { source: '<defaults>', raw: {} };
+  try {
+    delete require.cache[require.resolve(file)];
+    return { source: file, raw: require(file) };
+  } catch {
+    // Configuration code can throw an error containing a credential. Do not echo it.
+    throw Object.assign(new Error(`Cannot load configuration file: ${file}`), {
+      code: 'CONFIG_LOAD_FAILED',
+    });
   }
-  return { source: '<defaults>', raw: {} };
-}
-
-function translateLegacy(raw) {
-  const o = raw && typeof raw === 'object' && raw.config ? raw.config : raw;
-  if (!o || typeof o !== 'object') return {};
-
-  const NEW_KEYS = ['bot', 'features', 'channels', 'apis', 'sticker', 'runtime'];
-  const isNewShape = NEW_KEYS.some((k) => k in o);
-
-  const unified = {
-    bot: isNewShape
-      ? o.bot || {}
-      : {
-          prefix: o.options?.prefix ?? '.',
-          adminPrefix: o.options?.adminPrefix ?? '$',
-          sessionName: o.options?.sessionName ?? '@session',
-          timezone: o.options?.timezone ?? 'Asia/Kolkata',
-          language: o.options?.language ?? 'en',
-          public: o.WorkMode?.public ?? true,
-        },
-    features: isNewShape
-      ? o.features || {}
-      : {
-          readMessages: o.options?.ReadMessages ?? true,
-          readStatus: o.options?.ReadStatus ?? true,
-          reactStatus: o.options?.ReactStatus ?? false,
-          antiCall: o.options?.antiCall ?? false,
-          syncHistory: o.syncHistory ?? true,
-        },
-
-    login: o.login || {},
-    auth: o.auth || {},
-    storeDB: o.storeDB || {},
-    dashboard: o.dashboard || {},
-    processing: o.processing || {},
-
-    admins: Array.isArray(o.admins)
-      ? o.admins
-      : Array.isArray(o.options?.BAdmin)
-        ? o.options.BAdmin.filter((j) => j && !j.startsWith('1234567890'))
-        : [],
-
-    channels: isNewShape
-      ? o.channels || {}
-      : {
-          syslogs: o.WApp?.Syslogs ?? '',
-          botLogs: o.WApp?.BotLogs ?? '',
-          userLogs: o.WApp?.UserLogs ?? '',
-          groupUpdates: o.WApp?.GrpUpdates ?? '',
-          callLogs: o.WApp?.CallLogs ?? '',
-          errLogs: o.WApp?.ErrLogs ?? '',
-          movGroup: o.WApp?.MovGrp ?? '',
-        },
-
-    apis: isNewShape
-      ? o.apis || {}
-      : {
-          omdb: {
-            apiKey: o.omdb?.apiKey ?? o.omdb?.key ?? '',
-            url: o.omdb?.url ?? 'https://www.omdbapi.com/',
-          },
-          virustotal: { apiKey: o.virustotal?.apiKey ?? o.virustotal?.key ?? '' },
-          alienvault: { apiKey: o.alienvault?.apiKey ?? o.alienvault?.key ?? '' },
-          openai: { apiKey: o.OpenAI?.apiKey ?? '' },
-          gemini: { apiKey: o.Gemini?.apiKey ?? '' },
-        },
-
-    sticker: isNewShape
-      ? o.sticker || {}
-      : {
-          packName: o.Exif?.packName ?? 'EchoFox',
-          packAuthor: o.Exif?.packAuthor ?? 'COSM1CBUG',
-        },
-
-    runtime: o.runtime || {},
-
-    store: o.store
-      ? {
-          instanceId: o.store.ininstanceID ?? o.store.instanceId ?? 'EchoFox',
-          storePath: o.store.storePath ?? './src/store/',
-          runtimeDir: o.store.runtimeDir ?? './src/store/runtime/',
-        }
-      : {},
-  };
-  return unified;
-}
-
-function coerce(v) {
-  if (v === 'true') return true;
-  if (v === 'false') return false;
-  if (/^-?\d+$/.test(v)) return Number(v);
-  return v;
-}
-function applyEnv(cfg) {
-  for (const [k, v] of Object.entries(process.env)) {
-    const m = k.match(/^ECHOFOX_([A-Z][A-Z0-9]*)_(.+)$/);
-    if (!m) continue;
-    const section = m[1].toLowerCase();
-    const key = m[2]
-      .toLowerCase()
-      .split('_')
-      .map((p, i) => (i === 0 ? p : p[0].toUpperCase() + p.slice(1)))
-      .join('');
-    if (!cfg[section] || typeof cfg[section] !== 'object') cfg[section] = {};
-    cfg[section][key] = coerce(v);
-  }
-  return cfg;
 }
 
 function attachLegacyAliases(cfg) {
@@ -270,6 +135,7 @@ function warnIfChannelMissing(channelKey, contextLabel) {
 // ─── 6. Build & export ───────────────────────────────────────────────────
 function load() {
   const { source, raw } = loadRaw();
+  assertSafeKeys(raw);
   const translated = translateLegacy(raw);
   const withEnv = applyEnv(translated);
 
@@ -280,7 +146,7 @@ function load() {
     console.error('\n❌ EchoFox configuration is invalid:\n');
     if (err.errors) {
       for (const e of err.errors) {
-        console.error(`  • ${e.path.join('.') || '(root)'}: ${e.message}`);
+        console.error(`  • ${e.path.join('.') || '(root)'}: invalid configuration (${e.code})`);
       }
     } else {
       console.error(err);
@@ -352,6 +218,7 @@ function __testOverride(obj) {
   if (!obj || typeof obj !== 'object') {
     throw new TypeError('__testOverride: argument must be an object');
   }
+  assertSafeKeys(obj);
   // Strip __meta + legacy aliases so we re-validate the canonical shape.
   // (Zod's schema allows extra keys to pass through, but we want a clean
   // merge so legacy aliases get regenerated from the new values.)

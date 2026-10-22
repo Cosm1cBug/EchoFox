@@ -2,22 +2,19 @@
 
 EchoFox can act as a multi-provider LLM chatbot directly inside WhatsApp.
 This page is the user-facing reference for what's enabled by default,
-what you have to flip on, and how to keep costs under control.
+what you have to flip on, and how to keep costs under control. The current hardening is unreleased; review the [operator runbook](../HARDENING_RUNBOOK.md) and [implementation status](../REMEDIATION_STATUS.md).
 
 ## TL;DR
 
 - Four providers: **OpenAI**, **Google Gemini**, **Anthropic Claude**,
   and **local Ollama**. Pick a default in config; per-chat overrides
   are persisted.
-- **12 tools** (intel-focused): VirusTotal lookups, AlienVault OTX,
+- **12 registered tools** (effective tools depend on actor/key/whitelist): VirusTotal lookups, AlienVault OTX,
   GitHub releases/advisories, Wikipedia, an SSRF-guarded `fetch_url`,
   and five read-only WhatsApp store queries.
-- **Opt-in per chat** — explicit `.ai on` toggle, or mention the bot
-  by name. No surprise replies anywhere.
-- **20-turn rolling memory** per chat (10 user + 10 assistant).
-- **Hard daily cost cap** (default `$5/day`); rate limits **30/user/hr**
-  and **100/chat/day**. v1.3.0 made those counters persist across
-  restarts.
+- **Opt-in per chat** — a mention can trigger fallback when consent is unset, but explicit `.ai off` wins over mentions and paid commands. Private mode rejects non-admin fallback.
+- **Up to 20 stored turns** per chat, including tool turns. Zero disables memory; message-body privacy policy also blocks it. Existing data is not automatically purged.
+- **Daily admission budget** (default `$5/day`) and attempt quotas **30/user/hr**, **100/chat/day**, shared by paid command/fallback entry points. Reservations serialize within one process; they are not a distributed billing guarantee.
 - **v1.4.0**: built-in alert fires at `80%` of daily cap, and the
   full pipeline now emits Prometheus metrics + Grafana panels.
 
@@ -86,25 +83,25 @@ enable per-chat with `.ai on`.
 
 Tools requiring a key are **automatically hidden** from the model
 when the key is missing. The whitelist is configurable via
-`config.ai.toolWhitelist`.
+`config.ai.toolWhitelist`. Global blocklist/newsletter queries additionally require a configured admin; chat/presence/label/message tools cannot target a different chat. The URL tool validates and pins DNS, checks canonical IP ranges and refuses redirects, embedded credentials and unverifiable proxies.
 
 ## Cost control
 
 The pricing table lives in `src/services/ai/costTracker.js`:
 
-| Model                      | Prompt $/1M                       | Completion $/1M |
-| -------------------------- | --------------------------------- | --------------- |
-| `gpt-4o-mini`              | 0.15                              | 0.60            |
-| `gpt-4o`                   | 2.50                              | 10.00           |
-| `gemini-2.0-flash`         | 0.10                              | 0.40            |
-| `claude-3-5-haiku-latest`  | 0.80                              | 4.00            |
-| `claude-3-5-sonnet-latest` | 3.00                              | 15.00           |
-| _Local (Ollama)_           | **0**                             | **0**           |
-| _unknown model_            | falls back to `gpt-4o-mini` rates |
+| Model                      | Prompt $/1M                        | Completion $/1M |
+| -------------------------- | ---------------------------------- | --------------- |
+| `gpt-4o-mini`              | 0.15                               | 0.60            |
+| `gpt-4o`                   | 2.50                               | 10.00           |
+| `gemini-2.0-flash`         | 0.10                               | 0.40            |
+| `claude-3-5-haiku-latest`  | 0.80                               | 4.00            |
+| `claude-3-5-sonnet-latest` | 3.00                               | 15.00           |
+| _Local (Ollama)_           | **0**                              | **0**           |
+| _unknown model_            | **denied until explicitly priced** | —               |
 
-`config.ai.costCapPerDayUsd` is a hard stop — once today's spend ≥ cap,
-`router.shouldRespond()` returns `respond: false, reason: 'cost_cap'`
-and the LLM is never called. Reset at UTC midnight.
+These are built-in estimates, not verified current provider invoices. Review current models/rates and use `ai.pricing['provider:model'] = [inputUSDPerMillion, outputUSDPerMillion]` for a reviewed custom price. Admission reserves bounded prompt/completion/tool rounds; it denies if recorded plus reserved use would exceed the configured UTC-day cap. This also covers `.ask`, `.explain`, `.summarize` and `.imagine`. It cannot guarantee a provider's actual invoice or coordinate independent replicas.
+
+Missing/uncertain metering is charged as a labeled estimate, not free usage. Ledger failures and unexpected unpriced response models block further paid admission until reconciled. Images use supported fixed-price combinations (default `dall-e-3`); variable-price image models deny until supported. See the runbook for limits, estimate reconciliation and delivery-failure handling.
 
 **v1.4.0**: when daily spend reaches `config.alerts.rules.aiCostPct.threshold`
 (default `0.80` = 80%), the alert engine fires once (with cooldown)
@@ -113,12 +110,10 @@ to WhatsApp `errLogs` and the Telegram mirror. See
 
 ## Security
 
-- **SSRF guard** in `fetch_url` blocks RFC 1918 / link-local / loopback.
-- **API keys never leave the bot.** Dashboard `/api/ai/config`
-  returns booleans, never the secrets themselves.
-- **Per-chat opt-in** — no surprise replies in chats that didn't ask.
-- **Cost cap is a hard stop** — the LLM is never called when the cap
-  has been hit; the bot drops quietly with a `cost_cap` log.
+- Public-URL fetching validates/pins addresses and refuses unsafe redirects/proxies; other user-derived outbound paths are still being inventoried.
+- `/api/ai/config` returns credential presence, not raw keys. Provider authentication still legitimately sends keys to the intended provider; this is not a claim that keys never leave the process.
+- Explicit opt-out and private-mode/admin policy apply before provider calls, including paid commands. Tools enforce actor/chat scope independently of model-provided arguments.
+- Budget admission is process-local and uses reviewed estimates; provider bills and uncertain rows require reconciliation. A timeout is not cancellation and may leave underlying work running.
 
 ## Known limitations
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env sh
 # Pre-push: fast local gate (full suite runs in CI and via `npm run verify`).
-# Bypass with --no-verify — CI still runs everything and is authoritative.
+# Hook checks complement CI; bypassing a hook is not successful validation.
+# Git supplies ALL pushed refs on stdin. Scan their entire outgoing commit
+# spans, including secrets introduced and removed in different commits.
+node scripts/scan-secrets.js --pre-push "${1:-origin}" || exit $?
 npm run verify:quick --silent

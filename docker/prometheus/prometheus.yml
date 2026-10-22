@@ -5,9 +5,7 @@ global:
     cluster: echofox-local
 
 scrape_configs:
-  - job_name: echofox
-    # v1.4.0: scrape both the supervisor (process + worker_up) and the
-    # dashboard (store-backed AI/Telegram/command counters + gauges)
+  - job_name: echofox-supervisor
     scheme: http
     metrics_path: /metrics
     static_configs:
@@ -16,25 +14,23 @@ scrape_configs:
           service: echofox
           job_part: supervisor
           env: production
-      # /metrics on :3001 sits behind the dashboard's HTTP Basic Auth
-      # (src/dashboard/server.js applies basicAuth() to every route when
-      # config.dashboard.username is set), so this target needs credentials
-      # or it returns 401 and shows as permanently DOWN — which is what it
-      # did before v1.18.0, leaving every store-backed metric invisible.
-      #
-      # Prometheus expands ${VAR} in this file, and docker-compose passes the
-      # same values it gives the echofox container, so the two always agree.
-      # Set them once in .env:
-      #     ECHOFOX_DASHBOARD_USERNAME=admin
-      #     ECHOFOX_DASHBOARD_PASSWORD=<same value as the bot's config.js>
+
+  - job_name: echofox-dashboard
+    scheme: http
+    metrics_path: /metrics
+    # basic_auth belongs to the scrape JOB, not static_configs.
+    # Prometheus does NOT expand arbitrary ${ENV} in YAML. Match this username
+    # to config.dashboard.username; provision the password through the mounted
+    # secret file. It must be readable by the Prometheus container UID 65534.
+    basic_auth:
+      username: admin
+      password_file: /run/secrets/metrics_dashboard_password
+    static_configs:
       - targets: ['echofox:3001']
         labels:
           service: echofox
           job_part: dashboard
           env: production
-        basic_auth:
-          username: ${ECHOFOX_DASHBOARD_USERNAME}
-          password: ${ECHOFOX_DASHBOARD_PASSWORD}
 
   - job_name: prometheus
     static_configs:

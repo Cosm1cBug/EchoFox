@@ -13,8 +13,10 @@
  */
 const logger = require('../../core/logger').child({ mod: 'ai/mem' });
 const { getStore } = require('../../store/instance');
+const { canStoreAiMemory } = require('../../lib/privacyPolicy');
 
 async function append(chatJid, turn) {
+  if (!canStoreAiMemory(chatJid)) return false;
   try {
     const store = getStore();
     if (!store || typeof store.appendAiTurn !== 'function') return false;
@@ -25,11 +27,12 @@ async function append(chatJid, turn) {
   }
 }
 
-async function recent(chatJid, limit) {
+async function recent(chatJid, limit = 20) {
+  if (!canStoreAiMemory(chatJid) || Number(limit) <= 0) return [];
   try {
     const store = getStore();
     if (!store || typeof store.getRecentAiTurns !== 'function') return [];
-    return await store.getRecentAiTurns(chatJid, Number(limit) || 20);
+    return await store.getRecentAiTurns(chatJid, Math.min(200, Math.max(0, Number(limit) || 0)));
   } catch (e) {
     logger.warn({ err: e, chatJid }, 'recent failed');
     return [];

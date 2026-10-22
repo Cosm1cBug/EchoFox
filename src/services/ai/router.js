@@ -12,7 +12,7 @@
  * Rules (in order, first match wins):
  *   1. config.ai.enabled === false                                     -> { respond: false, reason: 'disabled' }
  *   2. message text is empty / starts with bot prefix or admin prefix  -> false
- *   3. per-chat opt-in row says enabled=false                          -> false (unless DM in 'on' default)
+ *   3. per-chat opt-in row says enabled=false                          -> false (including mentions and DMs)
  *   4. per-chat opt-in row says enabled=true                           -> true
  *   5. config.ai.optInDefault === 'on'                                 -> true
  *   6. message mentions bot name (config.ai.botNameRegex)              -> true
@@ -23,9 +23,8 @@
  * so the caller can decide whether to silently drop or reply with an
  * apology.
  *
- *  Rate limits are kept in-memory (Maps with periodic prune). Restart
- *  resets them — that's acceptable for v1.2.0; persistence is a
- *  Group-D follow-up if needed.
+ * Paid requests use store-backed, serialized quota and budget admission.
+ * The older noteSent/peek API remains for compatibility, not admission.
  */
 const logger = require('../../core/logger').child({ mod: 'ai/router' });
 const { config } = require('../../lib/configLoader');
@@ -139,6 +138,7 @@ async function _bumpChatStore(jid) {
 async function shouldRespond(ctx) {
   const aiCfg = config.ai || {};
   if (!aiCfg.enabled) return { respond: false, reason: 'disabled' };
+  if (!config.bot.public && ctx.isAdmin !== true) return { respond: false, reason: 'private_mode' };
 
   const text = String(ctx.text || '').trim();
   if (!text) return { respond: false, reason: 'empty' };
@@ -149,15 +149,11 @@ async function shouldRespond(ctx) {
     return { respond: false, reason: 'is_command' };
   }
 
-  // per-chat opt-in
-  let optIn = null;
+  let optIn;
   try {
-    const store = getStore();
-    if (store && typeof store.getAiChatOptIn === 'function') {
-      optIn = await store.getAiChatOptIn(ctx.chatJid);
-    }
-  } catch (e) {
-    logger.warn({ err: e }, 'getAiChatOptIn failed');
+    optIn = await authorizeRequest(ctx);
+  } catch (error) {
+    return { respond: false, reason: error.reason || 'policy_unavailable' };
   }
 
   let decided = false;
@@ -167,7 +163,7 @@ async function shouldRespond(ctx) {
     decided = true;
   }
 
-  // bot-name mention always wins as an opt-in trigger
+  // A mention can activate an unset preference, but NEVER override an explicit opt-out.
   if (!decided) {
     try {
       const re = new RegExp(aiCfg.botNameRegex || 'echofox|bot|@assistant', 'i');
@@ -222,9 +218,95 @@ async function noteSent({ chatJid, userJid }) {
   }
 }
 
+const denied = (reason) => {
+  const expected = [
+    'disabled',
+    'private_mode',
+    'chat_excluded',
+    'opted_out',
+    'rate_limit_user',
+    'rate_limit_chat',
+  ];
+  const ErrorType = expected.includes(reason) ? require('../../lib/errors').UserError : Error;
+  return Object.assign(new ErrorType(`AI request denied: ${reason}`), {
+    code: 'EAI_POLICY',
+    reason,
+  });
+};
+
+async function authorizeRequest(ctx) {
+  if (!config.ai?.enabled) throw denied('disabled');
+  if (!ctx.chatJid || !ctx.userJid) throw denied('missing_caller_context');
+  if (!config.bot.public && ctx.isAdmin !== true) throw denied('private_mode');
+  if (require('../../lib/privacyPolicy').isExcluded(ctx.chatJid)) throw denied('chat_excluded');
+  let preference;
+  try {
+    const store = getStore();
+    if (typeof store?.getAiChatOptIn !== 'function') throw denied('policy_unavailable');
+    preference = await store.getAiChatOptIn(ctx.chatJid);
+  } catch {
+    throw denied('policy_unavailable');
+  }
+  if (preference?.enabled === false) throw denied('opted_out');
+  return preference;
+}
+
+let admission = Promise.resolve();
+/** All paid entry points share this admission gate. Quotas count admitted
+ * attempts, including provider failures. Admission is atomic in ONE process;
+ * independent replicas still require a distributed transactional gate.
+ */
+function admitRequest(ctx, estimatedUsd) {
+  const result = admission.then(async () => {
+    await authorizeRequest(ctx);
+    const store = getStore();
+    const limits = [
+      [
+        Number(config.ai.rateLimitPerUserPerHour),
+        'getAiRateUser',
+        'incrAiRateUser',
+        ctx.userJid,
+        _hourBucket(),
+        'rate_limit_user',
+      ],
+      [
+        Number(config.ai.rateLimitPerChatPerDay),
+        'getAiRateChat',
+        'incrAiRateChat',
+        ctx.chatJid,
+        _dayBucket(),
+        'rate_limit_chat',
+      ],
+    ];
+    for (const [limit, read, increment, jid, bucket, reason] of limits) {
+      if (limit <= 0) continue;
+      if (typeof store[read] !== 'function' || typeof store[increment] !== 'function')
+        throw denied('quota_unavailable');
+      const used = await store[read](jid, bucket);
+      if (!Number.isFinite(used) || used < 0) throw denied('quota_unavailable');
+      if (used >= limit) throw denied(reason);
+    }
+    const reservationId = await cost.admit(estimatedUsd);
+    try {
+      for (const [limit, , increment, jid, bucket] of limits) {
+        if (limit <= 0) continue;
+        const count = await store[increment](jid, bucket);
+        if (!Number.isFinite(count) || count < 1) throw denied('quota_unavailable');
+      }
+      return reservationId;
+    } catch (error) {
+      cost.release(reservationId);
+      throw error;
+    }
+  });
+  admission = result.catch(() => {});
+  return result;
+}
+
 function _resetForTests() {
+  admission = Promise.resolve();
   _userHour.clear();
   _chatDay.clear();
 }
 
-module.exports = { shouldRespond, noteSent, _resetForTests, conv };
+module.exports = { shouldRespond, authorizeRequest, admitRequest, noteSent, _resetForTests, conv };

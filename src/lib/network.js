@@ -24,6 +24,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const http = require('node:http');
 const https = require('node:https');
 const tls = require('node:tls');
 
@@ -34,7 +35,7 @@ let _extraCAs = null;
 let _httpAgent = null;
 let _httpsAgent = null;
 let _socksAgent = null;
-let _wsAgent = null;
+let _wsAgent;
 let _axios = null;
 
 // ─── Extra CA bundle loading ─────────────────────────────────────────────
@@ -54,9 +55,8 @@ function loadExtraCAs() {
     logger.info({ path: abs, count: blocks.length }, 'extra CA certs loaded');
     return _extraCAs;
   } catch (e) {
-    logger.warn({ err: e, path: p }, 'failed to load extraCaCertPath; continuing without');
-    _extraCAs = [];
-    return _extraCAs;
+    // A requested trust configuration must not silently fall back to another one.
+    throw new Error('Cannot load configured extra CA certificates');
   }
 }
 
@@ -91,7 +91,7 @@ function getProxyAgents() {
       _httpsAgent = _socksAgent;
       return { httpAgent: _httpAgent, httpsAgent: _httpsAgent, socksAgent: _socksAgent };
     } catch (e) {
-      logger.error({ err: e }, 'SOCKS agent failed to load — install `socks-proxy-agent`');
+      throw new Error('Cannot initialize configured SOCKS proxy; request denied');
     }
   }
 
@@ -120,10 +120,7 @@ function getProxyAgents() {
         );
       }
     } catch (e) {
-      logger.error(
-        { err: e },
-        'HTTP(S) proxy agents failed to load — install `https-proxy-agent` and `http-proxy-agent`',
-      );
+      throw new Error('Cannot initialize configured HTTP(S) proxy; request denied');
     }
   } else if (ca) {
     // No proxy at all, but we still need a CA-aware agent for axios
@@ -211,6 +208,73 @@ function axiosWithBreaker(name, axiosCfg, breakerOpts = {}) {
   return breaker.fire(axiosCfg);
 }
 
+/** GET an untrusted URL with DNS pinning and per-hop validation.
+ * Proxy-side DNS cannot be pinned by this process, so reject rather than bypass
+ * a configured proxy or claim a DNS-preflight check makes that route safe.
+ */
+async function publicGet(name, rawUrl, options = {}) {
+  if (options.responseType === 'stream')
+    throw new Error('publicGet requires a bounded buffered response');
+  const net = config.network || {};
+  if (net.httpProxy || net.httpsProxy || net.socksProxy) {
+    throw Object.assign(
+      new Error(
+        'Public-URL fetch requires a DNS-pinning-capable egress policy; configured proxy denied',
+      ),
+      { code: 'EUNSAFE_PROXY' },
+    );
+  }
+  const { resolvePublicUrl } = require('./netGuard');
+  const redirects = Math.min(5, Math.max(0, Number(options.maxRedirects) || 0));
+  const headers = { ...options.headers };
+  for (const key of Object.keys(headers)) {
+    if (/^(authorization|proxy-authorization|cookie|host)$/i.test(key)) delete headers[key];
+  }
+  let nextUrl = rawUrl;
+  for (let hop = 0; ; hop++) {
+    const target = await resolvePublicUrl(nextUrl);
+    const httpAgent = new http.Agent({ lookup: target.lookup, keepAlive: false });
+    const httpsAgent = new https.Agent({
+      lookup: target.lookup,
+      keepAlive: false,
+      ca: makeCAOption(),
+    });
+    let response;
+    try {
+      response = await axiosWithBreaker(name, {
+        ...options,
+        method: 'GET',
+        url: target.url.href,
+        baseURL: undefined,
+        auth: undefined,
+        lookup: target.lookup,
+        socketPath: undefined,
+        transport: undefined,
+        data: undefined,
+        headers,
+        httpAgent,
+        httpsAgent,
+        proxy: false,
+        maxRedirects: 0,
+        maxContentLength: options.maxContentLength ?? 4 * 1024 * 1024,
+        validateStatus: (status) => status >= 200 && status < 400,
+      });
+    } finally {
+      httpAgent.destroy();
+      httpsAgent.destroy();
+    }
+    if (response.status < 300) return response;
+    if (!response.headers.location || hop >= redirects) {
+      throw Object.assign(new Error('Redirect denied'), { code: 'EREDIRECT' });
+    }
+    nextUrl = new URL(response.headers.location, target.url).href;
+    if (target.url.protocol === 'https:' && new URL(nextUrl).protocol !== 'https:') {
+      throw Object.assign(new Error('HTTPS downgrade redirect denied'), { code: 'EREDIRECT' });
+    }
+    // The next iteration resolves, validates, and pins the new destination.
+  }
+}
+
 function isOpenBreakerError(err) {
   if (!err) return false;
   if (err.code === 'EOPENBREAKER') return true;
@@ -225,5 +289,6 @@ module.exports = {
   configuredAxios,
   applyExtraCAsToProcess,
   axiosWithBreaker,
+  publicGet,
   isOpenBreakerError,
 };

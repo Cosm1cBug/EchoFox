@@ -16,6 +16,7 @@
  */
 
 const { Sticker, StickerTypes } = require('wa-sticker-formatter');
+const { stickerInput } = require('../../lib/stickerInput');
 
 const ALLOWED_TYPES = new Set(['imageMessage', 'videoMessage', 'stickerMessage']);
 
@@ -52,7 +53,7 @@ module.exports = {
       );
     }
 
-    const sticker = new Sticker(buf, {
+    const sticker = new Sticker(stickerInput(buf), {
       pack: config.sticker.packName || 'EchoFox',
       author: config.sticker.packAuthor || 'COSM1CBUG',
       type: StickerTypes.FULL, // FULL keeps aspect ratio

@@ -19,7 +19,8 @@
  * HTML escape + chunking helpers are exported for the routing layer.
  */
 const { axiosWithBreaker, isOpenBreakerError } = require('../../lib/network');
-const { config } = require('../../lib/configLoader');
+const { config, __getCurrent } = require('../../lib/configLoader');
+const sanitize = require('../../lib/logSanitizer').makeSanitizer(__getCurrent);
 
 let _override = null;
 
@@ -77,11 +78,10 @@ async function sendMessage({ chatId, text, parseMode = 'HTML' }) {
   // Test override short-circuits the network call entirely.
   if (_override) return _override({ chatId, text, parseMode });
 
-  const ax = axiosWithBreaker('telegram-send', { timeout: 10_000 });
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
   const payload = {
     chat_id: chatId,
-    text,
+    text: sanitize(String(text)),
     disable_web_page_preview: true,
   };
   if (parseMode === 'HTML') payload.parse_mode = 'HTML';
@@ -89,7 +89,13 @@ async function sendMessage({ chatId, text, parseMode = 'HTML' }) {
   // 'plain' => no parse_mode
 
   try {
-    const r = await ax.post(url, payload);
+    const r = await axiosWithBreaker('telegram-send', {
+      method: 'POST',
+      url,
+      data: payload,
+      timeout: 10_000,
+    });
+    if (r.data?.ok !== true) return { ok: false, status: r.status, error: 'telegram_rejected' };
     return { ok: true, status: r.status, messageId: r.data?.result?.message_id };
   } catch (e) {
     if (isOpenBreakerError(e)) return { ok: false, error: 'circuit_open' };
@@ -98,7 +104,8 @@ async function sendMessage({ chatId, text, parseMode = 'HTML' }) {
     return {
       ok: false,
       status,
-      error: e.response?.data?.description || e.code || e.message,
+      // Error messages/URLs may contain the bot token. Expose only safe categories.
+      error: Number.isInteger(status) ? `http_${status}` : 'request_failed',
       retryAfter,
     };
   }

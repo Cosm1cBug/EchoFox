@@ -173,9 +173,24 @@ test('costTracker.estimateMaxCostUsd: returns sensible upper bound', () => {
   });
   const cost = require('../../services/ai/costTracker');
 
-  // gpt-4o-mini: completion = $0.60/1M tokens. 1000 tokens × $0.60/1M × 1.2 margin = $0.00072
-  const est = cost.estimateMaxCostUsd('openai', 'gpt-4o-mini');
-  assert.ok(est > 0 && est < 0.01, `estimate for gpt-4o-mini should be ~$0.0007, got ${est}`);
+  // Reserve BOTH bounded input bytes (+ framing) and completion tokens.
+  const est = cost.estimateMaxCostUsd('openai', 'gpt-4o-mini', {
+    inputBytes: 65536,
+    maxTokens: 1000,
+  });
+  const expected = (((65536 + 2048) * 0.15 + 1000 * 0.6) * 1.2) / 1_000_000;
+  assert.ok(Math.abs(est - expected) < 1e-12);
+  assert.ok(est > 0.00072, 'output-only estimate must not omit prompt cost');
+  assert.ok(
+    Math.abs(
+      cost.estimateMaxCostUsd('openai', 'gpt-4o-mini', {
+        inputBytes: 65536,
+        maxTokens: 1000,
+        rounds: 3,
+      }) -
+        est * 3,
+    ) < 1e-12,
+  );
 
   // Local Ollama: $0
   const local = cost.estimateMaxCostUsd('local', 'llama3.2');

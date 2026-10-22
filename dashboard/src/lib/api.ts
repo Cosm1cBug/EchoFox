@@ -52,6 +52,9 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     ...((init?.headers as Record<string, string>) || {}),
   };
   if (authHeader) headers['Authorization'] = authHeader;
+  if (!['GET', 'HEAD', 'OPTIONS'].includes((init?.method || 'GET').toUpperCase())) {
+    headers['X-EchoFox-Request'] = '1';
+  }
 
   const res = await fetch(path, { ...init, headers, credentials: 'include' });
   if (!res.ok) {

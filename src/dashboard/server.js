@@ -9,6 +9,7 @@ const crypto = require('node:crypto');
 const express = require('express');
 const path = require('node:path');
 const fs = require('node:fs');
+const { LRUCache } = require('lru-cache');
 const metrics = require('../services/metrics');
 
 const logger = require('../core/logger').child({ mod: 'dashboard' });
@@ -23,11 +24,18 @@ const PKG = (() => {
 
 const REACT_DIR = path.join(__dirname, 'react');
 
-function basicAuth(username, password) {
+function basicAuth(username, password, { authMaxFailures = 20, authWindowMs = 900000 } = {}) {
+  const failures = new LRUCache({ max: 10000, ttl: authWindowMs });
   const expected = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
   const expectedBuf = Buffer.from(expected, 'utf8');
 
   return (req, res, next) => {
+    const key = req.ip;
+    const previous = failures.get(key);
+    if (previous && previous.count >= authMaxFailures && previous.until > Date.now()) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil((previous.until - Date.now()) / 1000))));
+      return res.status(429).type('text/plain').send('Too many failed authentication attempts');
+    }
     const got = req.headers.authorization;
     const gotBuf = got ? Buffer.from(got, 'utf8') : Buffer.alloc(0);
 
@@ -36,7 +44,13 @@ function basicAuth(username, password) {
     // from response timing.
     const ok = gotBuf.length === expectedBuf.length && crypto.timingSafeEqual(gotBuf, expectedBuf);
 
-    if (ok) return next();
+    if (ok) return next(); // Successful polling never consumes a failure budget.
+    const entry =
+      previous && previous.until > Date.now()
+        ? previous
+        : { count: 0, until: Date.now() + authWindowMs };
+    entry.count++;
+    failures.set(key, entry);
     res.set('WWW-Authenticate', 'Basic realm="EchoFox Dashboard", charset="UTF-8"');
     res.status(401).type('text/plain').send('Authentication required');
   };
@@ -48,12 +62,17 @@ function basicAuth(username, password) {
  *   Safe to call multiple times — idempotent if dist already exists.
  *   Returns true if the dashboard is ready to serve.
  */
-function ensureReactBuilt() {
-  const indexHtml = path.join(REACT_DIR, 'index.html');
+function ensureReactBuilt(reactDir, buildOnBoot) {
+  const indexHtml = path.join(reactDir, 'index.html');
   if (fs.existsSync(indexHtml)) return true;
 
+  if (!buildOnBoot) {
+    logger.warn('Dashboard build missing; run npm run build:dashboard before starting.');
+    return false;
+  }
+
   logger.warn(
-    { path: REACT_DIR },
+    { path: reactDir },
     'React dashboard build missing — attempting build-on-boot in background.',
   );
 
@@ -99,7 +118,10 @@ h1{color:#f97316}code{background:#1e293b;padding:.15rem .4rem;border-radius:.25r
 </body></html>`;
 }
 
-function startDashboard(port, store, config) {
+function startDashboard(port, store, config, { reactDir = REACT_DIR } = {}) {
+  if (!config.dashboard?.username?.trim() || !config.dashboard?.password?.trim()) {
+    throw new Error('Dashboard authentication requires a nonempty username and password');
+  }
   const app = express();
   // Only trust a proxy that is genuinely in front of us.
   //   'loopback'      docker-compose publishes on 127.0.0.1 (current default)
@@ -109,44 +131,46 @@ function startDashboard(port, store, config) {
   // which corrupts req.ip for logging and any future per-IP logic.
   app.set('trust proxy', config.dashboard?.trustProxy ?? 'loopback');
 
-  // v1.20.0 — HTTP rate limiting REMOVED entirely.
-  //   The dashboard is an internal, admin-only tool (never public), so the
-  //   limiter was pure downside: one `rateLimit` instance was mounted at
-  //   `/api`, `/dashboard` AND `/`, which made every API request decrement
-  //   the budget TWICE, while the HealthPill's 5s/10s polling alone needed
-  //   ~270 req/15min — so the UI bricked itself with 429s after ~7 minutes.
-  //   With no limiter, the polling design is fine on an internal network.
-  //   Residual risk accepted: unlimited Basic-auth guessing IF the port is
-  //   ever exposed publicly — keep the bind internal and the password strong
-  //   (configSchema already refuses the CHANGE_ME placeholder while enabled).
-  //   (express-rate-limit stays in package.json to avoid lockfile churn.)
-
-  if (config.dashboard.username) {
-    app.use(basicAuth(config.dashboard.username, config.dashboard.password));
-  } else {
-    logger.warn('dashboard auth DISABLED (empty username) — DO NOT EXPOSE PUBLICLY');
-  }
+  // Bound failed authentication, not successful API polling. No double-mounted
+  // global limiter: legitimate dashboards must not exhaust a shared budget.
+  app.use(basicAuth(config.dashboard.username, config.dashboard.password, config.dashboard));
+  app.use((req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+    if (req.get('X-EchoFox-Request') !== '1' || req.get('Sec-Fetch-Site') === 'cross-site') {
+      return res.status(403).json({ error: 'mutation_request_denied' });
+    }
+    const origin = req.get('Origin');
+    if (origin) {
+      try {
+        const parsed = new URL(origin);
+        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.host !== req.get('Host'))
+          throw new Error();
+      } catch {
+        return res.status(403).json({ error: 'origin_denied' });
+      }
+    }
+    next();
+  });
 
   app.use(express.json({ limit: '64kb' }));
 
   // Build-on-boot guard (one-shot). If it fails we still mount API routes
   // and serve a maintenance page for / and /dashboard.
-  const reactReady = ensureReactBuilt();
+  const reactReady = ensureReactBuilt(reactDir, config.dashboard.buildOnBoot === true);
 
   // ─── Root redirect: / → /dashboard/ ──────────────────────────────────
   app.get('/', (_req, res) => res.redirect(301, '/dashboard/'));
 
   // ─── React app static + SPA fallback ─────────────────────────────────
-  if (reactReady) {
-    app.use('/dashboard', express.static(REACT_DIR, { index: 'index.html' }));
-    app.get('/dashboard/*', (_req, res) => {
-      res.sendFile(path.join(REACT_DIR, 'index.html'));
-    });
-  } else {
-    app.get(['/dashboard', '/dashboard/*'], (_req, res) => {
-      res.status(503).type('html').send(maintenancePage('React build missing'));
-    });
-  }
+  // Mount static middleware even before a build exists: it checks the disk
+  // on each request, so a completed background/manual build becomes visible.
+  app.use('/dashboard', express.static(reactDir, { index: 'index.html' }));
+  app.get(['/dashboard', '/dashboard/*'], (_req, res) => {
+    const index = path.join(reactDir, 'index.html');
+    if (fs.existsSync(index)) return res.sendFile(index);
+    res.status(503).type('html').send(maintenancePage('React build missing'));
+  });
 
   // ─── API: health / stats / version ───────────────────────────────────
   app.get('/api/health', async (_req, res) => {
@@ -1141,7 +1165,7 @@ function startDashboard(port, store, config) {
   // few times instead of crashing; never silently die.
   let listenAttempt = 0;
   const listen = () => {
-    const server = app.listen(port, () => {
+    const server = app.listen(port, config.dashboard.host || '127.0.0.1', () => {
       logger.info(
         { port, auth: !!config.dashboard.username, react: reactReady },
         'dashboard listening',

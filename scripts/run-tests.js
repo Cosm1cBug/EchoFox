@@ -69,10 +69,19 @@ if (files.length === 0) {
 
 console.log(`run-tests.js: running ${files.length} test file(s)`);
 
-const nodeArgs = ['--test', '--test-timeout=60000', ...files];
+const diagnostics =
+  process.env.TEST_RESOURCE_DIAGNOSTICS === '1'
+    ? ['--require', path.join(__dirname, 'test-resources.js')]
+    : [];
+const nodeArgs = [...diagnostics, '--test', '--test-timeout=60000', ...files];
 const child = spawn(process.execPath, nodeArgs, {
   stdio: 'inherit',
   cwd: ROOT,
+});
+
+child.on('error', (error) => {
+  console.error(`Test process could not start (${error.code || 'unknown error'})`);
+  process.exitCode = 1;
 });
 
 child.on('exit', (code, signal) => {

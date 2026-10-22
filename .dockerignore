@@ -56,3 +56,21 @@ src/commands/_disabled
 Dockerfile
 docker-compose*.yml
 docker
+
+# Fresh-source session credentials and external runtime data
+data/
+
+# Operator-provisioned secret mounts must not enter image layers
+secrets/
+
+# Credentials and backup archives under custom source paths
+**/creds.json
+**/pre-key-*.json
+**/session-*.json
+**/sender-key-*.json
+**/app-state-sync-key-*.json
+**/*.tar.gz*
+**/*.tgz
+
+# Default external configuration may contain credentials
+echofox.config.*

@@ -41,6 +41,7 @@ const antilink = require('../services/antilinkService');
 const muteService = require('../services/muteService');
 const adminAudit = require('../services/adminAuditService');
 const { isConfiguredAdmin } = require('../lib/jidResolve');
+const { ID_PREFIX, readMenuSelection, readNativeMenuResponse } = require('../lib/menuNavigation');
 
 // ─── Inbound rate limiter (token bucket per sender) ──────────────────────
 const senderLimiter = makeRateLimiter({
@@ -68,18 +69,37 @@ function matchPrefix(text, p) {
   return null;
 }
 
+function menuInvocation(text) {
+  // The prefix encoded in a response ID is untrusted too. Re-parse using the
+  // REAL configuration: an ID with prefix ".ask " must not invoke .ask.
+  const prefix = matchPrefix(text, config.bot.adminPrefix) || matchPrefix(text, config.bot.prefix);
+  return prefix && /^menu(?:\s|$)/i.test(text.slice(prefix.length).trimStart()) ? text : '';
+}
+
 function pickText(m) {
-  const msg = m.message;
+  const msg = extractMessageContent(m.message);
   if (!msg) return '';
+
+  const nativeResponse = msg.interactiveResponseMessage?.nativeFlowResponseMessage;
+  if (nativeResponse) {
+    // Display labels are not commands. Only our bounded, menu-only IDs route;
+    // the resulting invocation still passes normal prefix/rate/permission gates.
+    return menuInvocation(readNativeMenuResponse(nativeResponse));
+  }
+  const selectedId =
+    msg.buttonsResponseMessage?.selectedButtonId ||
+    msg.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    msg.templateButtonReplyMessage?.selectedId;
+  if (typeof selectedId === 'string' && selectedId.startsWith(ID_PREFIX)) {
+    return menuInvocation(readMenuSelection(selectedId) || '');
+  }
 
   return (
     msg.conversation ||
     msg.extendedTextMessage?.text ||
     msg.imageMessage?.caption ||
     msg.videoMessage?.caption ||
-    msg.buttonsResponseMessage?.selectedButtonId ||
-    msg.listResponseMessage?.singleSelectReply?.selectedRowId ||
-    msg.templateButtonReplyMessage?.selectedId ||
+    selectedId ||
     msg.interactiveResponseMessage?.body?.text ||
     ''
   );

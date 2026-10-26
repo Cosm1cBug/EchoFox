@@ -163,7 +163,9 @@ module.exports = {
     httpsProxy: '',
     socksProxy: '',
     noProxy: [],
-    fetchTimeoutMs: 30000,
+    fetchTimeoutMs: 30000, // Axios requests, not WhatsApp media uploads
+    // Per-host socket inactivity limit for WhatsApp CDN uploads (not a total deadline).
+    mediaUploadTimeoutMs: 30000,
     extraCaCertPath: '',
     userAgent: 'EchoFox/1.0 (+https://github.com/Cosm1cBug/EchoFox)',
     // Optional WhatsApp Web client_revision pin, e.g. [2, 3000, 1050196505].

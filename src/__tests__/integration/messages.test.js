@@ -411,3 +411,135 @@ test('.vtwatch: malformed type:id rejected', async () => {
   await cmd.start(sock, fakeM('add notavalidthing'), { text: 'add notavalidthing' });
   assert.match(sock.lastSent.content.text, /Usage/i);
 });
+
+// Menu selections must traverse the SAME command runner and permission gates
+// as typed commands. No arbitrary native-flow ID may become an invocation.
+const { makeMenuSelection } = require('../../lib/menuNavigation');
+
+for (const kind of ['native', 'wrapped-native', 'legacy-list', 'legacy-button']) {
+  test(`menu ${kind} selection → normal handler args (not the display label)`, async () => {
+    const sock = makeMockSock();
+    const store = makeMockStore();
+    let received;
+    const commands = makeRegistry([
+      {
+        name: 'menu',
+        start: async (_sock, _m, { ctx, args, isAdmin }) => {
+          received = { body: ctx.body, args, isAdmin };
+        },
+      },
+    ]);
+    const id = makeMenuSelection('.', 'list', 'tools');
+    const jid = `8100000000${['native', 'wrapped-native', 'legacy-list', 'legacy-button'].indexOf(kind)}@lid`;
+    const m = makeMockMessage({ jid });
+    const response = {
+      interactiveResponseMessage: {
+        body: { text: '$exec this label is never an instruction' },
+        nativeFlowResponseMessage: { name: 'single_select', paramsJson: JSON.stringify({ id }) },
+      },
+    };
+    m.message =
+      kind === 'wrapped-native'
+        ? { viewOnceMessage: { message: response } }
+        : kind === 'native'
+          ? response
+          : kind === 'legacy-list'
+            ? { listResponseMessage: { singleSelectReply: { selectedRowId: id } } }
+            : { buttonsResponseMessage: { selectedButtonId: id } };
+    await handleMessage({ sock, m, commands, store, logger: sock.logger });
+    assert.deepEqual(received, {
+      body: '.menu list tools 1',
+      args: ['list', 'tools', '1'],
+      isAdmin: false,
+    });
+  });
+}
+
+test('arbitrary or malformed native-flow IDs cannot run commands via a label fallback', async () => {
+  let calls = 0;
+  const commands = makeRegistry([
+    {
+      name: 'ping',
+      start: async () => {
+        calls++;
+      },
+    },
+  ]);
+  for (const paramsJson of ['{', JSON.stringify({ id: '.ping' }), JSON.stringify({ id: {} })]) {
+    const sock = makeMockSock();
+    const store = makeMockStore();
+    const m = makeMockMessage({ jid: '82000000000@lid' });
+    m.message = {
+      interactiveResponseMessage: {
+        body: { text: '.ping' },
+        nativeFlowResponseMessage: { name: 'single_select', paramsJson },
+      },
+    };
+    await handleMessage({ sock, m, commands, store, logger: sock.logger });
+    assert.equal(sock.calls.sendMessage, 0);
+  }
+  assert.equal(calls, 0);
+});
+
+test('a forged admin-prefixed menu selection does not bypass the admin-prefix gate', async () => {
+  const sock = makeMockSock();
+  const store = makeMockStore();
+  let calls = 0;
+  const commands = makeRegistry([
+    {
+      name: 'menu',
+      start: async () => {
+        calls++;
+      },
+    },
+  ]);
+  const m = makeMockMessage({ jid: '83000000000@lid' });
+  m.message = {
+    interactiveResponseMessage: {
+      nativeFlowResponseMessage: {
+        name: 'single_select',
+        paramsJson: JSON.stringify({
+          id: makeMenuSelection('$', 'list', 'admin'),
+        }),
+      },
+    },
+  };
+  await handleMessage({ sock, m, commands, store, logger: sock.logger });
+  assert.equal(calls, 0);
+  assert.match(sock.lastSent.content.text, /reserved for admins/i);
+});
+
+test('a forged prefix inside a native or legacy menu ID cannot invoke a different command', async () => {
+  let calls = 0;
+  const commands = makeRegistry(
+    ['ping', 'ask', 'exec', 'menu'].map((name) => ({
+      name,
+      start: async () => {
+        calls++;
+      },
+    })),
+  );
+  for (const prefix of ['.ping ', '.ask ', '.exec ']) {
+    for (const kind of ['native', 'legacy-list']) {
+      const sock = makeMockSock();
+      const store = makeMockStore();
+      const m = makeMockMessage({ jid: '84000000000@lid' });
+      const id = makeMenuSelection(prefix, 'list', 'tools');
+      m.message =
+        kind === 'native'
+          ? {
+              interactiveResponseMessage: {
+                body: { text: '.ping' },
+                nativeFlowResponseMessage: {
+                  name: 'single_select',
+                  paramsJson: JSON.stringify({ id }),
+                },
+              },
+            }
+          : { listResponseMessage: { singleSelectReply: { selectedRowId: id } } };
+      await handleMessage({ sock, m, commands, store, logger: sock.logger });
+      assert.equal(sock.calls.sendMessage, 0);
+    }
+  }
+  assert.equal(calls, 0);
+});

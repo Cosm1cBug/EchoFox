@@ -42,7 +42,7 @@ const { recordTimeline } = require('../lib/timelineLog');
 const { wrapSocketSend } = require('../middleware/sendQueue');
 const { wrapWithPresence } = require('../middleware/presence');
 const sentMessageTracker = require('../services/sentMessageTracker');
-const { getWsAgent } = require('../lib/network');
+const { getWsAgent, getMediaAgent } = require('../lib/network');
 const { startMemoryGuard } = require('../lib/memoryGuard');
 const leakDetector = require('../lib/leakDetector');
 const alertEngine = require('../services/alertEngine');
@@ -362,7 +362,8 @@ async function start(retry = 0) {
   sock = makeWASocket({
     version,
     agent: getWsAgent(),
-    fetchAgent: getWsAgent(),
+    // Uploads need a bounded HTTP timeout, not the WS/global-agent default.
+    fetchAgent: getMediaAgent(),
     logger: _baileysLogger,
     browser: Browsers.macOS('Chrome'),
     auth: {

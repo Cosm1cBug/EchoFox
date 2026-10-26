@@ -321,6 +321,7 @@ const schema = z
         socksProxy: z.string().default(''),
         noProxy: z.array(z.string()).default([]),
         fetchTimeoutMs: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
+        mediaUploadTimeoutMs: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
         extraCaCertPath: z.string().default(''),
         userAgent: z.string().default('EchoFox/0.4 (+https://github.com/Cosm1cBug/EchoFox)'),
         // Optional WhatsApp Web client_revision override, as [2, 3000, <rev>]

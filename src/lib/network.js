@@ -36,6 +36,7 @@ let _httpAgent = null;
 let _httpsAgent = null;
 let _socksAgent = null;
 let _wsAgent;
+let _mediaAgent = null;
 let _axios = null;
 
 // ─── Extra CA bundle loading ─────────────────────────────────────────────
@@ -141,6 +142,54 @@ function getWsAgent() {
   const { httpsAgent, socksAgent } = getProxyAgents();
   _wsAgent = socksAgent || httpsAgent || undefined;
   return _wsAgent;
+}
+
+/** Separate from Axios and WebSocket query timeouts; schema-validated at boot.
+ * The fallback also supports callers using an older config with the new menu.
+ */
+function getMediaUploadTimeoutMs(cfg = config) {
+  return cfg.network?.mediaUploadTimeoutMs ?? 30_000;
+}
+
+/**
+ * Baileys 7's native HTTPS uploader inherits Node's global-agent 5s timeout
+ * when mediaUploadTimeoutMs is absent (normal sends, link previews, raw media
+ * preparation). Use a dedicated, cached agent so ALL of those paths have a
+ * bounded upload inactivity timeout without changing WebSocket/Axios agents.
+ */
+function getMediaAgent() {
+  if (_mediaAgent) return _mediaAgent;
+  const net = config.network || {};
+  const timeout = getMediaUploadTimeoutMs();
+  const options = { keepAlive: true, timeout, ca: makeCAOption() };
+  let transport = 'direct';
+  let agent;
+  try {
+    if (net.socksProxy) {
+      const { SocksProxyAgent } = require('socks-proxy-agent');
+      agent = new SocksProxyAgent(net.socksProxy, options);
+      transport = 'socks-proxy';
+    } else if (net.httpsProxy) {
+      const { HttpsProxyAgent } = require('https-proxy-agent');
+      agent = new HttpsProxyAgent(net.httpsProxy, options);
+      transport = 'https-proxy';
+    } else {
+      agent = new https.Agent(options);
+    }
+  } catch (_) {
+    // A malformed configured proxy must never silently select direct egress.
+    throw new Error('Cannot initialize WhatsApp media transport; request denied');
+  }
+  // HttpsProxyAgent replaces .options in its constructor. Restore timeout/CA
+  // on THIS dedicated agent for Node's socket assignment and destination TLS;
+  // constructor options also keep the proxy handshake's timeout/CA intact.
+  Object.assign(agent.options, options);
+  _mediaAgent = agent;
+  logger.info(
+    { transport, mediaUploadTimeoutMs: timeout },
+    'WhatsApp media upload transport configured',
+  );
+  return _mediaAgent;
 }
 
 // ─── Configured axios instance ───────────────────────────────────────────
@@ -286,6 +335,8 @@ module.exports = {
   loadExtraCAs,
   getProxyAgents,
   getWsAgent,
+  getMediaAgent,
+  getMediaUploadTimeoutMs,
   configuredAxios,
   applyExtraCAsToProcess,
   axiosWithBreaker,

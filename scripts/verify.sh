@@ -17,8 +17,9 @@
 #   6.  headers     AGPL header check
 #   7.  tests       unit/integration suite + command contract tests
 #   8.  build       dashboard production build
-#   9.  audit       npm audit — FAILS on high/critical in production deps
-#                   (dev-only findings are printed for information)
+#   9.  audit       npm audit — FAILS on unaccepted high/critical advisories
+#                   in production deps (accepted advisories are documented in
+#                   the step; dev-only findings are printed for information)
 #   10. secrets     pattern scan of the outgoing diff (API keys, tokens, keys)
 #   11. git         whitespace / conflict-marker / tracked-sensitive-file checks
 #   12. summary     step scoreboard + diff overview for final review
@@ -162,11 +163,36 @@ fi
 if [ "$QUICK" = "0" ] && [ "${VERIFY_SKIP_AUDIT:-0}" != "1" ]; then
   step "audit"
   PROD_JSON=$(npm audit --omit=dev --json 2>/dev/null || true)
+  # Counts UNACCEPTED high/critical advisories. Advisory IDs in ACCEPTED are
+  # documented exceptions — they are reported but do not fail the gate. Any
+  # parse/network failure yields "ERR" and FAILS THE GATE (fail-closed: a
+  # broken audit must never silently pass; use VERIFY_SKIP_AUDIT=1 only after
+  # a manual report review).
   PROD_COUNT=$(printf '%s' "$PROD_JSON" | node -e '
     let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{
-      try{const m=JSON.parse(s).metadata.vulnerabilities;
-        console.log((m.high||0)+(m.critical||0));}
-      catch{console.log("0");}});')
+      try{
+        const j=JSON.parse(s);
+        if(!j.vulnerabilities || !j.metadata) throw new Error("no audit data");
+        // ── accepted advisories (documented exceptions) ─────────────────
+        // GHSA-mrhx-c7xc-m3w5 — zod <4.6.6, memory exhaustion validating
+        // oversized constrained collections. No zod 3.x fix exists, and the
+        // @jimp/* plugin tree pins zod ^3.23.8, so a zod 4 migration would
+        // leave their nested copy flagged regardless. EchoFox only validates
+        // its own operator-controlled config file with zod — accepted until
+        // jimp ships a zod-4-compatible release.
+        const ACCEPTED=new Set(["GHSA-mrhx-c7xc-m3w5"]);
+        const seen=new Set();
+        for(const pkg of Object.values(j.vulnerabilities)){
+          for(const via of pkg.via||[]){
+            if(typeof via!=="object") continue;
+            if(via.severity!=="high" && via.severity!=="critical") continue;
+            const id=String(via.url||"").split("/").pop();
+            if(ACCEPTED.has(id)) continue;
+            seen.add(id||via.title||"unknown");
+          }
+        }
+        console.log(String(seen.size));
+      }catch(e){console.log("ERR");}});')
   if [ "$PROD_COUNT" = "0" ]; then
     ok
     printf '%s' "$PROD_JSON" | node -e '
@@ -175,9 +201,14 @@ if [ "$QUICK" = "0" ] && [ "${VERIFY_SKIP_AUDIT:-0}" != "1" ]; then
           const n=(m.total||0);
           if(n>0)console.log(`    (prod deps: ${n} lower-severity finding(s) — reviewed below if any)`);}
         catch{}});'
+  elif [ "$PROD_COUNT" = "ERR" ]; then
+    fail
+    echo "  ${RED}could not parse npm audit output (network failure or npm error) — failing closed.${OFF}"
+    echo "  Re-run with network access; or, only after a manual audit review:"
+    echo "    VERIFY_SKIP_AUDIT=1 bash scripts/verify.sh"
   else
     fail
-    echo "  ${RED}$PROD_COUNT high/critical vulnerability(ies) in PRODUCTION dependencies:${OFF}"
+    echo "  ${RED}$PROD_COUNT unaccepted high/critical advisory(ies) in PRODUCTION dependencies:${OFF}"
     npm audit --omit=dev 2>&1 | sed 's/^/    /'
     echo "  Fix path: npm audit --omit=dev  → review, upgrade affected deps,"
     echo "  regenerate lockfile (npm install --package-lock-only), re-run verify."

@@ -300,7 +300,10 @@ test('thehackersnews: topic parsing deduplicates + caps at 10', async () => {
   assert.equal(meta2.topics.length, 10);
 });
 
-test('.rss: add → list → remove', async () => {
+test('.rss: add → list → remove', async (t) => {
+  t.mock.method(require('node:dns').promises, 'lookup', async () => [
+    { address: '8.8.8.8', family: 4 },
+  ]);
   const { sock, store } = setupSubscriptionTest();
   const cmd = require('../../commands/general/rss');
 
@@ -320,7 +323,10 @@ test('.rss: add → list → remove', async () => {
   assert.equal(await store.isSubscriber('rss', '999@s.whatsapp.net'), false);
 });
 
-test('.rss: re-adding same URL updates topic filter in place', async () => {
+test('.rss: re-adding same URL updates topic filter in place', async (t) => {
+  t.mock.method(require('node:dns').promises, 'lookup', async () => [
+    { address: '8.8.8.8', family: 4 },
+  ]);
   const { sock, store } = setupSubscriptionTest();
   const cmd = require('../../commands/general/rss');
 

@@ -6,7 +6,8 @@
 'use strict';
 
 /**
- * Backup engine — actually wires the v0.4.4 scaffold.
+ * Legacy backup scaffold — not wired into current worker startup.
+ * See docs/HARDENING_RUNBOOK.md before relying on it for recovery.
  *
  *   Config (config.backup):
  *     enabled:     true to run scheduled backups
@@ -21,8 +22,9 @@
  *       `tar-stream` if installed; otherwise spawns the system `tar`
  *       binary as a fallback.
  *     • Encryption: if `encryptionPassphrase` is set, wraps in
- *       AES-256-GCM before writing. Decrypt with:
- *         openssl enc -aes-256-gcm -d -pbkdf2 -in foo.tar.gz.enc
+ *       AES-256-GCM before writing in a custom salt/IV/tag format.
+ *       This is NOT an openssl enc compatible container. Proven restore
+ *       tooling and configured-key/format validation remain pending.
  *     • Idempotent: refuses to overwrite if filename exists.
  *     • Retention: after a successful backup, deletes files matching
  *       the prefix beyond `retain` count.

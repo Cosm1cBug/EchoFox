@@ -12,7 +12,7 @@
  *   .ask  (replying to a message)  → answers about / using that message
  *
  * Differences from `.ai` (control surface) and `ai.chat()` (full mode):
- *   • Works in chats that have NOT been opted-in via `.ai on`.
+ *   • Works without ambient opt-in, but honors explicit `.ai off`.
  *   • Does NOT touch conversation memory (calls provider directly).
  *   • Honours the v1.5.0 cost-cap + reservation pattern.
  *
@@ -28,7 +28,7 @@ const MAX_QUESTION_LEN = 2000;
 module.exports = {
   name: 'ask',
   alias: ['askme', 'aiq'],
-  desc: 'One-shot AI query (no memory, no opt-in needed).',
+  desc: 'One-shot AI query (no memory, honors explicit opt-out).',
   category: 'general',
   type: 'general',
   usage: '<question | (reply to message + extra prompt)>',
@@ -67,45 +67,16 @@ module.exports = {
       return ctx.reply(`❌ Question too long (max ${MAX_QUESTION_LEN} chars).`);
     }
 
-    const cost = ai.cost;
-    if (await cost.isOverCap()) {
-      return ctx.reply('💸 Daily AI cost cap reached. Try again tomorrow.');
-    }
-
-    const aiCfg = config.ai || {};
-    const providerName = aiCfg.defaultProvider || 'openai';
-    const model = aiCfg.model || 'gpt-4o-mini';
-    const provider = ai.providers[providerName];
-    if (!provider) {
-      return ctx.reply(`❌ Unknown AI provider: ${providerName}`);
-    }
-
-    const reservationId = cost.reserve(cost.estimateMaxCostUsd(providerName, model));
-    await ctx.react('🧠');
-
-    try {
-      const resp = await provider.chat({
-        system:
-          'You are a helpful assistant inside a WhatsApp bot. Be concise (2–6 short ' +
-          'paragraphs max). Use plain text — no markdown headings. If unsure, say so.',
-        history: [{ role: 'user', content: prompt }],
-        tools: [],
-        model,
-        maxTokens: Math.min(aiCfg.maxTokens || 1024, 1024),
-        temperature: 0.4,
-      });
-
-      await cost.record(
-        providerName,
-        resp.model || model,
-        resp.usage?.promptTokens || 0,
-        resp.usage?.completionTokens || 0,
-      );
-
-      const answer = (resp.content || '').trim() || '_(empty response)_';
-      return ctx.reply(`🧠 ${answer}`);
-    } finally {
-      cost.release(reservationId);
-    }
+    const resp = await ai.oneShot({
+      sock,
+      ctx,
+      system:
+        'You are a helpful assistant inside a WhatsApp bot. Be concise (2–6 short paragraphs max). Use plain text. If unsure, say so.',
+      prompt,
+      maxTokens: 1024,
+      temperature: 0.4,
+    });
+    const answer = (resp.content || '').trim() || '_(empty response)_';
+    return ctx.reply(`🧠 ${answer}`);
   },
 };

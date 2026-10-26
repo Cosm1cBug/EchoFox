@@ -5,6 +5,8 @@
  */
 'use strict';
 
+const { withPrivacyPolicy } = require('../lib/privacyPolicy');
+
 const { config } = require('../lib/configLoader');
 const mongoose = require('mongoose');
 const { makeBatcher } = require('../lib/backpressure');
@@ -174,7 +176,7 @@ function makeMongoStore(uri, logger, groupCache) {
     },
   });
 
-  return {
+  return withPrivacyPolicy({
     async hasContact(jid) {
       try {
         const count = await this.db.collection('contacts').countDocuments({ jid }, { limit: 1 });
@@ -962,7 +964,7 @@ function makeMongoStore(uri, logger, groupCache) {
         return Number(rows[0]?.total || 0);
       } catch (e) {
         logger.warn({ err: e }, 'getAiUsageDayTotal failed');
-        return 0;
+        throw e;
       }
     },
     async getAiUsageSince(day) {
@@ -1047,7 +1049,7 @@ function makeMongoStore(uri, logger, groupCache) {
         };
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed');
-        return null;
+        throw e;
       }
     },
     async listAiOptedInChats(limit = 100) {
@@ -1089,7 +1091,7 @@ function makeMongoStore(uri, logger, groupCache) {
         return Number((r && (r.value?.count ?? r.count)) || 1);
       } catch (e) {
         logger.warn({ err: e, userJid }, 'incrAiRateUser failed');
-        return 0;
+        throw e;
       }
     },
     async getAiRateUser(userJid, hourBucket) {
@@ -1100,7 +1102,7 @@ function makeMongoStore(uri, logger, groupCache) {
         return Number(r?.count || 0);
       } catch (e) {
         logger.warn({ err: e, userJid }, 'getAiRateUser failed');
-        return 0;
+        throw e;
       }
     },
     async incrAiRateChat(chatJid, dayBucket) {
@@ -1116,7 +1118,7 @@ function makeMongoStore(uri, logger, groupCache) {
         return Number((r && (r.value?.count ?? r.count)) || 1);
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'incrAiRateChat failed');
-        return 0;
+        throw e;
       }
     },
     async getAiRateChat(chatJid, dayBucket) {
@@ -1127,7 +1129,7 @@ function makeMongoStore(uri, logger, groupCache) {
         return Number(r?.count || 0);
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'getAiRateChat failed');
-        return 0;
+        throw e;
       }
     },
     async pruneAiRate(now = Date.now()) {
@@ -2071,7 +2073,7 @@ function makeMongoStore(uri, logger, groupCache) {
       }
       conn.close();
     },
-  };
+  });
 }
 
 module.exports = { makeMongoStore };

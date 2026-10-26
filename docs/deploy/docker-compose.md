@@ -1,7 +1,8 @@
 # Deploying EchoFox with Docker Compose
 
-The repo ships with a production-ready `docker-compose.yml` plus an
-optional `observability` profile (Prometheus + Grafana).
+> **Unreleased hardening:** use the [operator runbook](../HARDENING_RUNBOOK.md) for current secret mounts, authentication, artifact/release gates and known limitations; older examples below are not proof of production readiness.
+> The repo ships with a production-ready `docker-compose.yml` plus an
+> optional `observability` profile (Prometheus + Grafana).
 
 ---
 

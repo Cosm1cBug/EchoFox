@@ -56,8 +56,8 @@ function toTransferable(buf) {
 // op: sticker
 // ──────────────────────────────────────────────────────────────────────
 async function opSticker({ buf, pack, author, quality }) {
+  const input = require('../lib/stickerInput').stickerInput(buf);
   const { Sticker, StickerTypes } = require('wa-sticker-formatter');
-  const input = Buffer.from(buf);
   const s = new Sticker(input, {
     pack: pack || 'EchoFox',
     author: author || 'COSM1CBUG',

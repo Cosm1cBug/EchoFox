@@ -98,49 +98,21 @@ module.exports = {
     const resolvedMode =
       mode === 'auto' || !mode ? (looksLikeCode(payload) ? 'code' : 'auto') : mode;
 
-    const cost = ai.cost;
-    if (await cost.isOverCap()) {
-      return ctx.reply('💸 Daily AI cost cap reached. Try again tomorrow.');
-    }
-
-    const aiCfg = config.ai || {};
-    const providerName = aiCfg.defaultProvider || 'openai';
-    const model = aiCfg.model || 'gpt-4o-mini';
-    const provider = ai.providers[providerName];
-    if (!provider) {
-      return ctx.reply(`❌ Unknown AI provider: ${providerName}`);
-    }
-
-    const reservationId = cost.reserve(cost.estimateMaxCostUsd(providerName, model));
-    await ctx.react('🧠');
-
-    try {
-      const resp = await provider.chat({
-        system: systemPrompt(resolvedMode),
-        history: [{ role: 'user', content: payload }],
-        tools: [],
-        model,
-        maxTokens: Math.min(aiCfg.maxTokens || 1024, 1024),
-        temperature: 0.35,
-      });
-
-      await cost.record(
-        providerName,
-        resp.model || model,
-        resp.usage?.promptTokens || 0,
-        resp.usage?.completionTokens || 0,
-      );
-
-      const out = (resp.content || '').trim() || '_(empty response)_';
-      const label =
-        resolvedMode === 'code'
-          ? '💻 Code explained'
-          : resolvedMode === 'eli5'
-            ? '🧒 Explained (ELI5)'
-            : '🧠 Explained';
-      return ctx.reply(`${label}\n\n${out}`);
-    } finally {
-      cost.release(reservationId);
-    }
+    const resp = await ai.oneShot({
+      sock,
+      ctx,
+      system: systemPrompt(resolvedMode),
+      prompt: payload,
+      maxTokens: 1024,
+      temperature: 0.35,
+    });
+    const out = (resp.content || '').trim() || '_(empty response)_';
+    const label =
+      resolvedMode === 'code'
+        ? '💻 Code explained'
+        : resolvedMode === 'eli5'
+          ? '🧒 Explained (ELI5)'
+          : '🧠 Explained';
+    return ctx.reply(`${label}\n\n${out}`);
   },
 };

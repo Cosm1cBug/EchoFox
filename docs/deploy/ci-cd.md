@@ -1,8 +1,9 @@
 # CI/CD pipeline
 
-EchoFox ships seven GitHub Actions workflows that handle lint, tests,
-security scans, multi-arch Docker images, npm publish, GitHub Releases,
-and docs deployment. This page is the one-stop reference.
+> **Unreleased hardening:** use the [operator runbook](../HARDENING_RUNBOOK.md) for current secret mounts, authentication, artifact/release gates and known limitations; older examples below are not proof of production readiness.
+> EchoFox ships seven GitHub Actions workflows that handle lint, tests,
+> security scans, multi-arch Docker images, npm publish, GitHub Releases,
+> and docs deployment. This page is the one-stop reference.
 
 ## At a glance
 

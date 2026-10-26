@@ -42,22 +42,30 @@ if (!fs.existsSync(path.join(DASH_SRC, 'package.json'))) {
 // ─── 1. Ensure dashboard deps are installed ──────────────────────────────
 if (!fs.existsSync(path.join(DASH_SRC, 'node_modules'))) {
   log('installing dashboard deps (one-time)…');
-  const install = spawnSync('npm', ['install', '--no-audit', '--no-fund'], {
+  const install = spawnSync('npm', ['ci', '--no-audit', '--no-fund'], {
     cwd: DASH_SRC,
     stdio: 'inherit',
     shell: process.platform === 'win32',
   });
-  if (install.status !== 0) fail('npm install in dashboard/ failed', install.status);
+  if (install.error || install.status !== 0)
+    fail('npm ci in dashboard/ failed', install.status || 1);
 }
 
-// ─── 2. Run vite build ───────────────────────────────────────────────────
-log('running vite build…');
-const build = spawnSync('npx', ['vite', 'build'], {
+// ─── 2. Typecheck and run the locked dashboard build ───────────────────────────────────────────────────
+log('typechecking dashboard…');
+const types = spawnSync('npm', ['run', 'typecheck'], {
   cwd: DASH_SRC,
   stdio: 'inherit',
   shell: process.platform === 'win32',
 });
-if (build.status !== 0) fail('vite build failed', build.status);
+if (types.error || types.status !== 0) fail('dashboard typecheck failed', types.status || 1);
+log('running dashboard build…');
+const build = spawnSync('npm', ['run', 'build'], {
+  cwd: DASH_SRC,
+  stdio: 'inherit',
+  shell: process.platform === 'win32',
+});
+if (build.error || build.status !== 0) fail('dashboard build failed', build.status || 1);
 
 // ─── 3. Copy dist/* → src/dashboard/react/ ───────────────────────────────
 if (!fs.existsSync(DASH_DIST)) fail(`expected output at ${DASH_DIST}`);

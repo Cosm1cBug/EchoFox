@@ -5,6 +5,8 @@
  */
 'use strict';
 
+const { withPrivacyPolicy } = require('../lib/privacyPolicy');
+
 const { config } = require('../lib/configLoader');
 const { Pool } = require('pg');
 const { proto } = require('@whiskeysockets/baileys');
@@ -108,7 +110,7 @@ function makePostgresStore(url, logger, groupCache) {
     .then(() => applyMessagesMigration_postgres(pool))
     .catch((e) => logger.error({ err: e }, 'Postgres init failed'));
 
-  return {
+  return withPrivacyPolicy({
     async hasContact(jid) {
       try {
         const res = await this.pool.query('SELECT 1 FROM contacts WHERE jid = $1 LIMIT 1', [jid]);
@@ -930,7 +932,7 @@ function makePostgresStore(url, logger, groupCache) {
         return Number(rows[0]?.total || 0);
       } catch (e) {
         logger.warn({ err: e }, 'getAiUsageDayTotal failed');
-        return 0;
+        throw e;
       }
     },
     async getAiUsageSince(day) {
@@ -1002,7 +1004,7 @@ function makePostgresStore(url, logger, groupCache) {
         };
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'getAiChatOptIn failed');
-        return null;
+        throw e;
       }
     },
     async listAiOptedInChats(limit = 100) {
@@ -1043,7 +1045,7 @@ function makePostgresStore(url, logger, groupCache) {
         return Number(rows[0]?.count || 0);
       } catch (e) {
         logger.warn({ err: e, userJid }, 'incrAiRateUser failed');
-        return 0;
+        throw e;
       }
     },
     async getAiRateUser(userJid, hourBucket) {
@@ -1055,7 +1057,7 @@ function makePostgresStore(url, logger, groupCache) {
         return Number(rows[0]?.count || 0);
       } catch (e) {
         logger.warn({ err: e, userJid }, 'getAiRateUser failed');
-        return 0;
+        throw e;
       }
     },
     async incrAiRateChat(chatJid, dayBucket) {
@@ -1071,7 +1073,7 @@ function makePostgresStore(url, logger, groupCache) {
         return Number(rows[0]?.count || 0);
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'incrAiRateChat failed');
-        return 0;
+        throw e;
       }
     },
     async getAiRateChat(chatJid, dayBucket) {
@@ -1083,7 +1085,7 @@ function makePostgresStore(url, logger, groupCache) {
         return Number(rows[0]?.count || 0);
       } catch (e) {
         logger.warn({ err: e, chatJid }, 'getAiRateChat failed');
-        return 0;
+        throw e;
       }
     },
     async pruneAiRate(now = Date.now()) {
@@ -2110,7 +2112,7 @@ function makePostgresStore(url, logger, groupCache) {
       }
       pool.end();
     },
-  };
+  });
 }
 
 module.exports = { makePostgresStore };

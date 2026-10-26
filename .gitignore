@@ -71,3 +71,16 @@ dashboard/*.tsbuildinfo
 # Tracking it produced spurious 30-line diffs on every typecheck.
 dashboard/vite.config.js
 dashboard/vite.config.d.ts
+
+# Fresh-source session credentials and external runtime data
+data/
+
+# Local package / source release archives
+*.tgz
+*.tar.gz
+
+# Operator-provisioned local secret files
+secrets/
+
+# Default external configuration may contain credentials
+echofox.config.*

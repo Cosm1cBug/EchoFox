@@ -19,7 +19,7 @@
 #   8.  build       dashboard production build
 #   9.  audit       npm audit — FAILS on high/critical in production deps
 #                   (dev-only findings are printed for information)
-#   10. secrets     pattern scan of the outgoing diff (API keys, tokens, keys)
+#   10. secrets     outgoing history + working-tree secret pattern scan (API keys, tokens, keys)
 #   11. git         whitespace / conflict-marker / tracked-sensitive-file checks
 #   12. summary     step scoreboard + diff overview for final review
 #
@@ -118,10 +118,8 @@ step "typecheck"
 if [ "$QUICK" = "1" ] && [ ! -d dashboard/node_modules ]; then
   skip "typecheck (dashboard deps not installed — full mode installs them)"
 else
-  TSC_OK=1
-  ( cd dashboard && npx tsc -p . --noEmit ) || TSC_OK=0
-  if [ "$TSC_OK" = "1" ]; then ( cd dashboard && npx tsc -p tsconfig.node.json --noEmit ) || TSC_OK=0; fi
-  [ "$TSC_OK" = "1" ] && ok || fail
+  # Build mode follows references and checks BOTH app/node projects.
+  run npm --prefix dashboard run typecheck --silent && ok || fail
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -135,6 +133,9 @@ run npm run format:check --silent && ok || fail
 
 step "headers"
 run npm run headers:check --silent && ok || fail
+
+step "license"
+run npm run license:check --silent && ok || fail
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 7. tests
@@ -161,61 +162,29 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 if [ "$QUICK" = "0" ] && [ "${VERIFY_SKIP_AUDIT:-0}" != "1" ]; then
   step "audit"
-  PROD_JSON=$(npm audit --omit=dev --json 2>/dev/null || true)
-  PROD_COUNT=$(printf '%s' "$PROD_JSON" | node -e '
-    let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{
-      try{const m=JSON.parse(s).metadata.vulnerabilities;
-        console.log((m.high||0)+(m.critical||0));}
-      catch{console.log("0");}});')
-  if [ "$PROD_COUNT" = "0" ]; then
-    ok
-    printf '%s' "$PROD_JSON" | node -e '
-      let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{
-        try{const m=JSON.parse(s).metadata.vulnerabilities;
-          const n=(m.total||0);
-          if(n>0)console.log(`    (prod deps: ${n} lower-severity finding(s) — reviewed below if any)`);}
-        catch{}});'
-  else
+  AUDIT_OK=1
+  for project in . dashboard; do
+    AUDIT_STATUS=0
+    AUDIT_JSON=$(cd "$project" && npm audit --omit=dev --json 2>/dev/null) || AUDIT_STATUS=$?
+    printf '  %s: ' "$project"
+    if ! printf '%s' "$AUDIT_JSON" | node scripts/check-audit.js "$AUDIT_STATUS"; then AUDIT_OK=0; fi
+  done
+  if [ "$AUDIT_OK" = "1" ]; then ok; else
     fail
-    echo "  ${RED}$PROD_COUNT high/critical vulnerability(ies) in PRODUCTION dependencies:${OFF}"
-    npm audit --omit=dev 2>&1 | sed 's/^/    /'
-    echo "  Fix path: npm audit --omit=dev  → review, upgrade affected deps,"
-    echo "  regenerate lockfile (npm install --package-lock-only), re-run verify."
+    echo "  Production audit failed or could not complete. Review npm audit --omit=dev in both projects."
+    echo "  Registry errors and malformed JSON are failures, never zero findings."
   fi
-  # Informational: full audit incl. dev deps (vitepress/vite dev-tooling noise
-  # currently has no upstream fix — do not fail the push for it).
-  echo "  ${DIM}dev-deps audit (informational):$(npm audit 2>&1 | grep -E '^[0-9]+ vulnerabilities|found 0' | tail -1 | tr -d '.')${OFF}"
+  echo "  Dev-tool findings require separate review; production audit alone does not certify dependencies safe."
+
 else
   skip "audit"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 10. secret scan of the outgoing diff
+# 10. secret scan of outgoing commit history AND working contents
 # ═════════════════════════════════════════════════════════════════════════════
 step "secrets"
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  # Added/changed lines vs HEAD (staged + unstaged); falls back to scanning
-  # the last commit when the worktree is clean.
-  DIFF_ADDED=$( { git diff HEAD --unified=0 -- . ':!package-lock.json' ':!dashboard/package-lock.json';
-                  git diff --cached --unified=0 -- . ':!package-lock.json' ':!dashboard/package-lock.json'; } 2>/dev/null \
-                | grep -E '^\+' | grep -v '^+++' || true)
-  [ -z "$DIFF_ADDED" ] && DIFF_ADDED=$(git show HEAD --unified=0 --format= -- . ':!package-lock.json' ':!dashboard/package-lock.json' 2>/dev/null | grep -E '^\+' | grep -v '^+++' || true)
-
-  HITS=$(printf '%s\n' "$DIFF_ADDED" | grep -EnE \
-    "AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk-ant-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}" \
-    || true)
-  if [ -n "$HITS" ]; then
-    fail
-    echo "  ${RED}Possible secret(s) in the outgoing diff — verify before pushing:${OFF}"
-    printf '%s\n' "$HITS" | head -10 | sed 's/^/    /'
-    echo "  If genuine: DO NOT COMMIT. Rotate the credential, then remove it and"
-    echo "  rewrite the commit (git reset --soft HEAD~1, edit, re-commit)."
-  else
-    ok
-  fi
-else
-  skip "secrets (not a git repo)"
-fi
+if node scripts/scan-secrets.js; then ok; else fail; fi
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 11. git hygiene — whitespace, conflict markers, tracked sensitive files

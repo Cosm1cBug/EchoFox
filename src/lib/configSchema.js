@@ -141,6 +141,10 @@ const schema = z
       .object({
         enabled: z.boolean().default(false),
         port: z.coerce.number().int().min(1).max(65535).default(3001),
+        host: z.string().min(1).default('127.0.0.1'),
+        buildOnBoot: z.boolean().default(false),
+        authMaxFailures: z.coerce.number().int().min(1).max(1000).default(20),
+        authWindowMs: z.coerce.number().int().min(1000).max(3600000).default(900000),
         username: z.string().default('admin'),
         password: z.string().default('change-me-please'),
         inactiveAfterDays: z.coerce.number().int().min(1).max(365).default(14),
@@ -152,6 +156,13 @@ const schema = z
       .superRefine((cfg, ctx) => {
         // Refuse to boot with a template password while the dashboard is on.
         const PLACEHOLDERS = ['CHANGE_ME', 'change-me-please', 'testPass@1235#&!', ''];
+        if (cfg.enabled && !cfg.username.trim()) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['username'],
+            message: 'Dashboard username is required.',
+          });
+        }
         if (cfg.enabled && PLACEHOLDERS.includes(cfg.password)) {
           ctx.addIssue({
             code: 'custom',
@@ -316,7 +327,7 @@ const schema = z
         // or "2.3000.<rev>". Leave empty to auto-detect the live value from
         // web.whatsapp.com/sw.js (recommended). Pin it only if a live revision
         // trips your pinned Baileys' protobufs, or if sw.js is unreachable.
-        waWebVersion: z.union([z.array(z.coerce.number()), z.string()]).optional(),
+        waWebVersion: z.union([z.array(z.coerce.number()), z.string()]).default(''),
       })
       .default({}),
 
@@ -409,6 +420,11 @@ const schema = z
         enabled: z.boolean().default(false),
         defaultProvider: z.enum(['openai', 'gemini', 'anthropic', 'local']).default('openai'),
         model: z.string().default('gpt-4o-mini'),
+        imageModel: z.string().default('dall-e-3'),
+        pricing: z.record(z.tuple([z.number().min(0), z.number().min(0)])).default({}),
+        maxInputBytes: z.coerce.number().int().min(1024).max(1048576).default(65536),
+        maxToolResultBytes: z.coerce.number().int().min(1024).max(200000).default(16000),
+        maxToolCallsPerRound: z.coerce.number().int().min(1).max(20).default(4),
         maxTokens: z.coerce.number().int().min(1).max(200_000).default(800),
         costCapPerDayUsd: z.coerce.number().min(0).default(5),
 

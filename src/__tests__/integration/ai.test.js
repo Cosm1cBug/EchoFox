@@ -152,6 +152,7 @@ test('ai.chat: tool-call loop persists memory + aggregates cost', async () => {
   const s = freshStore();
   installStore(s);
   applyAiConfig({ optInDefault: 'on' });
+  require('../../lib/configLoader').__testOverride({ admins: ['12345@s.whatsapp.net'] });
   const ai = freshAi();
   const oai = require('../../services/ai/providers/openai');
 
@@ -194,11 +195,17 @@ test('ai.chat: tool-call loop persists memory + aggregates cost', async () => {
     },
   });
 
-  const chatJid = 'g1@s.whatsapp.net';
-  const result = await ai.chat({ chatJid, userJid: 'u@s.whatsapp.net', text: 'who is blocked' });
+  const chatJid = '12345@s.whatsapp.net';
+  const result = await ai.chat({
+    chatJid,
+    userJid: '12345@s.whatsapp.net',
+    text: 'who is blocked',
+  });
 
   assert.equal(result.reply, 'You have 0 blocked contacts.');
   assert.equal(result.rounds, 2);
+  assert.equal(result.toolCalls[0].ok, true);
+  assert.equal(result.toolCalls[0].result.count, 0);
   assert.equal(result.usage.promptTokens, 250);
   assert.equal(result.usage.completionTokens, 30);
   // gpt-4o-mini: 250*0.15/1M + 30*0.60/1M = 0.0000375 + 0.000018 = 0.0000555
@@ -269,8 +276,9 @@ test('ai.clearMemory removes all turns for the chat', async () => {
 test('toolRegistry: SSRF guard rejects private hosts in fetch_url', async () => {
   const s = freshStore();
   installStore(s);
-  applyAiConfig();
+  applyAiConfig({ toolWhitelist: ['fetch_url'] });
   const ai = freshAi();
+  const context = { chatJid: '12345@s.whatsapp.net', userJid: '12345@s.whatsapp.net' };
   for (const host of [
     '127.0.0.1',
     '10.0.0.1',
@@ -278,31 +286,40 @@ test('toolRegistry: SSRF guard rejects private hosts in fetch_url', async () => 
     '169.254.169.254',
     'localhost',
     '172.16.0.1',
+    '[::ffff:7f00:1]',
   ]) {
-    const r = await ai.tools.invoke('fetch_url', { url: `http://${host}/x` });
-    assert.equal(r.ok, true, `invoke should return wrapper for ${host}`);
-    assert.equal(r.result.error, 'private_host_blocked', `expected SSRF block for ${host}`);
+    const r = await ai.tools.invoke('fetch_url', { url: `http://${host}/x` }, context);
+    assert.equal(r.ok, false, `private request must fail for ${host}`);
+    assert.equal(r.error, 'private_host_blocked', `expected SSRF block for ${host}`);
   }
 });
 
-test('toolRegistry: getActiveSpec hides tools whose API key is missing', async () => {
+test('toolRegistry: specs require caller context, keys, whitelist and administrator scope', async () => {
   const s = freshStore();
   installStore(s);
-  applyAiConfig();
+  applyAiConfig({ toolWhitelist: ['get_blocklist', 'latest_hackernews', 'check_virustotal'] });
   const ai = freshAi();
-  const names = ai.tools.getActiveSpec().map((t) => t.name);
-  // toolWhitelist only allows get_blocklist + latest_hackernews; VT/OTX would
-  // be excluded anyway, but here we also confirm whitelist filtering works
+  const context = {
+    chatJid: '12345@s.whatsapp.net',
+    userJid: '12345@s.whatsapp.net',
+    isAdmin: true,
+  };
+  assert.deepEqual(ai.tools.getActiveSpec(), []);
+  const names = ai.tools.getActiveSpec(context).map((t) => t.name);
   assert.ok(names.includes('get_blocklist'));
   assert.ok(!names.includes('check_virustotal'));
+  assert.ok(
+    !ai.tools.getActiveSpec({ ...context, isAdmin: false }).some((t) => t.name === 'get_blocklist'),
+  );
 });
 
-test('cost tracker: priceFor returns Ollama=$0 and matches default fallback for unknown model', () => {
+test('cost tracker: priceFor returns Ollama=$0 and denies unknown model prices', () => {
   const ai = freshAi();
   assert.deepEqual(ai.cost.priceFor('local', 'anything'), [0, 0]);
   assert.deepEqual(ai.cost.priceFor('openai', 'gpt-4o-mini'), [0.15, 0.6]);
-  // unknown model -> fallback (gpt-4o-mini rates)
-  assert.deepEqual(ai.cost.priceFor('openai', 'totally-not-a-real-model'), [0.15, 0.6]);
+  assert.throws(() => ai.cost.priceFor('openai', 'totally-not-a-real-model'), {
+    code: 'EUNKNOWN_PRICE',
+  });
 });
 
 test('personas.pick: returns hardcoded GENERAL for general, THREAT_INTEL for default', () => {

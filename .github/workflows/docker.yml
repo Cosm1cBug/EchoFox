@@ -17,6 +17,7 @@ jobs:
   build-and-push:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -26,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 2 # need HEAD~1 for the version-bump diff
 
@@ -42,9 +43,9 @@ jobs:
           else
             # Push to main — check for version bump
             CURRENT=$(node -p "require('./package.json').version")
-            PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null \
-              | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).version||'0.0.0')}catch{console.log('0.0.0')}})" \
-              || echo '0.0.0')
+            # Missing history is not evidence of a version bump.
+            git show HEAD~1:package.json > "$RUNNER_TEMP/echofox-previous-package.json"
+            PREVIOUS=$(node -e "const fs=require('node:fs'); const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); if(typeof p.version!=='string'||!p.version) throw new Error('Previous package version missing'); console.log(p.version)" "$RUNNER_TEMP/echofox-previous-package.json")
             if [ "$CURRENT" != "$PREVIOUS" ]; then
               echo "build=true" >> $GITHUB_OUTPUT
               echo "🔼 version bumped: $PREVIOUS → $CURRENT — building"
@@ -59,11 +60,40 @@ jobs:
         if: steps.decide.outputs.build == 'true'
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" != "v${VERSION}" ]]; then
+            echo "::error::Tag version does not match package.json"
+            exit 1
+          fi
           MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
           SHORT_SHA=${GITHUB_SHA::7}
           echo "version=$VERSION"             >> $GITHUB_OUTPUT
           echo "major_minor=$MAJOR_MINOR"     >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA"         >> $GITHUB_OUTPUT
+
+      # Local hardening only: this does NOT enable a remotely disabled workflow.
+      - name: Setup Node.js for required gates
+        if: steps.decide.outputs.build == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.decide.outputs.build == 'true'
+        run: npm ci
+
+      - name: Required container publication gates
+        if: steps.decide.outputs.build == 'true'
+        run: |
+          npm run lint
+          npm run format:check
+          npm run headers:check
+          npm run license:check
+          npm test
+          npm run test:contract
+          npm run secrets:check
+          npm run build:dashboard
+          npm run audit:production
 
       - name: Set up Docker Buildx
         if: steps.decide.outputs.build == 'true'
